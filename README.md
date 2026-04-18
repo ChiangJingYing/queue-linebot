@@ -28,6 +28,32 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## Rich Menu 上傳
+
+已提供兩套 6 格 Rich Menu 定義：
+
+- `rich_menus/user_rich_menu.json`
+- `rich_menus/admin_rich_menu.json`
+
+可使用腳本上傳並自動寫回設定：
+
+```bash
+python scripts/upload_rich_menus.py \
+  --admin-image assets/admin-rich-menu.png \
+  --user-image assets/user-rich-menu.png \
+  --write-config
+```
+
+執行後會：
+- 建立 admin / user rich menu
+- 上傳對應圖片
+- 輸出 rich menu id
+- 若加上 `--write-config`，會回寫 `queue_config.yaml` 的：
+  - `line_bot.admin_rich_menu_id`
+  - `line_bot.user_rich_menu_id`
+
+圖片需自行準備，建議尺寸 `2500x1686`。
+
 ## Running the app
 
 Start the FastAPI server:
