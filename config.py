@@ -21,7 +21,14 @@ def load_config(path: str = "queue_config.yaml") -> dict:
     if not isinstance(loaded, dict):
         return defaults
 
-    return _deep_merge(defaults, loaded)
+    merged = _deep_merge(defaults, loaded)
+
+    registration = loaded.get("registration") if isinstance(loaded.get("registration"), dict) else None
+    if registration and isinstance(registration.get("location_options"), dict):
+        merged.setdefault("registration", {})
+        merged["registration"]["location_options"] = registration["location_options"]
+
+    return merged
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

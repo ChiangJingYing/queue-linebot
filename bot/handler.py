@@ -105,7 +105,11 @@ class LineBotHandler:
 
         profile = self.queue_manager.db.get_user_profile(target_id)
         if profile is None or not profile.display_name or not profile.location:
-            return self._reply(reply_token, "❌ 錯誤：請先完成註冊（名稱與位置）後再加入隊列。")
+            return self._reply(
+                reply_token,
+                "❌ 錯誤：請先完成註冊（名稱與位置）後再加入隊列。",
+                quick_options=[{"label": "設定基本資料", "text": "/register"}],
+            )
 
         result = self.queue_manager.join(target_id, queue_type)
 
@@ -551,7 +555,7 @@ class LineBotHandler:
 
         return self._reply(reply_token, "未知的設定鍵值。")
 
-    def _reply(self, reply_token: str, message: str, quick_options: list[str] | None = None) -> list:
+    def _reply(self, reply_token: str, message: str, quick_options: list | None = None) -> list:
         """Create reply action."""
         payload = {"replyToken": reply_token, "text": message}
         if quick_options:

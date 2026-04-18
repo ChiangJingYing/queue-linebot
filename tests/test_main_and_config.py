@@ -122,3 +122,32 @@ def test_webhook_supports_history_command(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["processed_events"] == 1
+
+
+def test_load_config_overrides_location_options_without_merging_defaults(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "registration:\n  location_options:\n    '1':\n      - '1'\n      - '2'\n    '2':\n      - '4'\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(str(config_path))
+
+    assert config["registration"]["location_options"] == {"1": ["1", "2"], "2": ["4"]}
+
+
+def test_dashboard_renders_registered_and_served_cells(tmp_path):
+    qm = _setup_runtime(tmp_path)
+    qm.register_name("alice", "王小明", location="1-1")
+    qm.register_name("bob", "陳小美", location="2-4")
+    qm.join("bob", "regular")
+    qm.serve_specific("bob")
+    client = TestClient(main.app)
+
+    response = client.get("/dashboard")
+
+    assert response.status_code == 200
+    assert "王小明" in response.text
+    assert "陳小美" in response.text
+    assert "lamp blue" in response.text
+    assert "lamp green" in response.text

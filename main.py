@@ -9,6 +9,7 @@ from hmac import compare_digest
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
 
 from bot.handler import LineBotHandler
 from config import load_config
@@ -85,6 +86,92 @@ def health_check():
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard() -> str:
+    if db_manager is None:
+        raise HTTPException(status_code=500, detail="資料庫尚未初始化")
+
+    profiles = db_manager.get_all_user_profiles()
+    grid: dict[str, dict[str, dict]] = {}
+    rows: list[str] = []
+    cols: list[str] = []
+
+    for profile in profiles:
+        if not profile.location or "-" not in profile.location:
+            continue
+        row_key, col_key = profile.location.split("-", 1)
+        if row_key not in rows:
+            rows.append(row_key)
+        if col_key not in cols:
+            cols.append(col_key)
+
+        latest = db_manager.get_latest_queue_entry_for_user(profile.user_id)
+        status = "registered"
+        if latest and latest.served_time and not latest.cancel_time:
+            status = "served"
+
+        grid.setdefault(row_key, {})[col_key] = {
+            "name": profile.display_name,
+            "location": profile.location,
+            "status": status,
+        }
+
+    rows.sort()
+    cols.sort()
+
+    def cell_html(row_key: str, col_key: str) -> str:
+        cell = grid.get(row_key, {}).get(col_key)
+        if not cell:
+            return '<td class="empty">—</td>'
+        color = "green" if cell["status"] == "served" else "blue"
+        return (
+            f'<td><div class="lamp {color}"></div>'
+            f'<div class="label">{cell["name"]}</div>'
+            f'<div class="sub">{cell["location"]}</div></td>'
+        )
+
+    header = "".join(f"<th>{c}</th>" for c in cols)
+    body = "".join(
+        f"<tr><th>{r}</th>{''.join(cell_html(r, c) for c in cols)}</tr>" for r in rows
+    )
+
+    return f"""
+    <html>
+      <head>
+        <meta charset=\"utf-8\" />
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+        <title>位置看板</title>
+        <style>
+          body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }}
+          h1 {{ margin-bottom: 8px; }}
+          .legend {{ display:flex; gap:16px; margin-bottom:16px; }}
+          .legend span {{ display:flex; align-items:center; gap:8px; }}
+          .lamp {{ width:14px; height:14px; border-radius:999px; display:inline-block; box-shadow:0 0 12px currentColor; margin:0 auto 8px; }}
+          .blue {{ background:#38bdf8; color:#38bdf8; }}
+          .green {{ background:#22c55e; color:#22c55e; }}
+          table {{ border-collapse:collapse; width:100%; background:#111827; }}
+          th, td {{ border:1px solid #334155; padding:14px; text-align:center; min-width:100px; }}
+          th {{ background:#1e293b; }}
+          td.empty {{ color:#64748b; }}
+          .label {{ font-weight:700; }}
+          .sub {{ color:#94a3b8; font-size:12px; margin-top:4px; }}
+        </style>
+      </head>
+      <body>
+        <h1>位置看板</h1>
+        <div class=\"legend\">
+          <span><i class=\"lamp blue\"></i> 已註冊</span>
+          <span><i class=\"lamp green\"></i> 已叫號</span>
+        </div>
+        <table>
+          <thead><tr><th></th>{header}</tr></thead>
+          <tbody>{body}</tbody>
+        </table>
+      </body>
+    </html>
+    """
 
 
 @app.post("/api/line/webhook")
@@ -271,7 +358,12 @@ def _send_replies(reply_actions: list) -> int:
                         text=text,
                         quick_reply=QuickReply(
                             items=[
-                                QuickReplyItem(action=MessageAction(label=option, text=option))
+                                QuickReplyItem(
+                                    action=MessageAction(
+                                        label=(option.get("label") if isinstance(option, dict) else option),
+                                        text=(option.get("text") if isinstance(option, dict) else option),
+                                    )
+                                )
                                 for option in quick_options
                             ]
                         ),

@@ -373,6 +373,23 @@ class DatabaseManager:
             ).fetchall()
             return [UserProfile(**dict(r)) for r in rows]
 
+    def get_all_user_profiles(self) -> list[UserProfile]:
+        """List all registered user profiles."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM user_profiles ORDER BY location ASC, display_name ASC, user_id ASC"
+            ).fetchall()
+            return [UserProfile(**dict(r)) for r in rows]
+
+    def get_latest_queue_entry_for_user(self, user_id: str) -> Optional[QueueEntry]:
+        """Get the latest queue record for a user."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM queues WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+                (user_id,),
+            ).fetchone()
+            return QueueEntry(**dict(row)) if row else None
+
     def clear_all_user_profiles(self) -> int:
         """Delete all registered user profiles."""
         with self._connection() as conn:
