@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from datetime import datetime
 from contextlib import asynccontextmanager
 from hmac import compare_digest
 from typing import AsyncGenerator
@@ -89,6 +90,18 @@ def health():
     return {"status": "healthy"}
 
 
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            return datetime.fromisoformat(value.replace(" ", "T"))
+        except ValueError:
+            return None
+
+
 def _build_dashboard_payload() -> dict:
     if db_manager is None:
         raise HTTPException(status_code=500, detail="資料庫尚未初始化")
@@ -102,6 +115,7 @@ def _build_dashboard_payload() -> dict:
                 "name": "",
                 "location": f"{row}-{col}",
                 "status": "empty",
+                "statusLabel": "空位",
             }
             for col in cols
         }
@@ -109,6 +123,12 @@ def _build_dashboard_payload() -> dict:
     }
 
     active_queue = {entry.user_id for entry in db_manager.get_all_queue()}
+    status_labels = {
+        "empty": "空位",
+        "registered": "已註冊",
+        "queued": "排隊中",
+        "served": "已叫號",
+    }
     profiles = db_manager.get_all_user_profiles()
 
     for profile in profiles:
@@ -126,8 +146,20 @@ def _build_dashboard_payload() -> dict:
             cell["status"] = "queued"
         else:
             latest = db_manager.get_latest_queue_entry_for_user(profile.user_id)
-            if latest and latest.served_time and not latest.cancel_time:
+            latest_joined_at = _parse_timestamp(latest.join_time if latest else None)
+            profile_updated_at = _parse_timestamp(profile.updated_at)
+            served_after_registration = bool(
+                latest
+                and latest.served_time
+                and not latest.cancel_time
+                and latest_joined_at
+                and profile_updated_at
+                and latest_joined_at >= profile_updated_at
+            )
+            if served_after_registration:
                 cell["status"] = "served"
+
+        cell["statusLabel"] = status_labels[cell["status"]]
 
     digest_source = json.dumps({"rows": rows, "cols": cols, "grid": grid}, ensure_ascii=False, sort_keys=True)
     version = hashlib.md5(digest_source.encode("utf-8")).hexdigest()
@@ -136,12 +168,7 @@ def _build_dashboard_payload() -> dict:
         "cols": cols,
         "grid": grid,
         "version": version,
-        "legend": {
-            "empty": "空位",
-            "registered": "已註冊",
-            "queued": "排隊中",
-            "served": "已叫號",
-        },
+        "legend": status_labels,
     }
 
 
@@ -170,7 +197,7 @@ def dashboard() -> str:
             f'<div class="lamp {color}"></div>'
             f'<div class="label">{name}</div>'
             f'<div class="sub">{cell["location"]}</div>'
-            f'<div class="status">{cell["status"]}</div>'
+            f'<div class="status">{cell.get("statusLabel", cell["status"])}</div>'
         )
 
     body = "".join(
@@ -226,6 +253,7 @@ def dashboard() -> str:
         <script>
           const COLOR_MAP = {{ empty: 'empty', registered: 'blue', queued: 'yellow', served: 'green' }};
           let currentVersion = null;
+          let previousGrid = null;
 
           function renderCell(cell, container) {{
             const color = COLOR_MAP[cell.status] || 'empty';
@@ -235,19 +263,27 @@ def dashboard() -> str:
               <div class="lamp ${{color}}"></div>
               <div class="label">${{name}}</div>
               <div class="sub">${{cell.location}}</div>
-              <div class="status">${{cell.status}}</div>
+              <div class="status">${{cell.statusLabel || cell.status}}</div>
             `;
             setTimeout(() => container.classList.remove('pulse'), 600);
           }}
 
-          function render(payload) {{
-            currentVersion = payload.version;
+          function syncChangedCells(payload) {{
             for (const row of payload.rows) {{
               for (const col of payload.cols) {{
+                const nextCell = payload.grid[row][col];
+                const prevCell = previousGrid?.[row]?.[col];
+                if (JSON.stringify(prevCell) === JSON.stringify(nextCell)) continue;
                 const target = document.querySelector(`td[data-row="${{row}}"][data-col="${{col}}"]`);
-                if (target) renderCell(payload.grid[row][col], target);
+                if (target) renderCell(nextCell, target);
               }}
             }}
+            previousGrid = payload.grid;
+            currentVersion = payload.version;
+          }}
+
+          function render(payload) {{
+            syncChangedCells(payload);
           }}
 
           async function pollDashboard() {{

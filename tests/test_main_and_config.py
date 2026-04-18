@@ -160,6 +160,26 @@ def test_dashboard_renders_all_configured_cells_and_statuses(tmp_path):
     assert "lamp yellow" in response.text
     assert "lamp green" in response.text
     assert "/dashboard/data" in response.text
+    assert "空位" in response.text
+    assert "已註冊" in response.text
+    assert "排隊中" in response.text
+    assert "已叫號" in response.text
+    assert "previousGrid" in response.text
+
+
+def test_dashboard_data_cleared_and_reregistered_user_is_not_served(tmp_path):
+    qm = _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    qm.register_name("alice", "王小明", location="1-1")
+    qm.join("alice", "regular")
+    qm.serve_specific("alice")
+    qm.db.clear_all_queue()
+    qm.register_name("alice", "王小明", location="1-1")
+    client = TestClient(main.app)
+
+    response = client.get("/dashboard/data")
+
+    assert response.status_code == 200
+    assert response.json()["grid"]["1"]["1"]["status"] == "registered"
 
 
 def test_dashboard_data_returns_version_and_grid_statuses(tmp_path):

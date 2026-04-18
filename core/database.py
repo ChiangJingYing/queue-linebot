@@ -320,17 +320,18 @@ class DatabaseManager:
         role: str = "user",
     ) -> UserProfile:
         """Create or update a user profile."""
+        now = datetime.now().isoformat(timespec="microseconds")
         with self._connection() as conn:
             conn.execute(
                 "INSERT INTO user_profiles (user_id, display_name, location, verified, role, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(user_id) DO UPDATE SET "
                 "display_name = excluded.display_name, "
                 "location = CASE WHEN excluded.location != '' THEN excluded.location ELSE user_profiles.location END, "
                 "verified = CASE WHEN excluded.verified = 1 THEN 1 ELSE user_profiles.verified END, "
                 "role = CASE WHEN excluded.role != '' THEN excluded.role ELSE user_profiles.role END, "
-                "updated_at = CURRENT_TIMESTAMP",
-                (user_id, display_name, location, 1 if verified else 0, role),
+                "updated_at = excluded.updated_at",
+                (user_id, display_name, location, 1 if verified else 0, role, now, now),
             )
             conn.commit()
         profile = self.get_user_profile(user_id)
@@ -348,10 +349,11 @@ class DatabaseManager:
 
     def verify_user_profile(self, user_id: str, verified: bool = True) -> Optional[UserProfile]:
         """Mark a user profile as verified/unverified."""
+        now = datetime.now().isoformat(timespec="microseconds")
         with self._connection() as conn:
             conn.execute(
-                "UPDATE user_profiles SET verified = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
-                (1 if verified else 0, user_id),
+                "UPDATE user_profiles SET verified = ?, updated_at = ? WHERE user_id = ?",
+                (1 if verified else 0, now, user_id),
             )
             conn.commit()
         return self.get_user_profile(user_id)
