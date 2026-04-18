@@ -357,6 +357,15 @@ class DatabaseManager:
             ).fetchall()
             return [UserProfile(**dict(r)) for r in rows]
 
+    def clear_all_user_profiles(self) -> int:
+        """Delete all registered user profiles."""
+        with self._connection() as conn:
+            row = conn.execute("SELECT COUNT(*) AS cnt FROM user_profiles").fetchone()
+            total = int(row["cnt"]) if row else 0
+            conn.execute("DELETE FROM user_profiles")
+            conn.commit()
+            return total
+
     def get_user_history(self, user_id: str) -> list:
         """Get queue history for a user, newest first."""
         with self._connection() as conn:

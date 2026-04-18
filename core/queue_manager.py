@@ -98,10 +98,6 @@ class QueueManager:
 
         self.db.log_event("serve", head.user_id, head.queue_type)
 
-        # Push notification to served user
-        if self.notifier:
-            self.notifier.notify_served(head.user_id, served.queue_number)
-
         return {"status": "served", "id": head.user_id, "queue_number": served.queue_number}
 
     def serve_specific(self, user_id: str) -> dict:
@@ -115,10 +111,6 @@ class QueueManager:
             return {"status": "error", "message": "該使用者目前不在隊列中。"}
 
         self.db.log_event("serve", valid_id, served.queue_type)
-
-        # Push notification to served user
-        if self.notifier:
-            self.notifier.notify_served(valid_id, served.queue_number)
 
         return {"status": "served", "id": valid_id, "queue_number": served.queue_number}
 
@@ -263,12 +255,14 @@ class QueueManager:
         """Clear all active queue entries regardless of queue type."""
         removed_entries = self.db.clear_all_queue()
         removed_users = [entry.user_id for entry in removed_entries]
+        cleared_profiles = self.db.clear_all_user_profiles()
         for entry in removed_entries:
             self.db.log_event("clear", entry.user_id, entry.queue_type, "管理員清空全部隊列")
         return {
             "status": "cleared",
             "removed_count": len(removed_users),
             "removed_users": removed_users,
+            "cleared_profiles": cleared_profiles,
         }
 
     def register_name(self, user_id: str, display_name: str) -> dict:
@@ -306,6 +300,29 @@ class QueueManager:
             "display_name": updated.display_name if updated else profile.display_name,
             "verified": bool(updated.verified) if updated else verified,
         }
+
+    def ping_user(self, user_id: str | None = None) -> dict:
+        """Send a manual ping to the specified or next queued user."""
+        target_id = user_id
+        if not target_id:
+            all_q = self.db.get_all_queue()
+            if not all_q:
+                return {"status": "error", "message": "目前隊列是空的。"}
+            target_id = all_q[0].user_id
+
+        valid_id = validate_user_id(target_id)
+        if valid_id is None:
+            return {"status": "error", "message": "使用者 ID 格式不正確。"}
+
+        entry = self.db.get_active_queue_entry(valid_id)
+        if entry is None:
+            return {"status": "error", "message": "該使用者目前不在隊列中。"}
+
+        display_name = self.db.get_display_name(valid_id)
+        if self.notifier:
+            self.notifier.notify_user(valid_id, f"📣 {display_name}，輪到你注意隊列狀態了。")
+        self.db.log_event("ping", valid_id, entry.queue_type, "管理員手動提醒")
+        return {"status": "success", "user_id": valid_id, "display_name": display_name}
 
     def get_user_history(self, user_id: str, limit: int = 20) -> list[dict]:
         """Get event history for a specific user."""

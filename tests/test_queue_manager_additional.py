@@ -106,8 +106,9 @@ class TestQueueManagerAdditional:
         queue_manager.skip_specific("bob")
 
         with db._connection() as conn:
-            join_time = (datetime.now() - timedelta(minutes=12)).isoformat()
-            served_time = datetime.now().isoformat()
+            base = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+            join_time = base.isoformat()
+            served_time = (base + timedelta(minutes=5)).isoformat()
             conn.execute(
                 "UPDATE queues SET join_time = ?, served_time = ? WHERE user_id = ?",
                 (join_time, served_time, "alice"),
@@ -120,7 +121,7 @@ class TestQueueManagerAdditional:
         assert stats["served_count"] == 1
         assert stats["skipped_count"] == 1
         assert stats["vip"]["active_count"] == 1
-        assert stats["average_wait_minutes"] >= 11.5
+        assert stats["average_wait_minutes"] >= 4.5
 
     def test_get_user_history_returns_latest_events(self, queue_manager):
         queue_manager.join("alice", "regular")
@@ -190,3 +191,27 @@ class TestQueueManagerAdditional:
         result = queue_manager.skip_next()
 
         assert result == {"status": "error", "message": "跳過失敗，請稍後再試。"}
+
+    def test_clear_all_queue_also_clears_registered_profiles(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "clear-all.db"))
+        queue_manager = QueueManager(db)
+        queue_manager.register_name("alice", "王小明")
+        queue_manager.join("alice", "regular")
+
+        result = queue_manager.clear_all_queue()
+
+        assert result["removed_count"] == 1
+        assert result["cleared_profiles"] == 1
+        assert db.get_user_profile("alice") is None
+
+    def test_ping_user_targets_queue_head_when_missing_id(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "ping-user.db"))
+        queue_manager = QueueManager(db)
+        queue_manager.register_name("alice", "王小明")
+        queue_manager.join("alice", "regular")
+
+        result = queue_manager.ping_user()
+
+        assert result["status"] == "success"
+        assert result["user_id"] == "alice"
+        assert result["display_name"] == "王小明"

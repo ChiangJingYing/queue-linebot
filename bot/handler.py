@@ -34,6 +34,7 @@ class LineBotHandler:
         self.admin_ids = admin_ids or []
         self.admin_rich_menu_id = admin_rich_menu_id
         self.user_rich_menu_id = user_rich_menu_id
+        self.pending_actions: dict[str, str] = {}
 
     def handle_event(self, event) -> list:
         """Handle a LINE event. Returns list of reply actions."""
@@ -51,6 +52,11 @@ class LineBotHandler:
         reply_token = getattr(event, "reply_token", getattr(event, "replyToken", ""))
 
         command, args = validate_command(text)
+        pending_action = self.pending_actions.get(user_id)
+        if pending_action == "register" and not text.strip().startswith("/"):
+            self.pending_actions.pop(user_id, None)
+            return self._complete_register(user_id, text.strip(), reply_token)
+
         admin_history_mode = False
         if command == "/history" and args and self._is_admin(user_id):
             command = "/admin/history"
@@ -67,7 +73,7 @@ class LineBotHandler:
         elif command == "/remind":
             return self._handle_remind(user_id, args, reply_token)
         elif command == "/help":
-            return self._handle_help(reply_token)
+            return self._handle_help(user_id, reply_token)
         elif command == "/register":
             return self._handle_register(user_id, args, reply_token)
         elif command == "/coffee":
@@ -179,8 +185,11 @@ class LineBotHandler:
                 "❌ 找不到你的排隊記錄，請確認是否有正確的叫號。",
             )
 
-    def _handle_help(self, reply_token: str) -> list:
+    def _handle_help(self, user_id: str, reply_token: str) -> list:
         """Handle /help command."""
+        if not self._is_admin(user_id):
+            return self._reply(reply_token, "❌ 未授權，僅限管理員使用。")
+
         msg = (
             "📋 隊列系統指令\n\n"
             "**一般使用者：**\n"
@@ -197,6 +206,8 @@ class LineBotHandler:
             "**管理員指令（/admin/ 開頭）：**\n"
             "/admin/serve - 叫下一位\n"
             "/admin/serve [id] - 叫指定使用者\n"
+            "/admin/ping - 手動提醒下一位\n"
+            "/admin/ping [id] - 手動提醒指定使用者\n"
             "/admin/skip - 跳過下一位\n"
             "/admin/skip [id] - 跳過指定使用者\n"
             "/admin/status - 完整狀態\n"
@@ -212,18 +223,20 @@ class LineBotHandler:
         return self._reply(reply_token, msg)
 
     def _handle_register(self, user_id: str, args: list, reply_token: str) -> list:
-        """Handle /register [display_name]."""
-        if not args:
-            return self._reply(reply_token, "用法：/register [名稱]")
+        """Handle /register by entering pending input mode."""
+        if args:
+            return self._complete_register(user_id, " ".join(args), reply_token)
 
-        result = self.queue_manager.register_name(user_id, " ".join(args))
+        self.pending_actions[user_id] = "register"
+        return self._reply(reply_token, "請輸入你要註冊的名稱，下一則訊息會直接作為名稱。")
+
+    def _complete_register(self, user_id: str, display_name: str, reply_token: str) -> list:
+        """Complete pending register action."""
+        result = self.queue_manager.register_name(user_id, display_name)
         if result["status"] != "success":
             return self._reply(reply_token, f"❌ 錯誤：{result['message']}")
 
-        return self._reply(
-            reply_token,
-            f"✅ 已更新名稱：{result['display_name']}\n身分驗證：{'已通過' if result['verified'] else '待驗證'}",
-        )
+        return self._reply(reply_token, f"✅ 已更新名稱：{result['display_name']}")
 
 
     def _handle_admin(self, user_id: str, command: str, args: list,
@@ -250,6 +263,8 @@ class LineBotHandler:
             return self._handle_export(reply_token)
         elif command == "/admin/clear":
             return self._handle_admin_clear(reply_token)
+        elif command == "/admin/ping":
+            return self._handle_admin_ping(args, reply_token)
         elif command == "/admin/verify":
             return self._handle_admin_verify(args, reply_token)
         elif command == "/admin/vip":
@@ -381,7 +396,18 @@ class LineBotHandler:
     def _handle_admin_clear(self, reply_token: str) -> list:
         """Handle /admin/clear."""
         result = self.queue_manager.clear_all_queue()
-        return self._reply(reply_token, f"✅ 已清空全部隊列，移除 {result['removed_count']} 筆")
+        return self._reply(
+            reply_token,
+            f"✅ 已清空全部隊列，移除 {result['removed_count']} 筆，並清除 {result['cleared_profiles']} 筆註冊資料"
+        )
+
+    def _handle_admin_ping(self, args: list, reply_token: str) -> list:
+        """Handle /admin/ping [ID]."""
+        target_id = args[0] if args else None
+        result = self.queue_manager.ping_user(target_id)
+        if result["status"] != "success":
+            return self._reply(reply_token, f"❌ 錯誤：{result['message']}")
+        return self._reply(reply_token, f"✅ 已提醒 {result['display_name']}（{result['user_id']}）")
 
     def _handle_admin_verify(self, args: list, reply_token: str) -> list:
         """Handle /admin/verify [user_id] [on/off]."""

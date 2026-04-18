@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from bot.handler import LineBotHandler
 from core.queue_manager import QueueManager
 from core.database import DatabaseManager
+from services.vip_service import VipService
 
 
 def make_event(text: str, user_id: str = "alice", reply_token: str = "reply-token"):
@@ -218,3 +219,55 @@ def test_reply_falls_back_to_dict_when_line_sdk_missing(tmp_path):
     result = handler._reply("token", "hello")
 
     assert result == [{"replyToken": "token", "text": "hello"}]
+
+
+def test_register_enters_pending_mode_and_next_message_sets_name(tmp_path):
+    db = DatabaseManager(str(tmp_path / "register.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+
+    reply = handler.handle_event(make_event("/register", user_id="alice", reply_token="r1"))
+    assert "下一則訊息會直接作為名稱" in reply[0]["text"]
+
+    reply2 = handler.handle_event(make_event("王小明", user_id="alice", reply_token="r2"))
+    assert reply2[0]["text"] == "✅ 已更新名稱：王小明"
+    assert db.get_display_name("alice") == "王小明"
+
+
+def test_help_is_admin_only(tmp_path):
+    db = DatabaseManager(str(tmp_path / "help.db"))
+    handler = LineBotHandler(queue_manager=QueueManager(db), vip_service=VipService(db), admin_ids=["admin"])
+
+    denied = handler.handle_event(make_event("/help", user_id="alice"))
+    allowed = handler.handle_event(make_event("/help", user_id="admin"))
+
+    assert "未授權" in denied[0]["text"]
+    assert "管理員指令" in allowed[0]["text"]
+
+
+def test_admin_clear_clears_queue_and_registered_profiles(tmp_path):
+    db = DatabaseManager(str(tmp_path / "clear.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+
+    qm.join("alice", "regular")
+    qm.register_name("alice", "王小明")
+
+    reply = handler.handle_event(make_event("/admin/clear", user_id="admin"))
+
+    assert "清除 1 筆註冊資料" in reply[0]["text"]
+    assert db.get_all_queue() == []
+    assert db.get_user_profile("alice") is None
+
+
+def test_admin_ping_next_user(tmp_path):
+    db = DatabaseManager(str(tmp_path / "ping.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+
+    qm.register_name("alice", "王小明")
+    qm.join("alice", "regular")
+
+    reply = handler.handle_event(make_event("/admin/ping", user_id="admin"))
+
+    assert "已提醒 王小明（alice）" in reply[0]["text"]
