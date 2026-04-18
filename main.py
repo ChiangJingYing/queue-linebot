@@ -315,6 +315,10 @@ def dashboard_config_page() -> str:
             <label>標籤</label>
             <input id=\"label-input\" placeholder=\"例如：座位 A / 會議室 1\" />
             <button id=\"save-layout\" type=\"button\">儲存版面</button>
+            <button id=\"delete-marker\" type=\"button\" style=\"background:#ef4444;color:white;\">刪除目前位置標記</button>
+            <h3>未放置位置</h3>
+            <ul id=\"unplaced-list\"></ul>
+            <h3>已放置位置</h3>
             <ul id=\"marker-list\"></ul>
           </div>
           <div class=\"panel\">
@@ -327,6 +331,7 @@ def dashboard_config_page() -> str:
           let layout = {initial_layout};
           const stage = document.getElementById('stage');
           const markerList = document.getElementById('marker-list');
+          const unplacedList = document.getElementById('unplaced-list');
           const locationSelect = document.getElementById('location-select');
           const labelInput = document.getElementById('label-input');
           for (const location of LOCATIONS) {{
@@ -337,18 +342,51 @@ def dashboard_config_page() -> str:
             stage.style.backgroundImage = layout.imageUrl ? `url(${{layout.imageUrl}})` : 'none';
             stage.innerHTML = '';
             markerList.innerHTML = '';
+            unplacedList.innerHTML = '';
+            const usedLocations = new Set((layout.markers || []).map((item) => item.location));
+            for (const location of LOCATIONS.filter((item) => !usedLocations.has(item))) {{
+              const item = document.createElement('li');
+              item.textContent = location;
+              unplacedList.appendChild(item);
+            }}
             for (const marker of layout.markers || []) {{
               const el = document.createElement('div');
               el.className = 'marker-editor';
+              el.draggable = true;
+              el.dataset.location = marker.location;
               el.style.left = `${{marker.x}}%`;
               el.style.top = `${{marker.y}}%`;
               el.textContent = marker.label || marker.location;
+              el.addEventListener('click', (event) => {{
+                event.stopPropagation();
+                locationSelect.value = marker.location;
+                labelInput.value = marker.label || '';
+              }});
+              el.addEventListener('dragstart', (event) => {{
+                event.dataTransfer.setData('text/plain', marker.location);
+              }});
               stage.appendChild(el);
               const item = document.createElement('li');
               item.textContent = `${{marker.location}} @ (${{marker.x.toFixed(1)}}%, ${{marker.y.toFixed(1)}}%) ${{marker.label || ''}}`;
               markerList.appendChild(item);
             }}
           }}
+          function updateMarkerPosition(location, x, y) {{
+            const marker = (layout.markers || []).find((item) => item.location === location);
+            if (!marker) return;
+            marker.x = Math.max(0, Math.min(100, x));
+            marker.y = Math.max(0, Math.min(100, y));
+          }}
+          stage.addEventListener('dragover', (event) => event.preventDefault());
+          stage.addEventListener('drop', (event) => {{
+            event.preventDefault();
+            const location = event.dataTransfer.getData('text/plain');
+            const rect = stage.getBoundingClientRect();
+            const x = ((event.clientX - rect.left) / rect.width) * 100;
+            const y = ((event.clientY - rect.top) / rect.height) * 100;
+            updateMarkerPosition(location, x, y);
+            renderEditor();
+          }});
           stage.addEventListener('click', (event) => {{
             const rect = stage.getBoundingClientRect();
             const x = ((event.clientX - rect.left) / rect.width) * 100;
@@ -356,6 +394,11 @@ def dashboard_config_page() -> str:
             const location = locationSelect.value;
             layout.markers = (layout.markers || []).filter((item) => item.location !== location);
             layout.markers.push({{ location, x, y, label: labelInput.value.trim() }});
+            renderEditor();
+          }});
+          document.getElementById('delete-marker').addEventListener('click', () => {{
+            const location = locationSelect.value;
+            layout.markers = (layout.markers || []).filter((item) => item.location !== location);
             renderEditor();
           }});
           document.getElementById('save-layout').addEventListener('click', async () => {{

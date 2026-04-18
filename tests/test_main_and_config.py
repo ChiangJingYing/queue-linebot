@@ -196,6 +196,9 @@ def test_dashboard_config_page_and_layout_api(tmp_path):
     assert page.status_code == 200
     assert "版面設定" in page.text
     assert "marker-editor" in page.text
+    assert "刪除目前位置標記" in page.text
+    assert "未放置位置" in page.text
+    assert "draggable" in page.text
     assert layout.status_code == 200
     assert layout.json()["markers"] == []
 
@@ -217,6 +220,7 @@ def test_dashboard_layout_can_be_saved_and_rendered(tmp_path):
     )
     page = client.get("/dashboard")
     layout = client.get("/dashboard/layout")
+    data = client.get("/dashboard/data")
 
     assert save_response.status_code == 200
     assert layout.status_code == 200
@@ -225,6 +229,7 @@ def test_dashboard_layout_can_be_saved_and_rendered(tmp_path):
     assert "座位 A" in page.text
     assert "background-image" in page.text
     assert 'data-location="1-1"' in page.text
+    assert data.json()["layout"]["markers"][0]["location"] == "1-1"
 
 
 def test_dashboard_layout_image_upload(tmp_path):
