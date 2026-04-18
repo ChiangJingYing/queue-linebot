@@ -239,9 +239,11 @@ def test_register_enters_pending_mode_and_next_message_sets_name(tmp_path):
 
     reply2 = handler.handle_event(make_event("王小明", user_id="alice", reply_token="r2"))
     assert "請選擇位置第一段" in reply2[0]["text"]
+    assert reply2[0]["quickReply"] == ["A", "B"]
 
     reply3 = handler.handle_event(make_event("A", user_id="alice", reply_token="r3"))
     assert "請選擇位置第二段" in reply3[0]["text"]
+    assert reply3[0]["quickReply"] == ["1", "2"]
 
     reply4 = handler.handle_event(make_event("1", user_id="alice", reply_token="r4"))
     assert reply4[0]["text"] == "✅ 已更新名稱：王小明\n位置：A-1"

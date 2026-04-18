@@ -229,7 +229,16 @@ def _send_replies(reply_actions: list) -> int:
         return 0
 
     try:
-        from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, ReplyMessageRequest, TextMessage
+        from linebot.v3.messaging import (
+            ApiClient,
+            Configuration,
+            MessagingApi,
+            ReplyMessageRequest,
+            TextMessage,
+            QuickReply,
+            QuickReplyItem,
+            MessageAction,
+        )
     except Exception:
         logger.info("LINE SDK 無法使用或已損毀；已產生回覆動作但未送出")
         return len(reply_actions)
@@ -246,17 +255,34 @@ def _send_replies(reply_actions: list) -> int:
         for action in reply_actions:
             reply_token = getattr(action, "replyToken", None)
             text = getattr(action, "text", None)
+            quick_options = []
             if isinstance(action, dict):
                 reply_token = action.get("replyToken", reply_token)
                 text = action.get("text", text)
+                quick_options = action.get("quickReply", [])
 
             if not reply_token or text is None:
                 continue
 
+            message = TextMessage(text=text)
+            if quick_options:
+                try:
+                    message = TextMessage(
+                        text=text,
+                        quick_reply=QuickReply(
+                            items=[
+                                QuickReplyItem(action=MessageAction(label=option, text=option))
+                                for option in quick_options
+                            ]
+                        ),
+                    )
+                except Exception:
+                    message = TextMessage(text=text)
+
             messaging_api.reply_message(
                 ReplyMessageRequest(
                     reply_token=reply_token,
-                    messages=[TextMessage(text=text)],
+                    messages=[message],
                 )
             )
             sent += 1

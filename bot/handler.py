@@ -250,24 +250,36 @@ class LineBotHandler:
             "type": "register_location_group",
             "display_name": normalized_name,
         }
-        groups = "、".join(self.location_options.keys())
-        return self._reply(reply_token, f"請選擇位置第一段：{groups}")
+        groups = list(self.location_options.keys())
+        return self._reply(
+            reply_token,
+            f"請選擇位置第一段：{'、'.join(groups)}",
+            quick_options=groups,
+        )
 
     def _capture_register_location_group(self, user_id: str, group: str, reply_token: str) -> list:
         """Capture location group and ask for location item."""
         state = self.pending_actions.get(user_id, {})
         normalized_group = group.strip().upper()
         if normalized_group not in self.location_options:
-            groups = "、".join(self.location_options.keys())
-            return self._reply(reply_token, f"無效的位置第一段，請從以下選擇：{groups}")
+            groups = list(self.location_options.keys())
+            return self._reply(
+                reply_token,
+                f"無效的位置第一段，請從以下選擇：{'、'.join(groups)}",
+                quick_options=groups,
+            )
 
         self.pending_actions[user_id] = {
             "type": "register_location_item",
             "display_name": state.get("display_name", ""),
             "group": normalized_group,
         }
-        options = "、".join(self.location_options[normalized_group])
-        return self._reply(reply_token, f"請選擇位置第二段（{normalized_group}-?）：{options}")
+        options = self.location_options[normalized_group]
+        return self._reply(
+            reply_token,
+            f"請選擇位置第二段（{normalized_group}-?）：{'、'.join(options)}",
+            quick_options=options,
+        )
 
     def _capture_register_location_item(self, user_id: str, item: str, reply_token: str) -> list:
         """Capture location item and complete registration."""
@@ -277,8 +289,11 @@ class LineBotHandler:
         normalized_item = item.strip().upper()
         options = self.location_options.get(group, [])
         if normalized_item not in options:
-            choices = "、".join(options)
-            return self._reply(reply_token, f"無效的位置第二段，請從以下選擇：{choices}")
+            return self._reply(
+                reply_token,
+                f"無效的位置第二段，請從以下選擇：{'、'.join(options)}",
+                quick_options=options,
+            )
 
         self.pending_actions.pop(user_id, None)
         location = f"{group}-{normalized_item}"
@@ -536,9 +551,12 @@ class LineBotHandler:
 
         return self._reply(reply_token, "未知的設定鍵值。")
 
-    def _reply(self, reply_token: str, message: str) -> list:
+    def _reply(self, reply_token: str, message: str, quick_options: list[str] | None = None) -> list:
         """Create reply action."""
-        return [{"replyToken": reply_token, "text": message}]
+        payload = {"replyToken": reply_token, "text": message}
+        if quick_options:
+            payload["quickReply"] = quick_options
+        return [payload]
 
     def _sync_rich_menu(self, user_id: str) -> None:
         """Link different rich menus for admin vs normal users."""
