@@ -13,7 +13,7 @@ from services.vip_service import VipService
 from bot.handler import LineBotHandler
 
 
-def _setup_runtime(tmp_path):
+def _setup_runtime(tmp_path, location_options=None):
     db = DatabaseManager(str(tmp_path / "webhook.db"))
     qm = QueueManager(db)
     vip = VipService(db)
@@ -24,6 +24,7 @@ def _setup_runtime(tmp_path):
         queue_manager=qm,
         vip_service=vip,
         admin_ids=["admin"],
+        location_options=location_options or {"A": ["1", "2"], "B": ["1", "2"]},
     )
 
     main.db_manager = db
@@ -33,6 +34,7 @@ def _setup_runtime(tmp_path):
     main.line_handler = handler
     main.CHANNEL_SECRET = ""
     main.CHANNEL_ACCESS_TOKEN = ""
+    main.LOCATION_OPTIONS = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
 
     return qm
 
@@ -136,18 +138,48 @@ def test_load_config_overrides_location_options_without_merging_defaults(tmp_pat
     assert config["registration"]["location_options"] == {"1": ["1", "2"], "2": ["4"]}
 
 
-def test_dashboard_renders_registered_and_served_cells(tmp_path):
-    qm = _setup_runtime(tmp_path)
+def test_dashboard_renders_all_configured_cells_and_statuses(tmp_path):
+    qm = _setup_runtime(tmp_path, location_options={"1": ["1", "2"], "2": ["1", "4"]})
     qm.register_name("alice", "王小明", location="1-1")
-    qm.register_name("bob", "陳小美", location="2-4")
+    qm.register_name("bob", "陳小美", location="1-2")
+    qm.register_name("carol", "林小華", location="2-1")
     qm.join("bob", "regular")
-    qm.serve_specific("bob")
+    qm.join("carol", "regular")
+    qm.serve_specific("carol")
     client = TestClient(main.app)
 
     response = client.get("/dashboard")
 
     assert response.status_code == 200
-    assert "王小明" in response.text
-    assert "陳小美" in response.text
+    assert "1-1" in response.text
+    assert "1-2" in response.text
+    assert "2-1" in response.text
+    assert "2-4" in response.text
+    assert "lamp empty" in response.text
     assert "lamp blue" in response.text
+    assert "lamp yellow" in response.text
     assert "lamp green" in response.text
+    assert "/dashboard/data" in response.text
+
+
+def test_dashboard_data_returns_version_and_grid_statuses(tmp_path):
+    qm = _setup_runtime(tmp_path, location_options={"1": ["1", "2"], "2": ["1", "4"]})
+    qm.register_name("alice", "王小明", location="1-1")
+    qm.register_name("bob", "陳小美", location="1-2")
+    qm.register_name("carol", "林小華", location="2-1")
+    qm.join("bob", "regular")
+    qm.join("carol", "regular")
+    qm.serve_specific("carol")
+    client = TestClient(main.app)
+
+    response = client.get("/dashboard/data")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["rows"] == ["1", "2"]
+    assert payload["cols"] == ["1", "2", "4"]
+    assert payload["version"]
+    assert payload["grid"]["1"]["1"]["status"] == "registered"
+    assert payload["grid"]["1"]["2"]["status"] == "queued"
+    assert payload["grid"]["2"]["1"]["status"] == "served"
+    assert payload["grid"]["2"]["4"]["status"] == "empty"

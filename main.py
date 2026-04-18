@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -88,54 +89,101 @@ def health():
     return {"status": "healthy"}
 
 
-@app.get("/dashboard", response_class=HTMLResponse)
-def dashboard() -> str:
+def _build_dashboard_payload() -> dict:
     if db_manager is None:
         raise HTTPException(status_code=500, detail="資料庫尚未初始化")
 
+    rows = sorted(str(row) for row in LOCATION_OPTIONS.keys())
+    cols = sorted({str(col) for values in LOCATION_OPTIONS.values() for col in values})
+
+    grid: dict[str, dict[str, dict]] = {
+        row: {
+            col: {
+                "name": "",
+                "location": f"{row}-{col}",
+                "status": "empty",
+            }
+            for col in cols
+        }
+        for row in rows
+    }
+
+    active_queue = {entry.user_id for entry in db_manager.get_all_queue()}
     profiles = db_manager.get_all_user_profiles()
-    grid: dict[str, dict[str, dict]] = {}
-    rows: list[str] = []
-    cols: list[str] = []
 
     for profile in profiles:
         if not profile.location or "-" not in profile.location:
             continue
         row_key, col_key = profile.location.split("-", 1)
-        if row_key not in rows:
-            rows.append(row_key)
-        if col_key not in cols:
-            cols.append(col_key)
+        if row_key not in grid or col_key not in grid[row_key]:
+            continue
 
-        latest = db_manager.get_latest_queue_entry_for_user(profile.user_id)
-        status = "registered"
-        if latest and latest.served_time and not latest.cancel_time:
-            status = "served"
+        cell = grid[row_key][col_key]
+        cell["name"] = profile.display_name
+        cell["status"] = "registered"
 
-        grid.setdefault(row_key, {})[col_key] = {
-            "name": profile.display_name,
-            "location": profile.location,
-            "status": status,
-        }
+        if profile.user_id in active_queue:
+            cell["status"] = "queued"
+        else:
+            latest = db_manager.get_latest_queue_entry_for_user(profile.user_id)
+            if latest and latest.served_time and not latest.cancel_time:
+                cell["status"] = "served"
 
-    rows.sort()
-    cols.sort()
+    digest_source = json.dumps({"rows": rows, "cols": cols, "grid": grid}, ensure_ascii=False, sort_keys=True)
+    version = hashlib.md5(digest_source.encode("utf-8")).hexdigest()
+    return {
+        "rows": rows,
+        "cols": cols,
+        "grid": grid,
+        "version": version,
+        "legend": {
+            "empty": "空位",
+            "registered": "已註冊",
+            "queued": "排隊中",
+            "served": "已叫號",
+        },
+    }
 
-    def cell_html(row_key: str, col_key: str) -> str:
-        cell = grid.get(row_key, {}).get(col_key)
-        if not cell:
-            return '<td class="empty">—</td>'
-        color = "green" if cell["status"] == "served" else "blue"
-        return (
-            f'<td><div class="lamp {color}"></div>'
-            f'<div class="label">{cell["name"]}</div>'
-            f'<div class="sub">{cell["location"]}</div></td>'
-        )
+
+@app.get("/dashboard/data")
+def dashboard_data() -> dict:
+    return _build_dashboard_payload()
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard() -> str:
+    payload = _build_dashboard_payload()
+    rows = payload["rows"]
+    cols = payload["cols"]
 
     header = "".join(f"<th>{c}</th>" for c in cols)
+
+    def _cell_markup(cell: dict) -> str:
+        color = {
+            "empty": "empty",
+            "registered": "blue",
+            "queued": "yellow",
+            "served": "green",
+        }.get(cell["status"], "empty")
+        name = cell["name"] or "空位"
+        return (
+            f'<div class="lamp {color}"></div>'
+            f'<div class="label">{name}</div>'
+            f'<div class="sub">{cell["location"]}</div>'
+            f'<div class="status">{cell["status"]}</div>'
+        )
+
     body = "".join(
-        f"<tr><th>{r}</th>{''.join(cell_html(r, c) for c in cols)}</tr>" for r in rows
+        "<tr><th>{row}</th>{cells}</tr>".format(
+            row=r,
+            cells="".join(
+                f'<td data-row="{r}" data-col="{c}">{_cell_markup(payload["grid"][r][c])}</td>'
+                for c in cols
+            ),
+        )
+        for r in rows
     )
+    initial_payload = json.dumps(payload, ensure_ascii=False)
 
     return f"""
     <html>
@@ -146,29 +194,75 @@ def dashboard() -> str:
         <style>
           body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }}
           h1 {{ margin-bottom: 8px; }}
-          .legend {{ display:flex; gap:16px; margin-bottom:16px; }}
+          .legend {{ display:flex; flex-wrap:wrap; gap:16px; margin-bottom:16px; }}
           .legend span {{ display:flex; align-items:center; gap:8px; }}
           .lamp {{ width:14px; height:14px; border-radius:999px; display:inline-block; box-shadow:0 0 12px currentColor; margin:0 auto 8px; }}
+          .empty {{ background:#64748b; color:#64748b; }}
           .blue {{ background:#38bdf8; color:#38bdf8; }}
+          .yellow {{ background:#facc15; color:#facc15; }}
           .green {{ background:#22c55e; color:#22c55e; }}
           table {{ border-collapse:collapse; width:100%; background:#111827; }}
           th, td {{ border:1px solid #334155; padding:14px; text-align:center; min-width:100px; }}
           th {{ background:#1e293b; }}
-          td.empty {{ color:#64748b; }}
           .label {{ font-weight:700; }}
           .sub {{ color:#94a3b8; font-size:12px; margin-top:4px; }}
+          .status {{ font-size:12px; margin-top:6px; color:#cbd5e1; }}
+          .pulse {{ animation:pulse .5s ease-in-out 2; }}
+          @keyframes pulse {{ 0% {{ transform:scale(1); }} 50% {{ transform:scale(1.04); }} 100% {{ transform:scale(1); }} }}
         </style>
       </head>
       <body>
         <h1>位置看板</h1>
         <div class=\"legend\">
+          <span><i class=\"lamp empty\"></i> 空位</span>
           <span><i class=\"lamp blue\"></i> 已註冊</span>
+          <span><i class=\"lamp yellow\"></i> 排隊中</span>
           <span><i class=\"lamp green\"></i> 已叫號</span>
         </div>
         <table>
           <thead><tr><th></th>{header}</tr></thead>
           <tbody>{body}</tbody>
         </table>
+        <script>
+          const COLOR_MAP = {{ empty: 'empty', registered: 'blue', queued: 'yellow', served: 'green' }};
+          let currentVersion = null;
+
+          function renderCell(cell, container) {{
+            const color = COLOR_MAP[cell.status] || 'empty';
+            const name = cell.name || '空位';
+            container.classList.add('pulse');
+            container.innerHTML = `
+              <div class="lamp ${{color}}"></div>
+              <div class="label">${{name}}</div>
+              <div class="sub">${{cell.location}}</div>
+              <div class="status">${{cell.status}}</div>
+            `;
+            setTimeout(() => container.classList.remove('pulse'), 600);
+          }}
+
+          function render(payload) {{
+            currentVersion = payload.version;
+            for (const row of payload.rows) {{
+              for (const col of payload.cols) {{
+                const target = document.querySelector(`td[data-row="${{row}}"][data-col="${{col}}"]`);
+                if (target) renderCell(payload.grid[row][col], target);
+              }}
+            }}
+          }}
+
+          async function pollDashboard() {{
+            try {{
+              const response = await fetch('/dashboard/data', {{ cache: 'no-store' }});
+              const payload = await response.json();
+              if (payload.version !== currentVersion) render(payload);
+            }} catch (error) {{
+              console.error('dashboard poll failed', error);
+            }}
+          }}
+
+          render({initial_payload});
+          setInterval(pollDashboard, 3000);
+        </script>
       </body>
     </html>
     """
