@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import io
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 import main
@@ -35,6 +38,7 @@ def _setup_runtime(tmp_path, location_options=None):
     main.CHANNEL_SECRET = ""
     main.CHANNEL_ACCESS_TOKEN = ""
     main.LOCATION_OPTIONS = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
+    main.dashboard_layout_store = main.DashboardLayoutStore(tmp_path / "dashboard_layout")
 
     return qm
 
@@ -180,6 +184,71 @@ def test_dashboard_data_cleared_and_reregistered_user_is_not_served(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["grid"]["1"]["1"]["status"] == "registered"
+
+
+def test_dashboard_config_page_and_layout_api(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1", "2"]})
+    client = TestClient(main.app)
+
+    page = client.get("/dashboard/config")
+    layout = client.get("/dashboard/layout")
+
+    assert page.status_code == 200
+    assert "版面設定" in page.text
+    assert "marker-editor" in page.text
+    assert layout.status_code == 200
+    assert layout.json()["markers"] == []
+
+
+def test_dashboard_layout_can_be_saved_and_rendered(tmp_path):
+    qm = _setup_runtime(tmp_path, location_options={"1": ["1", "2"]})
+    qm.register_name("alice", "王小明", location="1-1")
+    client = TestClient(main.app)
+
+    save_response = client.post(
+        "/dashboard/layout",
+        json={
+            "imageUrl": "/dashboard/assets/sample.png",
+            "markers": [
+                {"location": "1-1", "x": 12.5, "y": 34.0, "label": "座位 A"},
+                {"location": "1-2", "x": 60.0, "y": 70.0, "label": "座位 B"},
+            ],
+        },
+    )
+    page = client.get("/dashboard")
+    layout = client.get("/dashboard/layout")
+
+    assert save_response.status_code == 200
+    assert layout.status_code == 200
+    assert layout.json()["imageUrl"] == "/dashboard/assets/sample.png"
+    assert len(layout.json()["markers"]) == 2
+    assert "座位 A" in page.text
+    assert "background-image" in page.text
+    assert 'data-location="1-1"' in page.text
+
+
+def test_dashboard_layout_image_upload(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    client = TestClient(main.app)
+
+    png_bytes = (
+        b"\x89PNG\r\n\x1a\n"
+        b"\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+        b"\x00\x00\x00\x0cIDATx\x9cc``\x00\x00\x00\x02\x00\x01H\xaf\xa4q"
+        b"\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+
+    response = client.post(
+        "/dashboard/layout/image",
+        files={"file": ("layout.png", io.BytesIO(png_bytes), "image/png")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["imageUrl"].startswith("/dashboard/assets/")
+    asset_path = tmp_path / "dashboard_layout" / Path(payload["imageUrl"]).name
+    assert asset_path.exists()
 
 
 def test_dashboard_data_returns_version_and_grid_statuses(tmp_path):

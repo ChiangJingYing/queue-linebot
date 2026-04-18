@@ -5,13 +5,16 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import mimetypes
 from datetime import datetime
+from pathlib import Path
+from uuid import uuid4
 from contextlib import asynccontextmanager
 from hmac import compare_digest
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
 
 from bot.handler import LineBotHandler
 from config import load_config
@@ -39,6 +42,48 @@ queue_manager: QueueManager | None = None
 vip_service: VipService | None = None
 notifier: Notifier | None = None
 line_handler: LineBotHandler | None = None
+
+
+class DashboardLayoutStore:
+    def __init__(self, root: str | Path = "dashboard_layout") -> None:
+        self.root = Path(root)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.layout_path = self.root / "layout.json"
+
+    def load(self) -> dict:
+        if not self.layout_path.exists():
+            return {"imageUrl": "", "markers": []}
+        try:
+            data = json.loads(self.layout_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {"imageUrl": "", "markers": []}
+        if not isinstance(data, dict):
+            return {"imageUrl": "", "markers": []}
+        return {
+            "imageUrl": data.get("imageUrl", ""),
+            "markers": data.get("markers", []),
+        }
+
+    def save(self, payload: dict) -> dict:
+        layout = {
+            "imageUrl": payload.get("imageUrl", ""),
+            "markers": payload.get("markers", []),
+        }
+        self.layout_path.write_text(json.dumps(layout, ensure_ascii=False, indent=2), encoding="utf-8")
+        return layout
+
+    def save_image(self, filename: str, content: bytes) -> str:
+        ext = Path(filename or "layout.png").suffix or ".png"
+        stored_name = f"{uuid4().hex}{ext}"
+        target = self.root / stored_name
+        target.write_bytes(content)
+        return f"/dashboard/assets/{stored_name}"
+
+    def resolve_asset(self, filename: str) -> Path:
+        return self.root / Path(filename).name
+
+
+dashboard_layout_store = DashboardLayoutStore()
 
 
 @asynccontextmanager
@@ -174,44 +219,184 @@ def _build_dashboard_payload() -> dict:
 
 @app.get("/dashboard/data")
 def dashboard_data() -> dict:
-    return _build_dashboard_payload()
+    payload = _build_dashboard_payload()
+    payload["layout"] = dashboard_layout_store.load()
+    return payload
+
+
+def _all_locations() -> list[str]:
+    return [f"{row}-{col}" for row, cols in LOCATION_OPTIONS.items() for col in cols]
+
+
+@app.get("/dashboard/layout")
+def dashboard_layout() -> dict:
+    return dashboard_layout_store.load()
+
+
+@app.post("/dashboard/layout")
+def save_dashboard_layout(payload: dict) -> dict:
+    markers = payload.get("markers", [])
+    normalized_markers = []
+    for marker in markers:
+        if not isinstance(marker, dict):
+            continue
+        location = str(marker.get("location", "")).strip()
+        if not location:
+            continue
+        normalized_markers.append(
+            {
+                "location": location,
+                "x": float(marker.get("x", 0)),
+                "y": float(marker.get("y", 0)),
+                "label": str(marker.get("label", "")).strip(),
+            }
+        )
+    return dashboard_layout_store.save({
+        "imageUrl": str(payload.get("imageUrl", "")).strip(),
+        "markers": normalized_markers,
+    })
+
+
+@app.post("/dashboard/layout/image")
+async def upload_dashboard_layout_image(file: UploadFile = File(...)) -> dict:
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="圖片內容為空")
+    image_url = dashboard_layout_store.save_image(file.filename or "layout.png", content)
+    layout = dashboard_layout_store.load()
+    layout["imageUrl"] = image_url
+    dashboard_layout_store.save(layout)
+    return {"imageUrl": image_url}
+
+
+@app.get("/dashboard/assets/{filename}")
+def dashboard_asset(filename: str):
+    target = dashboard_layout_store.resolve_asset(filename)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="找不到圖片")
+    media_type, _ = mimetypes.guess_type(target.name)
+    return FileResponse(target, media_type=media_type or "application/octet-stream")
+
+
+@app.get("/dashboard/config", response_class=HTMLResponse)
+def dashboard_config_page() -> str:
+    layout = dashboard_layout_store.load()
+    locations = json.dumps(_all_locations(), ensure_ascii=False)
+    initial_layout = json.dumps(layout, ensure_ascii=False)
+    return f"""
+    <html>
+      <head>
+        <meta charset=\"utf-8\" />
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+        <title>版面設定</title>
+        <style>
+          body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }}
+          .wrap {{ display:grid; grid-template-columns: 320px 1fr; gap:20px; }}
+          .panel {{ background:#111827; border:1px solid #334155; border-radius:12px; padding:16px; }}
+          .stage {{ position:relative; min-height:520px; background:#020617 center/contain no-repeat; border:1px dashed #475569; border-radius:12px; overflow:hidden; }}
+          .marker-editor {{ position:absolute; transform:translate(-50%, -50%); background:#38bdf8; color:#082f49; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:700; }}
+          label, select, input, button {{ display:block; width:100%; margin-bottom:12px; }}
+          input, select {{ padding:10px; border-radius:8px; border:1px solid #475569; background:#0f172a; color:#e2e8f0; }}
+          button {{ padding:10px; border-radius:8px; border:none; background:#22c55e; color:#052e16; font-weight:700; cursor:pointer; }}
+          ul {{ padding-left:18px; }}
+        </style>
+      </head>
+      <body>
+        <h1>版面設定</h1>
+        <div class=\"wrap\">
+          <div class=\"panel\">
+            <form id=\"image-form\">
+              <label>上傳背景圖</label>
+              <input type=\"file\" name=\"file\" accept=\"image/*\" />
+              <button type=\"submit\">上傳圖片</button>
+            </form>
+            <label>位置</label>
+            <select id=\"location-select\"></select>
+            <label>標籤</label>
+            <input id=\"label-input\" placeholder=\"例如：座位 A / 會議室 1\" />
+            <button id=\"save-layout\" type=\"button\">儲存版面</button>
+            <ul id=\"marker-list\"></ul>
+          </div>
+          <div class=\"panel\">
+            <p>先選 location，再點圖片放置 marker。</p>
+            <div id=\"stage\" class=\"stage\"></div>
+          </div>
+        </div>
+        <script>
+          const LOCATIONS = {locations};
+          let layout = {initial_layout};
+          const stage = document.getElementById('stage');
+          const markerList = document.getElementById('marker-list');
+          const locationSelect = document.getElementById('location-select');
+          const labelInput = document.getElementById('label-input');
+          for (const location of LOCATIONS) {{
+            const option = document.createElement('option');
+            option.value = location; option.textContent = location; locationSelect.appendChild(option);
+          }}
+          function renderEditor() {{
+            stage.style.backgroundImage = layout.imageUrl ? `url(${{layout.imageUrl}})` : 'none';
+            stage.innerHTML = '';
+            markerList.innerHTML = '';
+            for (const marker of layout.markers || []) {{
+              const el = document.createElement('div');
+              el.className = 'marker-editor';
+              el.style.left = `${{marker.x}}%`;
+              el.style.top = `${{marker.y}}%`;
+              el.textContent = marker.label || marker.location;
+              stage.appendChild(el);
+              const item = document.createElement('li');
+              item.textContent = `${{marker.location}} @ (${{marker.x.toFixed(1)}}%, ${{marker.y.toFixed(1)}}%) ${{marker.label || ''}}`;
+              markerList.appendChild(item);
+            }}
+          }}
+          stage.addEventListener('click', (event) => {{
+            const rect = stage.getBoundingClientRect();
+            const x = ((event.clientX - rect.left) / rect.width) * 100;
+            const y = ((event.clientY - rect.top) / rect.height) * 100;
+            const location = locationSelect.value;
+            layout.markers = (layout.markers || []).filter((item) => item.location !== location);
+            layout.markers.push({{ location, x, y, label: labelInput.value.trim() }});
+            renderEditor();
+          }});
+          document.getElementById('save-layout').addEventListener('click', async () => {{
+            const response = await fetch('/dashboard/layout', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify(layout) }});
+            layout = await response.json();
+            renderEditor();
+          }});
+          document.getElementById('image-form').addEventListener('submit', async (event) => {{
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const response = await fetch('/dashboard/layout/image', {{ method: 'POST', body: formData }});
+            const payload = await response.json();
+            layout.imageUrl = payload.imageUrl;
+            renderEditor();
+          }});
+          renderEditor();
+        </script>
+      </body>
+    </html>
+    """
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard() -> str:
     payload = _build_dashboard_payload()
-    rows = payload["rows"]
-    cols = payload["cols"]
-
-    header = "".join(f"<th>{c}</th>" for c in cols)
-
-    def _cell_markup(cell: dict) -> str:
-        color = {
-            "empty": "empty",
-            "registered": "blue",
-            "queued": "yellow",
-            "served": "green",
-        }.get(cell["status"], "empty")
-        name = cell["name"] or "空位"
-        return (
-            f'<div class="lamp {color}"></div>'
-            f'<div class="label">{name}</div>'
-            f'<div class="sub">{cell["location"]}</div>'
-            f'<div class="status">{cell.get("statusLabel", cell["status"])}</div>'
-        )
-
-    body = "".join(
-        "<tr><th>{row}</th>{cells}</tr>".format(
-            row=r,
-            cells="".join(
-                f'<td data-row="{r}" data-col="{c}">{_cell_markup(payload["grid"][r][c])}</td>'
-                for c in cols
-            ),
-        )
-        for r in rows
-    )
+    layout = dashboard_layout_store.load()
     initial_payload = json.dumps(payload, ensure_ascii=False)
-
+    markers_html = []
+    for marker in layout.get("markers", []):
+        location = marker.get("location", "")
+        row, _, col = location.partition("-")
+        cell = payload.get("grid", {}).get(row, {}).get(col)
+        if not cell:
+            continue
+        markers_html.append(
+            f'<div class="marker" data-location="{location}" style="left:{marker.get("x", 0)}%;top:{marker.get("y", 0)}%">'
+            f'<div class="dot {cell["status"]}"></div>'
+            f'<div class="tag">{marker.get("label") or location}<br>{cell.get("name") or cell.get("statusLabel")}</div>'
+            f'</div>'
+        )
+    background_style = f'background-image:url({layout.get("imageUrl")});' if layout.get("imageUrl") else ''
     return f"""
     <html>
       <head>
@@ -219,23 +404,15 @@ def dashboard() -> str:
         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
         <title>位置看板</title>
         <style>
-          body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }}
-          h1 {{ margin-bottom: 8px; }}
-          .legend {{ display:flex; flex-wrap:wrap; gap:16px; margin-bottom:16px; }}
+          body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#020617; color:#e2e8f0; padding:24px; }}
+          .legend {{ display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap; }}
           .legend span {{ display:flex; align-items:center; gap:8px; }}
-          .lamp {{ width:14px; height:14px; border-radius:999px; display:inline-block; box-shadow:0 0 12px currentColor; margin:0 auto 8px; }}
-          .empty {{ background:#64748b; color:#64748b; }}
-          .blue {{ background:#38bdf8; color:#38bdf8; }}
-          .yellow {{ background:#facc15; color:#facc15; }}
-          .green {{ background:#22c55e; color:#22c55e; }}
-          table {{ border-collapse:collapse; width:100%; background:#111827; }}
-          th, td {{ border:1px solid #334155; padding:14px; text-align:center; min-width:100px; }}
-          th {{ background:#1e293b; }}
-          .label {{ font-weight:700; }}
-          .sub {{ color:#94a3b8; font-size:12px; margin-top:4px; }}
-          .status {{ font-size:12px; margin-top:6px; color:#cbd5e1; }}
-          .pulse {{ animation:pulse .5s ease-in-out 2; }}
-          @keyframes pulse {{ 0% {{ transform:scale(1); }} 50% {{ transform:scale(1.04); }} 100% {{ transform:scale(1); }} }}
+          .board {{ position:relative; min-height:70vh; background:#0f172a center/contain no-repeat; border:1px solid #334155; border-radius:16px; overflow:hidden; {background_style} }}
+          .marker {{ position:absolute; transform:translate(-50%, -50%); text-align:center; }}
+          .dot {{ width:18px; height:18px; border-radius:999px; margin:0 auto 6px; box-shadow:0 0 14px currentColor; display:inline-block; }}
+          .lamp {{ width:18px; height:18px; border-radius:999px; display:inline-block; box-shadow:0 0 14px currentColor; }}
+          .dot.empty, .lamp.empty {{ background:#64748b; color:#64748b; }} .dot.registered, .lamp.blue {{ background:#38bdf8; color:#38bdf8; }} .dot.queued, .lamp.yellow {{ background:#facc15; color:#facc15; }} .dot.served, .lamp.green {{ background:#22c55e; color:#22c55e; }}
+          .tag {{ background:rgba(15,23,42,.8); padding:6px 8px; border-radius:10px; font-size:12px; min-width:72px; }}
         </style>
       </head>
       <body>
@@ -246,57 +423,28 @@ def dashboard() -> str:
           <span><i class=\"lamp yellow\"></i> 排隊中</span>
           <span><i class=\"lamp green\"></i> 已叫號</span>
         </div>
-        <table>
-          <thead><tr><th></th>{header}</tr></thead>
-          <tbody>{body}</tbody>
-        </table>
+        <div id=\"board\" class=\"board\">{''.join(markers_html)}</div>
         <script>
-          const COLOR_MAP = {{ empty: 'empty', registered: 'blue', queued: 'yellow', served: 'green' }};
-          let currentVersion = null;
-          let previousGrid = null;
-
-          function renderCell(cell, container) {{
-            const color = COLOR_MAP[cell.status] || 'empty';
-            const name = cell.name || '空位';
-            container.classList.add('pulse');
-            container.innerHTML = `
-              <div class="lamp ${{color}}"></div>
-              <div class="label">${{name}}</div>
-              <div class="sub">${{cell.location}}</div>
-              <div class="status">${{cell.statusLabel || cell.status}}</div>
-            `;
-            setTimeout(() => container.classList.remove('pulse'), 600);
+          let previousGrid = {{}}, currentVersion = null;
+          const initialPayload = {initial_payload};
+          function renderMarkers(payload) {{
+            previousGrid = payload.grid; currentVersion = payload.version;
+            document.querySelectorAll('.marker').forEach((marker) => {{
+              const location = marker.dataset.location;
+              const [row, col] = location.split('-');
+              const cell = payload.grid?.[row]?.[col];
+              if (!cell) return;
+              const dot = marker.querySelector('.dot');
+              dot.className = `dot ${{cell.status}}`;
+              marker.querySelector('.tag').innerHTML = `${{location}}<br>${{cell.name || cell.statusLabel}}`;
+            }});
           }}
-
-          function syncChangedCells(payload) {{
-            for (const row of payload.rows) {{
-              for (const col of payload.cols) {{
-                const nextCell = payload.grid[row][col];
-                const prevCell = previousGrid?.[row]?.[col];
-                if (JSON.stringify(prevCell) === JSON.stringify(nextCell)) continue;
-                const target = document.querySelector(`td[data-row="${{row}}"][data-col="${{col}}"]`);
-                if (target) renderCell(nextCell, target);
-              }}
-            }}
-            previousGrid = payload.grid;
-            currentVersion = payload.version;
-          }}
-
-          function render(payload) {{
-            syncChangedCells(payload);
-          }}
-
           async function pollDashboard() {{
-            try {{
-              const response = await fetch('/dashboard/data', {{ cache: 'no-store' }});
-              const payload = await response.json();
-              if (payload.version !== currentVersion) render(payload);
-            }} catch (error) {{
-              console.error('dashboard poll failed', error);
-            }}
+            const response = await fetch('/dashboard/data', {{ cache: 'no-store' }});
+            const payload = await response.json();
+            if (payload.version !== currentVersion) renderMarkers(payload);
           }}
-
-          render({initial_payload});
+          renderMarkers(initialPayload);
           setInterval(pollDashboard, 3000);
         </script>
       </body>
