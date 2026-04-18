@@ -1,7 +1,5 @@
 """Bot command tests."""
 
-import pytest
-
 from core.queue_manager import QueueManager
 from core.validators import validate_command
 
@@ -40,10 +38,11 @@ class TestBotCommands:
         assert args == []
 
     def test_join_duplicate_same_user(self, queue_manager):
-        """Join same user twice -> rejected by DB constraint."""
+        """同一使用者重複加入 -> 應回傳錯誤，不應拋出例外。"""
         queue_manager.join("alice", "regular")
-        with pytest.raises(Exception):
-            queue_manager.join("alice", "regular")
+        result = queue_manager.join("alice", "regular")
+        assert result["status"] == "error"
+        assert "重複加入" in result["message"]
 
     def test_join_no_id(self, queue_manager):
         """Join without ID -> reject."""

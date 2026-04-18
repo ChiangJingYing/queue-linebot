@@ -22,7 +22,7 @@ class VipService:
         self.db.set_config("vip_enabled", "true" if enabled else "false")
         return {
             "vip_enabled": enabled,
-            "message": f"VIP queue is now {'enabled' if enabled else 'disabled'}",
+            "message": f"VIP 隊列已{'啟用' if enabled else '停用'}",
         }
 
     def get_vip_status(self) -> dict:
@@ -32,9 +32,22 @@ class VipService:
         return {"enabled": enabled, "count": count}
 
     def record_purchase(
-        self, user_id: str, platform: str = "line", coffee_id: Optional[str] = None
+        self,
+        user_id: str,
+        platform: str = "line",
+        coffee_id: Optional[str] = None,
+        verified: bool = False,
     ) -> dict:
         """Record a coffee purchase."""
-        self.db.add_vip_purchase(user_id, platform=platform, coffee_id=coffee_id)
+        self.db.add_vip_purchase(
+            user_id,
+            platform=platform,
+            coffee_id=coffee_id,
+            verified=verified,
+        )
         self.db.log_event("vip_purchase", user_id, "vip")
-        return {"status": "purchased", "user_id": user_id}
+        return {
+            "status": "purchased",
+            "user_id": user_id,
+            "verified": verified,
+        }

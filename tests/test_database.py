@@ -32,6 +32,17 @@ class TestDatabaseManager:
         assert cancelled.cancel_time is not None
         assert db_manager.get_regular_queue() == []
 
+    def test_user_can_rejoin_after_cancel(self, db_manager):
+        first = db_manager.join_queue("alice", "regular")
+        cancelled = db_manager.cancel_queue("alice")
+        second = db_manager.join_queue("alice", "regular")
+
+        assert first.user_id == "alice"
+        assert cancelled is not None
+        assert second.user_id == "alice"
+        assert second.queue_number >= 1
+        assert db_manager.get_active_queue_entry("alice") is not None
+
     def test_cancel_queue_returns_none_for_missing_user(self, db_manager):
         assert db_manager.cancel_queue("ghost") is None
 

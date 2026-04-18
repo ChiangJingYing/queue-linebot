@@ -66,4 +66,4 @@ class TestEndToEnd:
         queue_manager.join("alice", "regular")
         result = queue_manager.join("bob", "regular")
         assert result["status"] == "error"
-        assert "full" in result["message"].lower()
+        assert "已滿" in result["message"]

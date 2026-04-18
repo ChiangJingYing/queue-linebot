@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
+from types import SimpleNamespace
 from typing import List, Optional
 
 from .models import QueueEntry, VipPurchase, QueueEvent
@@ -32,7 +35,7 @@ class DatabaseManager:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS queues (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id TEXT UNIQUE NOT NULL,
+                    user_id TEXT NOT NULL,
                     queue_type TEXT NOT NULL DEFAULT 'regular',
                     queue_number INTEGER NOT NULL,
                     join_time TEXT NOT NULL,
@@ -82,6 +85,40 @@ class DatabaseManager:
                 )
             conn.commit()
 
+        self._migrate_queues_remove_user_unique()
+
+    def _migrate_queues_remove_user_unique(self) -> None:
+        """Remove legacy UNIQUE constraint on queues.user_id so users can rejoin later."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'queues'"
+            ).fetchone()
+            create_sql = (row["sql"] or "") if row else ""
+            normalized = " ".join(create_sql.lower().split())
+            if "user_id text unique not null" not in normalized:
+                return
+
+            conn.execute("ALTER TABLE queues RENAME TO queues_legacy")
+            conn.execute("""
+                CREATE TABLE queues (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    queue_type TEXT NOT NULL DEFAULT 'regular',
+                    queue_number INTEGER NOT NULL,
+                    join_time TEXT NOT NULL,
+                    cancel_time TEXT,
+                    served_time TEXT,
+                    served INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute(
+                "INSERT INTO queues (id, user_id, queue_type, queue_number, join_time, cancel_time, served_time, served, created_at) "
+                "SELECT id, user_id, queue_type, queue_number, join_time, cancel_time, served_time, served, created_at FROM queues_legacy"
+            )
+            conn.execute("DROP TABLE queues_legacy")
+            conn.commit()
+
     def get_config(self, key: str) -> Optional[str]:
         """Get a config value by key."""
         with self._connection() as conn:
@@ -115,6 +152,17 @@ class DatabaseManager:
         val = self.get_config("vip_enabled")
         return val.lower() == "true" if val else True
 
+    def get_active_queue_entry(self, user_id: str) -> Optional[QueueEntry]:
+        """Get active queue entry for user, if any."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM queues WHERE user_id = ? AND served = 0 AND cancel_time IS NULL LIMIT 1",
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return QueueEntry(**dict(row))
+
     def join_queue(self, user_id: str, queue_type: str = "regular") -> QueueEntry:
         """Add user to queue. Returns new QueueEntry."""
         with self._connection() as conn:
@@ -125,19 +173,38 @@ class DatabaseManager:
             ).fetchone()
             queue_number = row["next_num"]
             join_time = datetime.now().isoformat()
-            conn.execute(
-                "INSERT INTO queues (user_id, queue_type, queue_number, join_time) "
-                "VALUES (?, ?, ?, ?)",
-                (user_id, queue_type, queue_number, join_time),
-            )
-            conn.commit()
-            return QueueEntry(
-                id=0,
-                user_id=user_id,
-                queue_type=queue_type,
-                queue_number=queue_number,
-                join_time=join_time,
-            )
+            try:
+                conn.execute(
+                    "INSERT INTO queues (user_id, queue_type, queue_number, join_time) "
+                    "VALUES (?, ?, ?, ?)",
+                    (user_id, queue_type, queue_number, join_time),
+                )
+                conn.commit()
+                return QueueEntry(
+                    id=0,
+                    user_id=user_id,
+                    queue_type=queue_type,
+                    queue_number=queue_number,
+                    join_time=join_time,
+                )
+            except sqlite3.IntegrityError:
+                # User already in queue — return existing entry
+                existing = conn.execute(
+                    "SELECT * FROM queues WHERE user_id = ? AND served = 0",
+                    (user_id,),
+                ).fetchone()
+                if existing is None:
+                    raise
+                return QueueEntry(
+                    id=existing["id"],
+                    user_id=existing["user_id"],
+                    queue_type=existing["queue_type"],
+                    queue_number=existing["queue_number"],
+                    join_time=existing["join_time"],
+                    cancel_time=existing["cancel_time"],
+                    served_time=existing["served_time"],
+                    served=existing["served"],
+                )
 
     def cancel_queue(self, user_id: str) -> Optional[QueueEntry]:
         """Cancel user's queue entry. Returns updated QueueEntry or None."""
@@ -215,6 +282,51 @@ class DatabaseManager:
         """Get all active queue entries (regular + vip)."""
         return self.get_regular_queue() + self.get_vip_queue()
 
+    def get_user_history(self, user_id: str) -> list:
+        """Get queue history for a user, newest first."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT user_id, queue_type, queue_number, join_time, cancel_time, served_time, served "
+                "FROM queues WHERE user_id = ? ORDER BY created_at DESC, id DESC",
+                (user_id,),
+            ).fetchall()
+
+            history = []
+            for row in rows:
+                if row["served_time"]:
+                    status = "served"
+                    time_value = row["served_time"]
+                elif row["cancel_time"]:
+                    status = "cancelled"
+                    time_value = row["cancel_time"]
+                elif row["served"]:
+                    status = "closed"
+                    time_value = row["join_time"]
+                else:
+                    status = "active"
+                    time_value = row["join_time"]
+
+                history.append(
+                    SimpleNamespace(
+                        user_id=row["user_id"],
+                        queue_type=row["queue_type"],
+                        queue_number=row["queue_number"],
+                        status=status,
+                        time=time_value,
+                    )
+                )
+            return history
+
+    def get_event_history(self, user_id: str, limit: int = 20) -> list[QueueEvent]:
+        """Get queue event history for a user, newest first."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM queue_events WHERE user_id = ? "
+                "ORDER BY created_at DESC, id DESC LIMIT ?",
+                (user_id, limit),
+            ).fetchall()
+            return [QueueEvent(**dict(r)) for r in rows]
+
     def get_vip_purchases(self) -> list:
         """Get all VIP purchase records."""
         with self._connection() as conn:
@@ -224,18 +336,30 @@ class DatabaseManager:
             return [VipPurchase(**dict(r)) for r in rows]
 
     def add_vip_purchase(
-        self, user_id: str, platform: str = "line", coffee_id: Optional[str] = None
+        self,
+        user_id: str,
+        platform: str = "line",
+        coffee_id: Optional[str] = None,
+        verified: bool = False,
     ) -> VipPurchase:
-        """Record a VIP purchase."""
+        """Record a VIP purchase. Raises IntegrityError on duplicate."""
         with self._connection() as conn:
             conn.execute(
-                "INSERT INTO vip_purchases (user_id, platform, coffee_id, purchased_at) "
-                "VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
-                (user_id, platform, coffee_id),
+                "INSERT OR IGNORE INTO vip_purchases (user_id, platform, coffee_id, purchased_at, verified) "
+                "VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)",
+                (user_id, platform, coffee_id, 1 if verified else 0),
             )
+            inserted = conn.total_changes
+            if inserted == 0:
+                raise sqlite3.IntegrityError(
+                    f"Duplicate vip_purchase for user_id={user_id}"
+                )
             conn.commit()
             return VipPurchase(
-                user_id=user_id, platform=platform, coffee_id=coffee_id
+                user_id=user_id,
+                platform=platform,
+                coffee_id=coffee_id,
+                verified=verified,
             )
 
     def is_vip_purchased(self, user_id: str) -> bool:
@@ -263,3 +387,34 @@ class DatabaseManager:
                 event_type=event_type, user_id=user_id,
                 queue_type=queue_type, details=details
             )
+
+    def get_queue_rows_for_export(self, limit: int = 20) -> list[dict]:
+        """Get recent queue rows for export/reporting."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT user_id, queue_type, queue_number, join_time, cancel_time, "
+                "served_time, served FROM queues ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def export_queue_csv(self, limit: int = 20) -> str:
+        """Export recent queue rows as CSV text."""
+        rows = self.get_queue_rows_for_export(limit=limit)
+        output = io.StringIO()
+        writer = csv.DictWriter(
+            output,
+            fieldnames=[
+                "user_id",
+                "queue_type",
+                "queue_number",
+                "join_time",
+                "cancel_time",
+                "served_time",
+                "served",
+            ],
+        )
+        writer.writeheader()
+        for row in reversed(rows):
+            writer.writerow(row)
+        return output.getvalue().strip()

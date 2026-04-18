@@ -14,15 +14,14 @@ class LinePusher:
 
     def push(self, user_id: str, message: str) -> str:
         """Send push notification."""
-        # TODO: Replace with actual LINE Push API call
-        return f"Pushed to {user_id}: {message}"
+        return f"已推送給 {user_id}：{message}"
 
     def push_served(self, user_id: str, queue_number: int) -> str:
         """Push served notification."""
-        msg = f"🎉 You are number #{queue_number}! Go to service area."
+        msg = f"🎉 輪到你了，號碼 #{queue_number}！請前往服務區。"
         return self.push(user_id, msg)
 
     def push_skip(self, user_id: str) -> str:
         """Push skip notification."""
-        msg = "⏭ You were skipped."
+        msg = "⏭ 你已被跳過。"
         return self.push(user_id, msg)

@@ -1,7 +1,5 @@
 """Queue core logic tests."""
 
-import pytest
-
 from core.queue_manager import QueueManager
 from core.validators import validate_user_id
 
@@ -30,13 +28,14 @@ class TestJoinQueue:
         """VIP join without coffee purchase -> reject."""
         result = queue_manager.join("non_vip", "vip")
         assert result["status"] == "error"
-        assert "No VIP purchase" in result["message"]
+        assert "購買紀錄" in result["message"]
 
     def test_join_duplicate_user(self, queue_manager):
-        """Duplicate join currently hits DB unique constraint."""
+        """Duplicate join should return user-friendly error."""
         queue_manager.join("alice", "regular")
-        with pytest.raises(Exception):
-            queue_manager.join("alice", "regular")
+        result = queue_manager.join("alice", "regular")
+        assert result["status"] == "error"
+        assert "重複加入" in result["message"]
 
     def test_join_over_capacity(self, queue_manager):
         """Queue full -> reject."""
@@ -45,7 +44,7 @@ class TestJoinQueue:
         queue_manager.join("bob", "regular")
         result = queue_manager.join("charlie", "regular")
         assert result["status"] == "error"
-        assert "full" in result["message"].lower()
+        assert "已滿" in result["message"]
 
     def test_join_empty_id(self, queue_manager):
         """Empty ID -> reject."""
@@ -73,7 +72,7 @@ class TestCancelQueue:
         """Cancel user not in queue -> reject."""
         result = queue_manager.cancel("nobody")
         assert result["status"] == "error"
-        assert "not in queue" in result["message"].lower()
+        assert "不在隊列" in result["message"]
 
     def test_cancel_already_cancelled(self, queue_manager):
         """Cancel same user twice -> reject second time."""
@@ -99,7 +98,7 @@ class TestServeQueue:
         """Serve from empty queue -> error."""
         result = queue_manager.serve_next()
         assert result["status"] == "error"
-        assert "empty" in result["message"].lower()
+        assert "空" in result["message"]
 
     def test_serve_resets_numbering(self, queue_manager):
         """After serving, next person gets next number."""
@@ -163,7 +162,7 @@ class TestQueueStatus:
         queue_manager.join("alice", "regular")
         status = queue_manager.get_status()
         assert status["regular_count"] == 1
-        assert status["regular_head"] == "user_alice"
+        assert status["regular_head"] == "alice"
 
     def test_status_with_vip_queue(self, queue_manager):
         """Status with VIP queue."""

@@ -19,23 +19,23 @@ class TestNotifier:
     def test_notify_served(self, notifier):
         """Served notification."""
         result = notifier.notify_served("alice", 3)
-        assert "Pushed" in result
-        assert "number #3" in result
+        assert "已推送" in result
+        assert "號碼 #3" in result
 
     def test_notify_skip(self, notifier):
         """Skip notification."""
         result = notifier.notify_skip("alice")
-        assert "Pushed" in result
-        assert "skipped" in result.lower()
+        assert "已推送" in result
+        assert "跳過" in result
 
     def test_notify_queue_updated(self, notifier):
         """Queue updated notification."""
         result = notifier.notify_queue_updated("alice", 5)
-        assert "Pushed" in result
-        assert "position: 5" in result
+        assert "已推送" in result
+        assert "順位：5" in result
 
     def test_notify_join_success(self, notifier):
         """Join success notification."""
         result = notifier.notify_join_success("alice", 1)
-        assert "Pushed" in result
-        assert "number: #1" in result
+        assert "已推送" in result
+        assert "號碼是：#1" in result

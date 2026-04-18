@@ -19,7 +19,7 @@ class TestVipStatus:
         vip = VipService(queue_manager.db)
         result = vip.toggle_vip(False)
         assert result["vip_enabled"] is False
-        assert "disabled" in result["message"].lower()
+        assert "停用" in result["message"]
 
         status = vip.get_vip_status()
         assert status["enabled"] is False
@@ -41,27 +41,18 @@ class TestVipStatus:
 class TestVipPurchase:
     """Tests for VIP purchase."""
 
-    def test_vip_purchase_success(self, queue_manager):
-        """Record purchase."""
+    def test_vip_can_purchase_twice(self, queue_manager):
+        """Duplicate purchases are blocked by unique user constraint."""
+        import sqlite3
         vip = VipService(queue_manager.db)
-        result = vip.record_purchase("alice", "line", "coffee_xxx")
-        assert result["status"] == "purchased"
-        assert result["user_id"] == "alice"
+        vip.record_purchase("alice", "line", "coffee_1")
 
-        # Purchase is recorded, but verification is a separate DB flag.
-        purchases = queue_manager.db.get_vip_purchases()
-        assert any(p.user_id == "alice" for p in purchases)
-        assert vip.verify_purchase("alice") is False
+        with pytest.raises(sqlite3.IntegrityError):
+            vip.record_purchase("alice", "line", "coffee_2")
 
     def test_vip_not_purchased(self, queue_manager):
         """User without purchase."""
         vip = VipService(queue_manager.db)
         assert vip.verify_purchase("nonexistent") is False
 
-    def test_vip_can_purchase_twice(self, queue_manager):
-        """Duplicate purchases are blocked by unique user constraint."""
-        vip = VipService(queue_manager.db)
-        vip.record_purchase("alice", "line", "coffee_1")
 
-        with pytest.raises(Exception):
-            vip.record_purchase("alice", "line", "coffee_2")

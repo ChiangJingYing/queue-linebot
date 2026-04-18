@@ -84,6 +84,7 @@ queue-linebot/
 - `/join [user_id] [regular|vip]` — join for a specific user id
 - `/cancel` — cancel your queue entry
 - `/status` — show current queue counts
+- `/history` — show your queue history
 - `/remind N` — request a reminder when your position reaches `N`
 - `/coffee` — show VIP purchase link
 - `/help` — show available commands
@@ -110,6 +111,7 @@ Primary business-logic entry point.
 - `skip_next() -> dict`
 - `skip_specific(user_id) -> dict`
 - `get_status() -> dict`
+- `get_history(user_id) -> list`
 - `get_queue() -> list[QueueEntry]`
 - `set_max_capacity(n) -> dict`
 - `get_max_capacity() -> int`
@@ -127,6 +129,7 @@ Key helpers:
 - `get_regular_queue()`
 - `get_vip_queue()`
 - `get_all_queue()`
+- `get_user_history(user_id)`
 - `add_vip_purchase(...)`
 - `is_vip_purchased(user_id)`
 - `get_queue_timeout_minutes()`
@@ -163,6 +166,7 @@ VIP queue operations.
 
 ## Notes
 
-- The notifier currently returns stubbed push-message strings suitable for tests and local development.
+- `services.notifier.Notifier` now attempts real LINE push delivery when the LINE SDK and access token are available, and falls back to deterministic stub strings in local/test environments.
+- The webhook endpoint now parses LINE events, validates signatures when a channel secret is configured, and dispatches text-message commands through `bot.handler.LineBotHandler`.
 - Reminder scheduling assumes queue entries can expose `reminder_position` / `reminder_sent` attributes.
 - SQLite is the default persistence backend via `queue.db`.

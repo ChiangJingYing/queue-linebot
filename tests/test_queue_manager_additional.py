@@ -1,5 +1,7 @@
 """Additional queue manager tests for uncovered branches."""
 
+from datetime import datetime, timedelta
+
 from core.queue_manager import QueueManager
 from core.database import DatabaseManager
 
@@ -11,7 +13,7 @@ class TestQueueManagerAdditional:
         result = queue_manager.join("vip_alice", "vip")
 
         assert result["status"] == "error"
-        assert "disabled" in result["message"].lower()
+        assert "停用" in result["message"]
 
     def test_join_vip_success_after_verified_purchase(self, db_path):
         db = DatabaseManager(db_path)
@@ -31,17 +33,17 @@ class TestQueueManagerAdditional:
     def test_skip_specific_missing_user_returns_error(self, queue_manager):
         result = queue_manager.skip_specific("ghost")
         assert result["status"] == "error"
-        assert "not in queue" in result["message"].lower()
+        assert "不在隊列" in result["message"]
 
     def test_skip_specific_invalid_user_returns_error(self, queue_manager):
         result = queue_manager.skip_specific("bad user")
         assert result["status"] == "error"
-        assert "invalid" in result["message"].lower()
+        assert "格式不正確" in result["message"]
 
     def test_serve_specific_invalid_user_returns_error(self, queue_manager):
         result = queue_manager.serve_specific("bad user")
         assert result["status"] == "error"
-        assert "invalid" in result["message"].lower()
+        assert "格式不正確" in result["message"]
 
     def test_cancel_strips_whitespace_from_user_id(self, queue_manager):
         queue_manager.join("alice", "regular")
@@ -55,7 +57,7 @@ class TestQueueManagerAdditional:
         result = queue_manager.cancel("bad user")
 
         assert result["status"] == "error"
-        assert "invalid" in result["message"].lower()
+        assert "格式不正確" in result["message"]
 
     def test_get_status_formats_heads_and_vip_enabled(self, db_path):
         db = DatabaseManager(db_path)
@@ -70,9 +72,9 @@ class TestQueueManagerAdditional:
 
         status = queue_manager.get_status()
 
-        assert status["regular_head"] == "user_alice"
-        assert status["regular_next"] == "user_alice"
-        assert status["vip_next"] == "user_vip_alice"
+        assert status["regular_head"] == "alice"
+        assert status["regular_next"] == "alice"
+        assert status["vip_next"] == "vip_alice"
         assert status["vip_enabled"] is True
 
     def test_get_queue_returns_all_active_entries(self, queue_manager):
@@ -89,6 +91,72 @@ class TestQueueManagerAdditional:
         assert result == {"status": "ok", "max_capacity": 7}
         assert queue_manager.get_max_capacity() == 7
 
+    def test_get_stats_summarizes_today_and_average_wait(self, db_path):
+        db = DatabaseManager(db_path)
+        db.add_vip_purchase("vip_alice", platform="line", coffee_id="coffee_1")
+        with db._connection() as conn:
+            conn.execute("UPDATE vip_purchases SET verified = 1 WHERE user_id = ?", ("vip_alice",))
+            conn.commit()
+
+        queue_manager = QueueManager(db)
+        queue_manager.join("alice", "regular")
+        queue_manager.join("bob", "regular")
+        queue_manager.join("vip_alice", "vip")
+        queue_manager.serve_specific("alice")
+        queue_manager.skip_specific("bob")
+
+        with db._connection() as conn:
+            join_time = (datetime.now() - timedelta(minutes=12)).isoformat()
+            served_time = datetime.now().isoformat()
+            conn.execute(
+                "UPDATE queues SET join_time = ?, served_time = ? WHERE user_id = ?",
+                (join_time, served_time, "alice"),
+            )
+            conn.commit()
+
+        stats = queue_manager.get_stats()
+
+        assert stats["joined_today"] == 3
+        assert stats["served_count"] == 1
+        assert stats["skipped_count"] == 1
+        assert stats["vip"]["active_count"] == 1
+        assert stats["average_wait_minutes"] >= 11.5
+
+    def test_get_user_history_returns_latest_events(self, queue_manager):
+        queue_manager.join("alice", "regular")
+        queue_manager.cancel("alice")
+
+        history = queue_manager.get_user_history("alice")
+
+        assert len(history) >= 2
+        assert history[0]["event_type"] in {"join", "cancel"}
+        assert {item["event_type"] for item in history} >= {"join", "cancel"}
+
+    def test_export_queue_csv_contains_header_and_rows(self, queue_manager):
+        queue_manager.join("alice", "regular")
+        csv_data = queue_manager.export_queue_csv()
+
+        assert "user_id,queue_type,queue_number,join_time,cancel_time,served_time,served" in csv_data
+        assert "alice,regular,1," in csv_data
+
+    def test_clear_vip_queue_cancels_all_active_vip_entries(self, db_path):
+        db = DatabaseManager(db_path)
+        for user_id in ("vip_alice", "vip_bob"):
+            db.add_vip_purchase(user_id, platform="line", coffee_id=f"coffee_{user_id}")
+        with db._connection() as conn:
+            conn.execute("UPDATE vip_purchases SET verified = 1")
+            conn.commit()
+
+        queue_manager = QueueManager(db)
+        queue_manager.join("vip_alice", "vip")
+        queue_manager.join("vip_bob", "vip")
+
+        result = queue_manager.clear_vip_queue()
+
+        assert result["removed_count"] == 2
+        assert result["removed_users"] == ["vip_alice", "vip_bob"]
+        assert db.get_vip_queue() == []
+
     def test_serve_next_returns_failed_to_serve_when_db_returns_none(self):
         class StubDB:
             def get_all_queue(self):
@@ -104,7 +172,7 @@ class TestQueueManagerAdditional:
 
         result = queue_manager.serve_next()
 
-        assert result == {"status": "error", "message": "Failed to serve."}
+        assert result == {"status": "error", "message": "叫號失敗，請稍後再試。"}
 
     def test_skip_next_returns_failed_to_skip_when_db_returns_none(self):
         class StubDB:
@@ -121,4 +189,4 @@ class TestQueueManagerAdditional:
 
         result = queue_manager.skip_next()
 
-        assert result == {"status": "error", "message": "Failed to skip."}
+        assert result == {"status": "error", "message": "跳過失敗，請稍後再試。"}
