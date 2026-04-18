@@ -27,7 +27,9 @@ def reply_texts(result):
 
 def test_handle_join_without_args_joins_current_user(tmp_path):
     db = DatabaseManager(str(tmp_path / "handler.db"))
-    handler = LineBotHandler(queue_manager=QueueManager(db))
+    qm = QueueManager(db)
+    qm.register_name("alice", "Alice", location="A-1")
+    handler = LineBotHandler(queue_manager=qm)
 
     result = handler.handle_event(make_event("/join", user_id="alice"))
 
@@ -64,6 +66,7 @@ def test_handle_history_returns_empty_message_when_no_history(tmp_path):
 
 def test_handle_join_vip_short_form_joins_current_user(tmp_path):
     db = DatabaseManager(str(tmp_path / "handler.db"))
+    QueueManager(db).register_name("alice", "Alice", location="A-1")
     db.add_vip_purchase("alice", platform="line", coffee_id="coffee_1")
     with db._connection() as conn:
         conn.execute("UPDATE vip_purchases SET verified = 1 WHERE user_id = ?", ("alice",))
@@ -224,14 +227,25 @@ def test_reply_falls_back_to_dict_when_line_sdk_missing(tmp_path):
 def test_register_enters_pending_mode_and_next_message_sets_name(tmp_path):
     db = DatabaseManager(str(tmp_path / "register.db"))
     qm = QueueManager(db)
-    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+        location_options={"A": ["1", "2"], "B": ["1"]},
+    )
 
     reply = handler.handle_event(make_event("/register", user_id="alice", reply_token="r1"))
-    assert "下一則訊息會直接作為名稱" in reply[0]["text"]
+    assert "請輸入你要註冊的名稱" in reply[0]["text"]
 
     reply2 = handler.handle_event(make_event("王小明", user_id="alice", reply_token="r2"))
-    assert reply2[0]["text"] == "✅ 已更新名稱：王小明"
-    assert db.get_display_name("alice") == "王小明"
+    assert "請選擇位置第一段" in reply2[0]["text"]
+
+    reply3 = handler.handle_event(make_event("A", user_id="alice", reply_token="r3"))
+    assert "請選擇位置第二段" in reply3[0]["text"]
+
+    reply4 = handler.handle_event(make_event("1", user_id="alice", reply_token="r4"))
+    assert reply4[0]["text"] == "✅ 已更新名稱：王小明\n位置：A-1"
+    assert db.get_display_name("alice") == "王小明（A-1）"
 
 
 def test_help_is_admin_only(tmp_path):

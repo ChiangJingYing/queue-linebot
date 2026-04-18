@@ -28,6 +28,7 @@ CHANNEL_ACCESS_TOKEN = line_bot_config.get("channel_access_token", "")
 ADMIN_IDS: list[str] = line_bot_config.get("admin_ids", ["admin_xxxxx", "another_admin"])
 ADMIN_RICH_MENU_ID = line_bot_config.get("admin_rich_menu_id", "")
 USER_RICH_MENU_ID = line_bot_config.get("user_rich_menu_id", "")
+LOCATION_OPTIONS = config.get("registration", {}).get("location_options", {"A": ["1", "2"], "B": ["1", "2"]})
 
 
 db_manager: DatabaseManager | None = None
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         admin_ids=ADMIN_IDS,
         admin_rich_menu_id=ADMIN_RICH_MENU_ID,
         user_rich_menu_id=USER_RICH_MENU_ID,
+        location_options=LOCATION_OPTIONS,
     )
 
     scheduler = BackgroundScheduler()

@@ -76,6 +76,7 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS user_profiles (
                     user_id TEXT PRIMARY KEY,
                     display_name TEXT NOT NULL,
+                    location TEXT NOT NULL DEFAULT '',
                     verified INTEGER NOT NULL DEFAULT 0,
                     role TEXT NOT NULL DEFAULT 'user',
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -96,6 +97,7 @@ class DatabaseManager:
             conn.commit()
 
         self._migrate_queues_remove_user_unique()
+        self._migrate_user_profiles_add_location()
 
     def _migrate_queues_remove_user_unique(self) -> None:
         """Remove legacy UNIQUE constraint on queues.user_id so users can rejoin later."""
@@ -128,6 +130,14 @@ class DatabaseManager:
             )
             conn.execute("DROP TABLE queues_legacy")
             conn.commit()
+
+    def _migrate_user_profiles_add_location(self) -> None:
+        """Ensure user_profiles has a location column."""
+        with self._connection() as conn:
+            columns = [row[1] for row in conn.execute("PRAGMA table_info(user_profiles)").fetchall()]
+            if "location" not in columns:
+                conn.execute("ALTER TABLE user_profiles ADD COLUMN location TEXT NOT NULL DEFAULT ''")
+                conn.commit()
 
     def get_config(self, key: str) -> Optional[str]:
         """Get a config value by key."""
@@ -305,20 +315,22 @@ class DatabaseManager:
         self,
         user_id: str,
         display_name: str,
+        location: str = "",
         verified: bool = False,
         role: str = "user",
     ) -> UserProfile:
         """Create or update a user profile."""
         with self._connection() as conn:
             conn.execute(
-                "INSERT INTO user_profiles (user_id, display_name, verified, role, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) "
+                "INSERT INTO user_profiles (user_id, display_name, location, verified, role, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) "
                 "ON CONFLICT(user_id) DO UPDATE SET "
                 "display_name = excluded.display_name, "
+                "location = CASE WHEN excluded.location != '' THEN excluded.location ELSE user_profiles.location END, "
                 "verified = CASE WHEN excluded.verified = 1 THEN 1 ELSE user_profiles.verified END, "
                 "role = CASE WHEN excluded.role != '' THEN excluded.role ELSE user_profiles.role END, "
                 "updated_at = CURRENT_TIMESTAMP",
-                (user_id, display_name, 1 if verified else 0, role),
+                (user_id, display_name, location, 1 if verified else 0, role),
             )
             conn.commit()
         profile = self.get_user_profile(user_id)
@@ -347,7 +359,11 @@ class DatabaseManager:
     def get_display_name(self, user_id: str) -> str:
         """Resolve display name for status/admin output."""
         profile = self.get_user_profile(user_id)
-        return profile.display_name if profile and profile.display_name else user_id
+        if profile and profile.display_name:
+            if profile.location:
+                return f"{profile.display_name}（{profile.location}）"
+            return profile.display_name
+        return user_id
 
     def get_verified_profiles(self) -> list[UserProfile]:
         """List verified user profiles."""

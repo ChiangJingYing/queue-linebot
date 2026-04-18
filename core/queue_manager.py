@@ -265,8 +265,8 @@ class QueueManager:
             "cleared_profiles": cleared_profiles,
         }
 
-    def register_name(self, user_id: str, display_name: str) -> dict:
-        """Register or update the user's display name."""
+    def register_name(self, user_id: str, display_name: str, location: str = "") -> dict:
+        """Register or update the user's display name and optional location."""
         valid_id = validate_user_id(user_id)
         if valid_id is None:
             return {"status": "error", "message": "使用者 ID 格式不正確。"}
@@ -275,11 +275,12 @@ class QueueManager:
         if not normalized_name:
             return {"status": "error", "message": "名稱不可為空白。"}
 
-        profile = self.db.upsert_user_profile(valid_id, normalized_name)
+        profile = self.db.upsert_user_profile(valid_id, normalized_name, location=location)
         return {
             "status": "success",
             "user_id": profile.user_id,
             "display_name": profile.display_name,
+            "location": profile.location,
             "verified": profile.verified,
         }
 

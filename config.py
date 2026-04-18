@@ -60,6 +60,12 @@ def get_defaults() -> dict:
             "admin_rich_menu_id": os.getenv("LINE_ADMIN_RICH_MENU_ID", ""),
             "user_rich_menu_id": os.getenv("LINE_USER_RICH_MENU_ID", ""),
         },
+        "registration": {
+            "location_options": {
+                "A": ["1", "2", "3"],
+                "B": ["1", "2", "3"],
+            },
+        },
         "logging": {
             "level": "INFO",
             "log_file": "logs/queue_events.log",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Optional
 
 
 @dataclass
@@ -65,6 +66,7 @@ class UserProfile:
 
     user_id: str = ""
     display_name: str = ""
+    location: str = ""
     verified: bool = False
     role: str = "user"
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())

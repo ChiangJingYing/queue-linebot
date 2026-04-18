@@ -22,6 +22,7 @@ class LineBotHandler:
         admin_ids: list[str] | None = None,
         admin_rich_menu_id: str = "",
         user_rich_menu_id: str = "",
+        location_options: dict[str, list[str]] | None = None,
     ) -> None:
         self.channel_secret = channel_secret
         self.channel_access_token = channel_access_token
@@ -34,7 +35,8 @@ class LineBotHandler:
         self.admin_ids = admin_ids or []
         self.admin_rich_menu_id = admin_rich_menu_id
         self.user_rich_menu_id = user_rich_menu_id
-        self.pending_actions: dict[str, str] = {}
+        self.location_options = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
+        self.pending_actions: dict[str, dict] = {}
 
     def handle_event(self, event) -> list:
         """Handle a LINE event. Returns list of reply actions."""
@@ -53,9 +55,13 @@ class LineBotHandler:
 
         command, args = validate_command(text)
         pending_action = self.pending_actions.get(user_id)
-        if pending_action == "register" and not text.strip().startswith("/"):
-            self.pending_actions.pop(user_id, None)
-            return self._complete_register(user_id, text.strip(), reply_token)
+        if pending_action and not text.strip().startswith("/"):
+            if pending_action.get("type") == "register_name":
+                return self._capture_register_name(user_id, text.strip(), reply_token)
+            if pending_action.get("type") == "register_location_group":
+                return self._capture_register_location_group(user_id, text.strip(), reply_token)
+            if pending_action.get("type") == "register_location_item":
+                return self._capture_register_location_item(user_id, text.strip(), reply_token)
 
         admin_history_mode = False
         if command == "/history" and args and self._is_admin(user_id):
@@ -96,6 +102,10 @@ class LineBotHandler:
         else:
             target_id = args[0]
             queue_type = args[1] if len(args) > 1 else "regular"
+
+        profile = self.queue_manager.db.get_user_profile(target_id)
+        if profile is None or not profile.display_name or not profile.location:
+            return self._reply(reply_token, "❌ 錯誤：請先完成註冊（名稱與位置）後再加入隊列。")
 
         result = self.queue_manager.join(target_id, queue_type)
 
@@ -227,16 +237,60 @@ class LineBotHandler:
         if args:
             return self._complete_register(user_id, " ".join(args), reply_token)
 
-        self.pending_actions[user_id] = "register"
-        return self._reply(reply_token, "請輸入你要註冊的名稱，下一則訊息會直接作為名稱。")
+        self.pending_actions[user_id] = {"type": "register_name"}
+        return self._reply(reply_token, "請輸入你要註冊的名稱。")
 
-    def _complete_register(self, user_id: str, display_name: str, reply_token: str) -> list:
+    def _capture_register_name(self, user_id: str, display_name: str, reply_token: str) -> list:
+        """Capture register display name and ask for location group."""
+        normalized_name = display_name.strip()
+        if not normalized_name:
+            return self._reply(reply_token, "名稱不可為空白，請重新輸入名稱。")
+
+        self.pending_actions[user_id] = {
+            "type": "register_location_group",
+            "display_name": normalized_name,
+        }
+        groups = "、".join(self.location_options.keys())
+        return self._reply(reply_token, f"請選擇位置第一段：{groups}")
+
+    def _capture_register_location_group(self, user_id: str, group: str, reply_token: str) -> list:
+        """Capture location group and ask for location item."""
+        state = self.pending_actions.get(user_id, {})
+        normalized_group = group.strip().upper()
+        if normalized_group not in self.location_options:
+            groups = "、".join(self.location_options.keys())
+            return self._reply(reply_token, f"無效的位置第一段，請從以下選擇：{groups}")
+
+        self.pending_actions[user_id] = {
+            "type": "register_location_item",
+            "display_name": state.get("display_name", ""),
+            "group": normalized_group,
+        }
+        options = "、".join(self.location_options[normalized_group])
+        return self._reply(reply_token, f"請選擇位置第二段（{normalized_group}-?）：{options}")
+
+    def _capture_register_location_item(self, user_id: str, item: str, reply_token: str) -> list:
+        """Capture location item and complete registration."""
+        state = self.pending_actions.get(user_id, {})
+        group = state.get("group", "")
+        display_name = state.get("display_name", "")
+        normalized_item = item.strip().upper()
+        options = self.location_options.get(group, [])
+        if normalized_item not in options:
+            choices = "、".join(options)
+            return self._reply(reply_token, f"無效的位置第二段，請從以下選擇：{choices}")
+
+        self.pending_actions.pop(user_id, None)
+        location = f"{group}-{normalized_item}"
+        return self._complete_register(user_id, display_name, location, reply_token)
+
+    def _complete_register(self, user_id: str, display_name: str, location: str, reply_token: str) -> list:
         """Complete pending register action."""
-        result = self.queue_manager.register_name(user_id, display_name)
+        result = self.queue_manager.register_name(user_id, display_name, location=location)
         if result["status"] != "success":
             return self._reply(reply_token, f"❌ 錯誤：{result['message']}")
 
-        return self._reply(reply_token, f"✅ 已更新名稱：{result['display_name']}")
+        return self._reply(reply_token, f"✅ 已更新名稱：{result['display_name']}\n位置：{result['location']}")
 
 
     def _handle_admin(self, user_id: str, command: str, args: list,
@@ -334,7 +388,7 @@ class LineBotHandler:
             name = self.queue_manager.db.get_display_name(entry.user_id)
             verified = self.queue_manager.db.get_user_profile(entry.user_id)
             badge = "✅" if verified and verified.verified else "🕓"
-            label = f"{name}（{entry.user_id}） {badge}" if name != entry.user_id else f"{entry.user_id} {badge}"
+            label = f"{name} {badge}"
             if entry.queue_type == "vip":
                 vip_idx += 1
                 vip_lines.append(f"#{vip_idx} {label} — {joined}")

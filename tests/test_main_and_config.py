@@ -62,6 +62,7 @@ def test_load_config_merges_partial_yaml_with_defaults(tmp_path):
 
 def test_webhook_processes_join_event_and_returns_counts(tmp_path):
     qm = _setup_runtime(tmp_path)
+    qm.register_name("alice", "Alice", location="A-1")
     client = TestClient(main.app)
 
     response = client.post(
