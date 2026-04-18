@@ -10,7 +10,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import List, Optional
 
-from .models import QueueEntry, VipPurchase, QueueEvent
+from .models import QueueEntry, VipPurchase, QueueEvent, UserProfile
 
 
 class DatabaseManager:
@@ -69,6 +69,16 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS server_config (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_profiles (
+                    user_id TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    verified INTEGER NOT NULL DEFAULT 0,
+                    role TEXT NOT NULL DEFAULT 'user',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -281,6 +291,71 @@ class DatabaseManager:
     def get_all_queue(self) -> list:
         """Get all active queue entries (regular + vip)."""
         return self.get_regular_queue() + self.get_vip_queue()
+
+    def clear_all_queue(self) -> list[QueueEntry]:
+        """Cancel all active queue entries and return removed items."""
+        removed = []
+        for entry in list(self.get_all_queue()):
+            cancelled = self.cancel_queue(entry.user_id)
+            if cancelled is not None:
+                removed.append(cancelled)
+        return removed
+
+    def upsert_user_profile(
+        self,
+        user_id: str,
+        display_name: str,
+        verified: bool = False,
+        role: str = "user",
+    ) -> UserProfile:
+        """Create or update a user profile."""
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO user_profiles (user_id, display_name, verified, role, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(user_id) DO UPDATE SET "
+                "display_name = excluded.display_name, "
+                "verified = CASE WHEN excluded.verified = 1 THEN 1 ELSE user_profiles.verified END, "
+                "role = CASE WHEN excluded.role != '' THEN excluded.role ELSE user_profiles.role END, "
+                "updated_at = CURRENT_TIMESTAMP",
+                (user_id, display_name, 1 if verified else 0, role),
+            )
+            conn.commit()
+        profile = self.get_user_profile(user_id)
+        assert profile is not None
+        return profile
+
+    def get_user_profile(self, user_id: str) -> Optional[UserProfile]:
+        """Get user profile by LINE user ID."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM user_profiles WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            return UserProfile(**dict(row)) if row else None
+
+    def verify_user_profile(self, user_id: str, verified: bool = True) -> Optional[UserProfile]:
+        """Mark a user profile as verified/unverified."""
+        with self._connection() as conn:
+            conn.execute(
+                "UPDATE user_profiles SET verified = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+                (1 if verified else 0, user_id),
+            )
+            conn.commit()
+        return self.get_user_profile(user_id)
+
+    def get_display_name(self, user_id: str) -> str:
+        """Resolve display name for status/admin output."""
+        profile = self.get_user_profile(user_id)
+        return profile.display_name if profile and profile.display_name else user_id
+
+    def get_verified_profiles(self) -> list[UserProfile]:
+        """List verified user profiles."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM user_profiles WHERE verified = 1 ORDER BY updated_at DESC, user_id ASC"
+            ).fetchall()
+            return [UserProfile(**dict(r)) for r in rows]
 
     def get_user_history(self, user_id: str) -> list:
         """Get queue history for a user, newest first."""

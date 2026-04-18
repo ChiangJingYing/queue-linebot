@@ -259,6 +259,54 @@ class QueueManager:
             "removed_users": removed_users,
         }
 
+    def clear_all_queue(self) -> dict:
+        """Clear all active queue entries regardless of queue type."""
+        removed_entries = self.db.clear_all_queue()
+        removed_users = [entry.user_id for entry in removed_entries]
+        for entry in removed_entries:
+            self.db.log_event("clear", entry.user_id, entry.queue_type, "管理員清空全部隊列")
+        return {
+            "status": "cleared",
+            "removed_count": len(removed_users),
+            "removed_users": removed_users,
+        }
+
+    def register_name(self, user_id: str, display_name: str) -> dict:
+        """Register or update the user's display name."""
+        valid_id = validate_user_id(user_id)
+        if valid_id is None:
+            return {"status": "error", "message": "使用者 ID 格式不正確。"}
+
+        normalized_name = display_name.strip()
+        if not normalized_name:
+            return {"status": "error", "message": "名稱不可為空白。"}
+
+        profile = self.db.upsert_user_profile(valid_id, normalized_name)
+        return {
+            "status": "success",
+            "user_id": profile.user_id,
+            "display_name": profile.display_name,
+            "verified": profile.verified,
+        }
+
+    def verify_user(self, user_id: str, verified: bool = True) -> dict:
+        """Verify or unverify a user's identity profile."""
+        valid_id = validate_user_id(user_id)
+        if valid_id is None:
+            return {"status": "error", "message": "使用者 ID 格式不正確。"}
+
+        profile = self.db.get_user_profile(valid_id)
+        if profile is None:
+            return {"status": "error", "message": "尚未找到該使用者的名稱註冊資料。"}
+
+        updated = self.db.verify_user_profile(valid_id, verified)
+        return {
+            "status": "success",
+            "user_id": valid_id,
+            "display_name": updated.display_name if updated else profile.display_name,
+            "verified": bool(updated.verified) if updated else verified,
+        }
+
     def get_user_history(self, user_id: str, limit: int = 20) -> list[dict]:
         """Get event history for a specific user."""
         valid_id = validate_user_id(user_id)

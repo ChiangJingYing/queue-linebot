@@ -19,6 +19,8 @@ class QueueEntry:
     served_time: str | None = None
     served: bool = False
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    reminder_position: int | None = None
+    reminder_sent: bool = False
 
 
 @dataclass
@@ -55,3 +57,16 @@ class QueueStatus:
     vip_count: int = 0
     vip_next: str = ""
     vip_enabled: bool = True
+
+
+@dataclass
+class UserProfile:
+    """Registered LINE user profile."""
+
+    user_id: str = ""
+    display_name: str = ""
+    verified: bool = False
+    role: str = "user"
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+

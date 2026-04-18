@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class Notifier:
     """Sends notifications via LINE Push API."""
@@ -17,22 +21,53 @@ class Notifier:
     def push(self, user_id: str, message: str) -> str:
         """Send a LINE push message."""
         if not self.channel_access_token:
+            logger.info("LINE access token 缺失，無法實際推送給 %s", user_id)
             return f"已推送給 {user_id}：{message}"
 
         try:
-            from linebot.v3.messaging import ApiClient, Configuration
-            from linebot.v3.types import TextSendMessage
-
-            config = Configuration(access_token=self.channel_access_token)
-            with ApiClient(config) as api:
-                api.push_message(
-                    user_id,
-                    [TextSendMessage(text=message)],
-                )
-        except Exception:
+            from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, PushMessageRequest, TextMessage
+        except Exception as exc:
+            logger.warning("LINE SDK 無法使用，改用 fallback 回傳：%s", exc)
             return f"已推送給 {user_id}：{message}"
 
+        try:
+            config = Configuration(access_token=self.channel_access_token)
+            with ApiClient(config) as api_client:
+                MessagingApi(api_client).push_message(
+                    PushMessageRequest(
+                        to=user_id,
+                        messages=[TextMessage(text=message)],
+                    )
+                )
+        except Exception as exc:
+            logger.exception("LINE 推播失敗 user_id=%s", user_id)
+            return f"推播失敗給 {user_id}：{exc}"
+
         return f"已推送給 {user_id}：{message}"
+
+    def link_rich_menu(self, user_id: str, rich_menu_id: str) -> str:
+        """Link a specific rich menu to a user."""
+        if not rich_menu_id:
+            return "未設定 Rich Menu ID，略過同步。"
+        if not self.channel_access_token:
+            logger.info("LINE access token 缺失，無法綁定 Rich Menu 給 %s", user_id)
+            return f"已為 {user_id} 指定 Rich Menu：{rich_menu_id}"
+
+        try:
+            from linebot.v3.messaging import ApiClient, Configuration, MessagingApi
+        except Exception as exc:
+            logger.warning("LINE SDK 無法使用，略過 Rich Menu 綁定：%s", exc)
+            return f"已為 {user_id} 指定 Rich Menu：{rich_menu_id}"
+
+        try:
+            config = Configuration(access_token=self.channel_access_token)
+            with ApiClient(config) as api_client:
+                MessagingApi(api_client).link_rich_menu_id_to_user(user_id, rich_menu_id)
+        except Exception as exc:
+            logger.exception("LINE Rich Menu 綁定失敗 user_id=%s rich_menu_id=%s", user_id, rich_menu_id)
+            return f"Rich Menu 綁定失敗：{exc}"
+
+        return f"已為 {user_id} 指定 Rich Menu：{rich_menu_id}"
 
     def notify_user(self, user_id: str, message: str) -> str:
         """Send push notification to user."""

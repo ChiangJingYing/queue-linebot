@@ -20,6 +20,8 @@ class LineBotHandler:
         queue_manager: Optional[QueueManager] = None,
         vip_service: Optional[VipService] = None,
         admin_ids: list[str] | None = None,
+        admin_rich_menu_id: str = "",
+        user_rich_menu_id: str = "",
     ) -> None:
         self.channel_secret = channel_secret
         self.channel_access_token = channel_access_token
@@ -30,9 +32,14 @@ class LineBotHandler:
             channel_access_token=self.channel_access_token,
         )
         self.admin_ids = admin_ids or []
+        self.admin_rich_menu_id = admin_rich_menu_id
+        self.user_rich_menu_id = user_rich_menu_id
 
     def handle_event(self, event) -> list:
         """Handle a LINE event. Returns list of reply actions."""
+        user_id = getattr(getattr(event, "source", None), "userId", "")
+        if user_id:
+            self._sync_rich_menu(user_id)
         if hasattr(event, "message") and getattr(event.message, "type", None) == "text":
             return self._handle_message(event)
         return []
@@ -61,6 +68,8 @@ class LineBotHandler:
             return self._handle_remind(user_id, args, reply_token)
         elif command == "/help":
             return self._handle_help(reply_token)
+        elif command == "/register":
+            return self._handle_register(user_id, args, reply_token)
         elif command == "/coffee":
             return self._handle_coffee(user_id, reply_token)
         elif command == "done":
@@ -175,6 +184,7 @@ class LineBotHandler:
         msg = (
             "📋 隊列系統指令\n\n"
             "**一般使用者：**\n"
+            "/register [名稱] - 註冊或更新顯示名稱\n"
             "/join - 以自己身分加入一般隊列\n"
             "/join vip - 以自己身分加入 VIP 隊列\n"
             "/join [id] [queue_type] - 指定使用者加入隊列\n"
@@ -191,6 +201,8 @@ class LineBotHandler:
             "/admin/skip [id] - 跳過指定使用者\n"
             "/admin/status - 完整狀態\n"
             "/admin/stats - 統計面板\n"
+            "/admin/clear - 清空全部隊列\n"
+            "/admin/verify [id] [on/off] - 設定身分驗證\n"
             "/admin/vip toggle [on/off] - 開關 VIP 隊列\n"
             "/admin/vip clear - 清空 VIP 隊列\n"
             "/admin/history [id] - 查詢使用者歷史\n"
@@ -198,6 +210,21 @@ class LineBotHandler:
             "/admin/config max [N] - 設定最大容量"
         )
         return self._reply(reply_token, msg)
+
+    def _handle_register(self, user_id: str, args: list, reply_token: str) -> list:
+        """Handle /register [display_name]."""
+        if not args:
+            return self._reply(reply_token, "用法：/register [名稱]")
+
+        result = self.queue_manager.register_name(user_id, " ".join(args))
+        if result["status"] != "success":
+            return self._reply(reply_token, f"❌ 錯誤：{result['message']}")
+
+        return self._reply(
+            reply_token,
+            f"✅ 已更新名稱：{result['display_name']}\n身分驗證：{'已通過' if result['verified'] else '待驗證'}",
+        )
+
 
     def _handle_admin(self, user_id: str, command: str, args: list,
                       reply_token: str) -> list:
@@ -221,6 +248,10 @@ class LineBotHandler:
             return self._handle_admin_history(args, reply_token)
         elif command == "/admin/export":
             return self._handle_export(reply_token)
+        elif command == "/admin/clear":
+            return self._handle_admin_clear(reply_token)
+        elif command == "/admin/verify":
+            return self._handle_admin_verify(args, reply_token)
         elif command == "/admin/vip":
             if len(args) >= 1 and args[0] == "status":
                 return self._handle_vip_status(reply_token)
@@ -285,12 +316,16 @@ class LineBotHandler:
         vip_idx = 0
         for entry in entries:
             joined = str(entry.join_time).split("T")[1][:5] if entry.join_time and "T" in str(entry.join_time) else str(entry.join_time)
+            name = self.queue_manager.db.get_display_name(entry.user_id)
+            verified = self.queue_manager.db.get_user_profile(entry.user_id)
+            badge = "✅" if verified and verified.verified else "🕓"
+            label = f"{name}（{entry.user_id}） {badge}" if name != entry.user_id else f"{entry.user_id} {badge}"
             if entry.queue_type == "vip":
                 vip_idx += 1
-                vip_lines.append(f"#{vip_idx} {entry.user_id} — {joined}")
+                vip_lines.append(f"#{vip_idx} {label} — {joined}")
             else:
                 regular_idx += 1
-                regular_lines.append(f"#{regular_idx} {entry.user_id} — {joined}")
+                regular_lines.append(f"#{regular_idx} {label} — {joined}")
 
         regular_text = "\n".join(regular_lines) if regular_lines else "（空）"
         vip_text = "\n".join(vip_lines) if vip_lines else "（空）"
@@ -342,6 +377,29 @@ class LineBotHandler:
         """Handle /admin/vip clear."""
         result = self.queue_manager.clear_vip_queue()
         return self._reply(reply_token, f"✅ 已清空 VIP 隊列，移除 {result['removed_count']} 筆")
+
+    def _handle_admin_clear(self, reply_token: str) -> list:
+        """Handle /admin/clear."""
+        result = self.queue_manager.clear_all_queue()
+        return self._reply(reply_token, f"✅ 已清空全部隊列，移除 {result['removed_count']} 筆")
+
+    def _handle_admin_verify(self, args: list, reply_token: str) -> list:
+        """Handle /admin/verify [user_id] [on/off]."""
+        if len(args) < 2:
+            return self._reply(reply_token, "用法：/admin/verify [ID] [on/off]")
+
+        value = args[1].lower()
+        if value not in {"on", "off"}:
+            return self._reply(reply_token, "用法：/admin/verify [ID] [on/off]")
+
+        result = self.queue_manager.verify_user(args[0], verified=(value == "on"))
+        if result["status"] != "success":
+            return self._reply(reply_token, f"❌ 錯誤：{result['message']}")
+
+        return self._reply(
+            reply_token,
+            f"✅ 已更新 {result['display_name']}（{result['user_id']}）的身分驗證：{'通過' if result['verified'] else '未通過'}",
+        )
 
     def _handle_admin_history(self, args: list, reply_token: str) -> list:
         """Handle /admin/history [ID]."""
@@ -401,3 +459,10 @@ class LineBotHandler:
     def _reply(self, reply_token: str, message: str) -> list:
         """Create reply action."""
         return [{"replyToken": reply_token, "text": message}]
+
+    def _sync_rich_menu(self, user_id: str) -> None:
+        """Link different rich menus for admin vs normal users."""
+        rich_menu_id = self.admin_rich_menu_id if self._is_admin(user_id) else self.user_rich_menu_id
+        if rich_menu_id:
+            self.notifier.link_rich_menu(user_id, rich_menu_id)
+
