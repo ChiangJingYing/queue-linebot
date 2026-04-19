@@ -511,7 +511,7 @@ def dashboard() -> str:
         <meta charset=\"utf-8\" />
         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
         <title>位置看板</title>
-        <style>
+<style>
           body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#020617; color:#e2e8f0; padding:24px; }}
           .legend {{ display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap; }}
           .legend span {{ display:flex; align-items:center; gap:8px; }}
@@ -523,8 +523,7 @@ def dashboard() -> str:
           .blink {{ animation: blink-green 1.2s ease-in-out infinite; }}
           @keyframes blink-green {{ 0%, 100% {{ box-shadow:0 0 14px #22c55e; opacity:1; }} 50% {{ box-shadow:0 0 4px #22c55e; opacity:.35; }} }}
           .tag {{ background:rgba(15,23,42,.8); padding:6px 8px; border-radius:10px; font-size:12px; min-width:72px; }}
-        </style>
-      </head>
+        </style>      </head>
       <body>
         <h1>位置看板</h1>
         <div class=\"legend\">
@@ -545,7 +544,7 @@ def dashboard() -> str:
               const cell = payload.grid?.[row]?.[col];
               if (!cell) return;
               const dot = marker.querySelector('.dot');
-              dot.className = `dot ${{cell.status}}$${{cell.recently_served ? ' blink' : ''}}`;
+              dot.className = `dot ${{cell.status}}${{cell.recently_served ? ' blink' : ''}}`;
               marker.querySelector('.tag').innerHTML = `${{location}}<br>${{cell.name || cell.statusLabel}}`;
             }});
           }}

@@ -69,8 +69,8 @@ def get_defaults() -> dict:
         },
         "registration": {
             "location_options": {
-                "A": ["1", "2", "3"],
-                "B": ["1", "2", "3"],
+                "1": ["1", "2", "3"],
+                "2": ["1", "2", "3", "4"],
             },
         },
         "logging": {
