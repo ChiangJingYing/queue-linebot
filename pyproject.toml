@@ -1,0 +1,73 @@
+[project]
+name = "queue-linebot"
+version = "2.0.0"
+description = "Queue System - LINE Bot"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "pydantic>=2.9.0",
+    "line-bot-sdk>=3.14.0",
+    "apscheduler>=3.10.4",
+    "pyyaml>=6.0.2",
+    "pytest>=8.3.3",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-factoryboy>=2.8.1",
+    "factory-boy>=3.3.0",
+    "httpx>=0.28.0",
+    "factory_boy>=3.3.0",
+    "python-multipart>=0.0.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.3",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-factoryboy>=2.8.1",
+    "factory-boy>=3.3.0",
+    "httpx>=0.28.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=core",
+    "--cov=services",
+    "--cov-report=term-missing",
+    "--maxfail=5",
+    "--durations=10",
+]
+markers = [
+    "slow: slow tests",
+    "integration: integration tests",
+    "e2e: end-to-end tests",
+    "unit: unit tests",
+    "performance: performance tests",
+]
+
+[tool.coverage.run]
+source = ["core", "services"]
+branch = true
+omit = [
+    "tests/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "@abc.abstractmethod",
+]
+show_missing = true
+precision = 2
+fail_under = 75

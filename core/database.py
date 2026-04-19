@@ -86,6 +86,7 @@ class DatabaseManager:
             defaults = [
                 ("queue_max_capacity", "50"),
                 ("queue_timeout_minutes", "30"),
+                ("queue_enabled", "true"),
                 ("vip_enabled", "true"),
                 ("coffee_price", "60"),
             ]
@@ -166,6 +167,16 @@ class DatabaseManager:
         """Get timeout minutes from config."""
         val = self.get_config("queue_timeout_minutes")
         return int(val) if val else 30
+
+    def is_queue_enabled(self) -> bool:
+        """Check if queue joining is enabled."""
+        val = self.get_config("queue_enabled")
+        return val.lower() == "true" if val else True
+
+    def is_queue_enabled(self) -> bool:
+        """Check if queue joining is enabled."""
+        val = self.get_config("queue_enabled")
+        return val.lower() == "true" if val else True
 
     def is_vip_enabled(self) -> bool:
         """Check if VIP queue is enabled."""

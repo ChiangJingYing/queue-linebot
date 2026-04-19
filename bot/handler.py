@@ -230,6 +230,8 @@ class LineBotHandler:
             "/admin/verify [id] [on/off] - 設定身分驗證\n"
             "/admin/vip toggle [on/off] - 開關 VIP 隊列\n"
             "/admin/vip clear - 清空 VIP 隊列\n"
+            "/admin/join toggle [on/off] - 開關總隊列\n"
+            "/admin/join status - 查看總隊列狀態\n"
             "/admin/history [id] - 查詢使用者歷史\n"
             "/admin/export - 匯出 CSV 預覽\n"
             "/admin/config max [N] - 設定最大容量"
@@ -349,6 +351,8 @@ class LineBotHandler:
                 return self._handle_vip_clear(reply_token)
         elif command == "/admin/config":
             return self._admin_config(args, reply_token)
+        elif command == "/admin/join":
+            return self._admin_join(args, reply_token)
 
         return self._reply(reply_token, "未知管理員指令。")
 
@@ -554,6 +558,32 @@ class LineBotHandler:
                 return self._reply(reply_token, "數字格式錯誤。")
 
         return self._reply(reply_token, "未知的設定鍵值。")
+
+    def _admin_join(self, args: list, reply_token: str) -> list:
+        """Admin: /admin/join toggle [on/off] / /admin/join status"""
+        if not args:
+            return self._reply(reply_token, "用法：/admin/join toggle [on/off] 或 /admin/join status")
+
+        sub_cmd = args[0].lower()
+        if sub_cmd == "toggle":
+            if len(args) < 2:
+                return self._reply(reply_token, "用法：/admin/join toggle [on/off]")
+            value = args[1].lower()
+            if value not in {"on", "off"}:
+                return self._reply(reply_token, "用法：/admin/join toggle [on/off]")
+            enabled = value == "on"
+            self.queue_manager.db.set_config("queue_enabled", "true" if enabled else "false")
+            status = "開啟" if enabled else "關閉"
+            return self._reply(reply_token, f"✅ 隊列已{status}")
+
+        if sub_cmd == "status":
+            enabled = self.queue_manager.db.is_queue_enabled()
+            return self._reply(
+                reply_token,
+                f"📋 隊列狀態：{'已開啟' if enabled else '已關閉'}"
+            )
+
+        return self._reply(reply_token, "用法：/admin/join toggle [on/off] 或 /admin/join status")
 
     def _reply(self, reply_token: str, message: str, quick_options: list | None = None) -> list:
         """Create reply action."""

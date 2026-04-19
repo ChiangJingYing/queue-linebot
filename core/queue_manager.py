@@ -34,6 +34,9 @@ class QueueManager:
                 "message": f"你已在排隊中（號碼 #{existing.queue_number}），請勿重複加入。",
             }
 
+        if not self.db.is_queue_enabled():
+            return {"status": "error", "message": "目前隊列已關閉，請稍後再試。"}
+
         if queue_type == "vip":
             if not self.db.is_vip_enabled():
                 return {"status": "error", "message": "VIP 隊列目前已停用。"}
@@ -348,6 +351,15 @@ class QueueManager:
         return self.db.export_queue_csv(limit=limit)
 
     # -- config --
+
+    def set_queue_enabled(self, enabled: bool) -> dict:
+        """Enable or disable queue joining."""
+        self.db.set_config("queue_enabled", "true" if enabled else "false")
+        return {"status": "ok", "queue_enabled": enabled}
+
+    def get_queue_enabled(self) -> bool:
+        """Check if queue joining is enabled."""
+        return self.db.is_queue_enabled()
 
     def set_max_capacity(self, n: int) -> dict:
         """Set max queue capacity."""
