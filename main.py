@@ -466,8 +466,10 @@ def dashboard_config_page() -> str:
             if (selectedLocation) locationSelect.value = selectedLocation;
           }}
           function renderEditor() {{
-            stage.style.backgroundImage = layout.imageUrl ? `url(${{layout.imageUrl}})` : 'none';
-            stage.innerHTML = '';
+            stageImage.src = layout.imageUrl || "";
+            stageImage.style.display = layout.imageUrl ? 'block' : 'none';
+            stageOverlay.innerHTML = '';
+            if (layout.imageUrl && !stageImage.complete) return;
             markerList.innerHTML = '';
             unplacedList.innerHTML = '';
             refreshPlacementQueue();
@@ -476,14 +478,15 @@ def dashboard_config_page() -> str:
               item.textContent = location;
               unplacedList.appendChild(item);
             }}
+            const imageRect = getImagePlacementRect();
             for (const marker of layout.markers || []) {{
               const el = document.createElement('div');
               el.className = 'marker-editor';
               if (selectedLocations.has(marker.location)) el.classList.add('selected-marker');
               el.draggable = true;
               el.dataset.location = marker.location;
-              el.style.left = `${{marker.x}}%`;
-              el.style.top = `${{marker.y}}%`;
+              el.style.left = `calc(${{marker.x}}% + ${{imageRect.left}}px)`;
+              el.style.top = `calc(${{marker.y}}% + ${{imageRect.top}}px)`;
               el.textContent = marker.label || marker.location;
               el.addEventListener('click', (event) => {{
                 event.stopPropagation();
@@ -500,7 +503,7 @@ def dashboard_config_page() -> str:
               markerList.appendChild(item);
             }}
           }}
-          function updateMarkerPosition(location, x, y) {{
+                    function updateMarkerPosition(location, x, y) {{
             const marker = (layout.markers || []).find((item) => item.location === location);
             if (!marker) return;
             marker.x = Math.max(0, Math.min(100, x));
@@ -593,6 +596,8 @@ def dashboard_config_page() -> str:
             const response = await fetch('/dashboard/layout/image', {{ method: 'POST', body: formData }});
             const payload = await response.json();
             layout.imageUrl = payload.imageUrl;
+            stageImage.src = payload.imageUrl;
+            stageImage.style.display = payload.imageUrl ? 'block' : 'none';
             setDirty(true);
             showToast('圖片上傳成功');
             renderEditor();
@@ -643,14 +648,15 @@ def dashboard() -> str:
         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
         <title>位置看板</title>
 <style>
-          body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#020617; color:#e2e8f0; padding:24px; }}
+          body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#020617; color:#e2e8f0; padding:24px; overflow:hidden; }}
+          .page {{ max-width:min(100vw - 48px, 1400px); margin:0 auto; }}
           .stats-panel {{ display:grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap:12px; margin:0 0 16px; }}
           .stat-card {{ background:#0f172a; border:1px solid #334155; border-radius:14px; padding:14px 16px; }}
           .stat-label {{ font-size:12px; color:#94a3b8; margin-bottom:6px; }}
           .stat-value {{ font-size:28px; font-weight:800; color:#f8fafc; }}
           .legend {{ display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap; }}
           .legend span {{ display:flex; align-items:center; gap:8px; }}
-          .board {{ position:relative; width:100%; aspect-ratio: var(--board-aspect-ratio, 16 / 9); background:#0f172a; border:1px solid #334155; border-radius:16px; overflow:hidden; }}
+          .board {{ position:relative; width:100%; max-width:min(100vw - 48px, 1400px); max-height:calc(100vh - 140px); aspect-ratio: var(--board-aspect-ratio, 16 / 9); background:#0f172a; border:1px solid #334155; border-radius:16px; overflow:hidden; margin:0 auto; }}
           .marker {{ position:absolute; transform:translate(-50%, -50%); text-align:center; }}
           .board-image {{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }}
           .board-overlay {{ position:absolute; inset:0; }}
@@ -662,6 +668,7 @@ def dashboard() -> str:
           .tag {{ background:rgba(15,23,42,.8); padding:6px 8px; border-radius:10px; font-size:12px; min-width:72px; }}
         </style>      </head>
       <body>
+        <div class="page">
         <h1>位置看板</h1>
         <div class="stats-panel">
           <div class="stat-card"><div class="stat-label">Registered</div><div class="stat-value" id="stat-registered">{payload['stats']['registered']}</div></div>
