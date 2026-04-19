@@ -334,7 +334,7 @@ def dashboard_config_page() -> str:
           .toolbar {{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:12px; }}
           .danger-button {{ background:#ef4444; color:white; }}
           .secondary-button {{ background:#38bdf8; color:#082f49; }}
-          .stage {{ position:relative; min-height:520px; background:#020617; border:1px dashed #475569; border-radius:12px; overflow:hidden; }}
+          .stage {{ position:relative; width:100%; aspect-ratio: var(--stage-aspect-ratio, 16 / 9); background:#020617; border:1px dashed #475569; border-radius:12px; overflow:hidden; }}
           .stage-image {{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; background:none; }}
           .stage-overlay {{ position:absolute; inset:0; }}
           .marker-editor {{ position:absolute; transform:translate(-50%, -50%); background:#38bdf8; color:#082f49; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:700; cursor:grab; border:2px solid transparent; }}
@@ -425,6 +425,11 @@ def dashboard_config_page() -> str:
             if (selectedLocations.size === 0 && location) selectedLocations.add(location);
             selectedLocation = location;
             locationSelect.value = location;
+          }}
+          function updateStageAspectRatio() {{
+            if (stageImage.naturalWidth && stageImage.naturalHeight) {{
+              stage.style.setProperty('--stage-aspect-ratio', `${{stageImage.naturalWidth}} / ${{stageImage.naturalHeight}}`);
+            }}
           }}
           function getImagePlacementRect() {{
             const rect = stage.getBoundingClientRect();
@@ -596,8 +601,8 @@ def dashboard_config_page() -> str:
             selectLocation(locationSelect.value, labelInput.value);
             renderEditor();
           }});
-          stageImage.addEventListener('load', () => renderEditor());
-          if (stageImage.complete && layout.imageUrl) renderEditor();
+          stageImage.addEventListener('load', () => {{ updateStageAspectRatio(); renderEditor(); }});
+          if (stageImage.complete && layout.imageUrl) {{ updateStageAspectRatio(); renderEditor(); }}
           window.addEventListener('resize', () => renderEditor());
           window.addEventListener('beforeunload', (event) => {{
             if (!hasUnsavedChanges) return;
@@ -645,7 +650,7 @@ def dashboard() -> str:
           .stat-value {{ font-size:28px; font-weight:800; color:#f8fafc; }}
           .legend {{ display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap; }}
           .legend span {{ display:flex; align-items:center; gap:8px; }}
-          .board {{ position:relative; min-height:70vh; background:#0f172a; border:1px solid #334155; border-radius:16px; overflow:hidden; }}
+          .board {{ position:relative; width:100%; aspect-ratio: var(--board-aspect-ratio, 16 / 9); background:#0f172a; border:1px solid #334155; border-radius:16px; overflow:hidden; }}
           .marker {{ position:absolute; transform:translate(-50%, -50%); text-align:center; }}
           .board-image {{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }}
           .board-overlay {{ position:absolute; inset:0; }}
@@ -676,6 +681,13 @@ def dashboard() -> str:
         <script>
           let previousGrid = {{}}, currentVersion = null;
           const initialPayload = {initial_payload};
+          function updateBoardAspectRatio() {{
+            const board = document.getElementById('board');
+            const boardImage = document.getElementById('board-image');
+            if (board && boardImage && boardImage.naturalWidth && boardImage.naturalHeight) {{
+              board.style.setProperty('--board-aspect-ratio', `${{boardImage.naturalWidth}} / ${{boardImage.naturalHeight}}`);
+            }}
+          }}
           function getImagePlacementRect(container, image) {{
             const rect = container.getBoundingClientRect();
             const naturalWidth = image.naturalWidth || rect.width || 1;
@@ -723,8 +735,9 @@ def dashboard() -> str:
             if (payload.version !== currentVersion) renderMarkers(payload);
           }}
           const boardImage = document.getElementById('board-image');
-          if (boardImage) boardImage.addEventListener('load', () => renderMarkers(initialPayload));
+          if (boardImage) boardImage.addEventListener('load', () => {{ updateBoardAspectRatio(); renderMarkers(initialPayload); }});
           window.addEventListener('resize', () => renderMarkers(initialPayload));
+          updateBoardAspectRatio();
           renderMarkers(initialPayload);
           setInterval(pollDashboard, 3000);
         </script>
