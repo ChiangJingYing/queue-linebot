@@ -18,7 +18,8 @@ def test_dashboard_config_bootstraps_stage_image_from_initial_layout(tmp_path):
 
     assert response.status_code == 200
     assert 'let layout = {"imageUrl": "/dashboard/assets/existing.png?v=123", "markers": []};' in response.text
-    assert 'stageImage.src = layout.imageUrl || "";' in response.text
+    assert 'function syncStageImage()' in response.text
+    assert 'syncStageImage();' in response.text
     assert 'renderEditor();' in response.text
 
 

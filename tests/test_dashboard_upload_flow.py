@@ -22,8 +22,8 @@ def test_dashboard_config_renders_existing_markers_without_click(tmp_path):
     assert response.status_code == 200
     assert 'stageImage.addEventListener(\'load\'' in response.text
     assert 'stageOverlay.appendChild(el);' in response.text
-    assert 'requestAnimationFrame(() => renderEditor());' in response.text
-    assert 'setTimeout(() => renderEditor(), 50);' in response.text
+    assert 'syncStageImage();' in response.text
+    assert 'renderEditor();' in response.text
 
 
 def test_dashboard_layout_upload_generates_distinct_asset_path_each_time(tmp_path):

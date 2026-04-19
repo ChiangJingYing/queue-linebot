@@ -198,17 +198,14 @@ def test_dashboard_config_page_and_layout_api(tmp_path):
     assert "marker-editor" in page.text
     assert "刪除目前位置標記" in page.text
     assert "未放置位置" in page.text
-    assert "draggable" in page.text
-    assert "依序放置模式" in page.text
-    assert "placementQueue" in page.text
-    assert "點一下圖片就放下一個位置" in page.text
+    assert "stage-overlay" in page.text
+    assert "清除已放置位置" in page.text
+    assert "function setLayout(nextLayout)" in page.text
+    assert "function syncStageImage()" in page.text
     assert "selected-marker" in page.text
-    assert "toast.classList.add('show')" in page.text
     assert "beforeunload" in page.text
-    assert "hasUnsavedChanges" in page.text
     assert layout.status_code == 200
     assert layout.json()["markers"] == []
-
 
 def test_dashboard_layout_can_be_saved_and_rendered(tmp_path):
     qm = _setup_runtime(tmp_path, location_options={"1": ["1", "2"]})

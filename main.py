@@ -328,13 +328,13 @@ def dashboard_asset(filename: str):
 @app.get("/dashboard/config", response_class=HTMLResponse)
 def dashboard_config_page() -> str:
     layout = dashboard_layout_store.load()
-    locations = json.dumps(_all_locations(), ensure_ascii=False)
     initial_layout = json.dumps(layout, ensure_ascii=False)
+    locations = json.dumps(_all_locations(), ensure_ascii=False)
     return f"""
     <html>
       <head>
-        <meta charset=\"utf-8\" />
-        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>版面設定</title>
         <style>
           body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }}
@@ -346,59 +346,56 @@ def dashboard_config_page() -> str:
           .stage {{ position:relative; width:100%; aspect-ratio: var(--stage-aspect-ratio, 16 / 9); background:#020617; border:1px dashed #475569; border-radius:12px; overflow:hidden; }}
           .stage-image {{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; background:none; }}
           .stage-overlay {{ position:absolute; inset:0; }}
-          .marker-editor {{ position:absolute; transform:translate(-50%, -50%); background:#38bdf8; color:#082f49; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:700; cursor:grab; border:2px solid transparent; }}
-          .selected-marker {{ box-shadow:0 0 0 3px #facc15, 0 0 18px rgba(250,204,21,.6); border-color:#facc15; }}
-          .toast {{ position:fixed; right:24px; bottom:24px; background:#22c55e; color:#052e16; padding:12px 16px; border-radius:12px; font-weight:700; opacity:0; transform:translateY(12px); transition:.2s ease; pointer-events:none; }}
-          .toast.show {{ opacity:1; transform:translateY(0); }}
-          label, select, input, button {{ display:block; width:100%; margin-bottom:12px; }}
-          input, select {{ padding:10px; border-radius:8px; border:1px solid #475569; background:#0f172a; color:#e2e8f0; }}
-          button {{ padding:10px; border-radius:8px; border:none; background:#22c55e; color:#052e16; font-weight:700; cursor:pointer; }}
+          .marker-editor {{ position:absolute; transform:translate(-50%, -50%); background:#f8fafc; color:#0f172a; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:700; cursor:pointer; user-select:none; box-shadow:0 4px 14px rgba(0,0,0,0.25); }}
+          .selected-marker {{ outline:3px solid #f59e0b; }}
+          input, select, button {{ width:100%; box-sizing:border-box; margin:8px 0; padding:10px 12px; border-radius:10px; border:1px solid #475569; background:#0b1220; color:#e2e8f0; }}
+          button {{ cursor:pointer; background:#2563eb; border:none; font-weight:700; }}
           ul {{ padding-left:18px; }}
+          #toast {{ position:fixed; right:20px; bottom:20px; background:#111827; border:1px solid #334155; padding:12px 14px; border-radius:10px; display:none; }}
         </style>
       </head>
       <body>
         <h1>版面設定</h1>
-        <div class=\"wrap\">
-          <div class=\"panel\">
-            <form id=\"image-form\">
+        <div class="wrap">
+          <div class="panel">
+            <form id="image-form">
               <label>上傳背景圖</label>
-              <input type=\"file\" name=\"file\" accept=\"image/*\" />
-              <button type=\"submit\">上傳圖片</button>
+              <input type="file" id="image-file" name="file" accept="image/*" />
+              <button type="submit">上傳圖片</button>
             </form>
-            <label>位置（也可點已放置 marker 自動選取）</label>
-            <select id=\"location-select\"></select>
-            <p>依序放置模式：點一下圖片就放下一個位置，不需要手動切換下拉。</p>
-            <label>標籤</label>
-            <input id=\"label-input\" placeholder=\"例如：座位 A / 會議室 1\" />
-            <div class=\"toolbar\">
-              <button id=\"save-layout\" type=\"button\">儲存版面</button>
-              <button id=\"delete-marker\" type=\"button\" class=\"danger-button\">刪除目前位置標記</button>
-              <button id=\"reset-layout\" type=\"button\" class=\"danger-button\">清除已放置位置</button>
-              <button id=\"align-horizontal\" type=\"button\" class=\"secondary-button\">水平對齊</button>
-              <button id=\"align-vertical\" type=\"button\" class=\"secondary-button\">垂直對齊</button>
+            <label for="location-select">位置</label>
+            <select id="location-select"><option value="">請選擇位置</option></select>
+            <label for="label-input">標籤</label>
+            <input id="label-input" placeholder="例如：座位 A / 會議室 1" />
+            <div class="toolbar">
+              <button id="save-layout" type="button">儲存版面</button>
+              <button id="delete-marker" type="button" class="danger-button">刪除目前位置標記</button>
+              <button id="reset-layout" type="button" class="danger-button">清除已放置位置</button>
+              <button id="align-horizontal" type="button" class="secondary-button">水平對齊</button>
+              <button id="align-vertical" type="button" class="secondary-button">垂直對齊</button>
             </div>
             <h3>未放置位置</h3>
-            <ul id=\"unplaced-list\"></ul>
+            <ul id="unplaced-list"></ul>
             <h3>已放置位置</h3>
-            <ul id=\"marker-list\"></ul>
+            <ul id="marker-list"></ul>
           </div>
-          <div class=\"panel\">
+          <div class="panel">
             <p>先選 location，再點圖片放置 marker。可多選後做水平 / 垂直對齊。</p>
-            <div id=\"stage\" class=\"stage\">
-              <img id=\"stage-image\" class=\"stage-image\" src=\"{layout.get("imageUrl", "")}\" alt=\"layout\" />
-              <div id=\"stage-overlay\" class=\"stage-overlay\"></div>
+            <div id="stage" class="stage">
+              <img id="stage-image" class="stage-image" src="{layout.get("imageUrl", "")}" alt="layout" />
+              <div id="stage-overlay" class="stage-overlay"></div>
             </div>
           </div>
         </div>
-        <div id=\"toast\" class=\"toast\">儲存成功</div>
+        <div id="toast"></div>
         <script>
-          const LOCATIONS = {locations};
+          const locations = {locations};
           let layout = {initial_layout};
-          let placementQueue = [];
           let selectedLocation = '';
           let selectedLocations = new Set();
           let toastTimer = null;
-          let hasUnsavedChanges = false;
+          let dirty = false;
+
           const stage = document.getElementById('stage');
           const stageImage = document.getElementById('stage-image');
           const stageOverlay = document.getElementById('stage-overlay');
@@ -407,39 +404,44 @@ def dashboard_config_page() -> str:
           const locationSelect = document.getElementById('location-select');
           const labelInput = document.getElementById('label-input');
           const toast = document.getElementById('toast');
-          for (const location of LOCATIONS) {{
+
+          for (const location of locations) {{
             const option = document.createElement('option');
-            option.value = location; option.textContent = location; locationSelect.appendChild(option);
+            option.value = location;
+            option.textContent = location;
+            locationSelect.appendChild(option);
           }}
+
           function showToast(message) {{
             toast.textContent = message;
-            toast.classList.add('show');
-            clearTimeout(toastTimer);
-            toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+            toast.style.display = 'block';
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {{ toast.style.display = 'none'; }}, 1800);
           }}
-          function setDirty(value) {{
-            hasUnsavedChanges = value;
-            document.title = value ? '＊版面設定' : '版面設定';
+
+          function setDirty(next) {{ dirty = next; }}
+
+          function setLayout(nextLayout) {{
+            layout = {{
+              imageUrl: nextLayout.imageUrl || '',
+              markers: Array.isArray(nextLayout.markers) ? nextLayout.markers : [],
+            }};
           }}
-          function selectLocation(location, label = '', keepSelection = false) {{
-            selectedLocation = location;
-            if (!keepSelection) selectedLocations = new Set([location]);
-            else if (location) selectedLocations.add(location);
-            locationSelect.value = location;
-            labelInput.value = label;
+
+          function syncStageImage() {{
+            const nextSrc = layout.imageUrl || '';
+            if (stageImage.getAttribute('src') !== nextSrc) {{
+              stageImage.setAttribute('src', nextSrc);
+            }}
+            stageImage.style.display = nextSrc ? 'block' : 'none';
           }}
-          function toggleSelectedLocation(location) {{
-            if (selectedLocations.has(location)) selectedLocations.delete(location);
-            else selectedLocations.add(location);
-            if (selectedLocations.size === 0 && location) selectedLocations.add(location);
-            selectedLocation = location;
-            locationSelect.value = location;
-          }}
+
           function updateStageAspectRatio() {{
             if (stageImage.naturalWidth && stageImage.naturalHeight) {{
               stage.style.setProperty('--stage-aspect-ratio', `${{stageImage.naturalWidth}} / ${{stageImage.naturalHeight}}`);
             }}
           }}
+
           function getImagePlacementRect() {{
             const rect = stage.getBoundingClientRect();
             const naturalWidth = stageImage.naturalWidth || rect.width || 1;
@@ -459,29 +461,35 @@ def dashboard_config_page() -> str:
             }}
             return {{ left, top, width, height }};
           }}
-          function eventToNormalizedPosition(event) {{
-            const stageRect = stage.getBoundingClientRect();
-            const imageRect = getImagePlacementRect();
-            const x = ((event.clientX - stageRect.left - imageRect.left) / imageRect.width) * 100;
-            const y = ((event.clientY - stageRect.top - imageRect.top) / imageRect.height) * 100;
-            return {{ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) }};
-          }}
+
           function refreshPlacementQueue() {{
-            const usedLocations = new Set((layout.markers || []).map((item) => item.location));
-            placementQueue = LOCATIONS.filter((item) => !usedLocations.has(item));
-            if (placementQueue.length > 0 && (!selectedLocation || !usedLocations.has(selectedLocation))) {{
-              selectedLocation = placementQueue[0];
-            }}
-            if (selectedLocation) locationSelect.value = selectedLocation;
+            const placed = new Set((layout.markers || []).map((m) => m.location));
+            return locations.filter((location) => !placed.has(location));
           }}
+
+          function selectLocation(location, label = '', keepSelection = false) {{
+            selectedLocation = location;
+            if (!keepSelection) selectedLocations = location ? new Set([location]) : new Set();
+            else if (location) selectedLocations.add(location);
+            locationSelect.value = location;
+            labelInput.value = label;
+          }}
+
+          function toggleSelectedLocation(location) {{
+            if (selectedLocations.has(location)) selectedLocations.delete(location);
+            else selectedLocations.add(location);
+            selectedLocation = location;
+            locationSelect.value = location;
+          }}
+
           function renderEditor() {{
-            stageImage.src = layout.imageUrl || "";
-            stageImage.style.display = layout.imageUrl ? 'block' : 'none';
+            syncStageImage();
+            if (layout.imageUrl && !(stageImage.complete || (stageImage.naturalWidth && stageImage.naturalHeight))) return;
+            updateStageAspectRatio();
             stageOverlay.innerHTML = '';
-            if (layout.imageUrl && !stageImage.complete && !(stageImage.naturalWidth && stageImage.naturalHeight)) return;
             markerList.innerHTML = '';
             unplacedList.innerHTML = '';
-            refreshPlacementQueue();
+            const placementQueue = refreshPlacementQueue();
             for (const location of placementQueue) {{
               const item = document.createElement('li');
               item.textContent = location;
@@ -492,7 +500,6 @@ def dashboard_config_page() -> str:
               const el = document.createElement('div');
               el.className = 'marker-editor';
               if (selectedLocations.has(marker.location)) el.classList.add('selected-marker');
-              el.draggable = true;
               el.dataset.location = marker.location;
               const markerLeft = imageRect.left + (marker.x / 100) * imageRect.width;
               const markerTop = imageRect.top + (marker.y / 100) * imageRect.height;
@@ -505,64 +512,60 @@ def dashboard_config_page() -> str:
                 else selectLocation(marker.location, marker.label || '');
                 renderEditor();
               }});
-              el.addEventListener('dragstart', (event) => {{
-                event.dataTransfer.setData('text/plain', marker.location);
-              }});
               stageOverlay.appendChild(el);
               const item = document.createElement('li');
               item.textContent = `${{marker.location}} @ (${{marker.x.toFixed(1)}}%, ${{marker.y.toFixed(1)}}%) ${{marker.label || ''}}`;
               markerList.appendChild(item);
             }}
           }}
-                    function updateMarkerPosition(location, x, y) {{
-            const marker = (layout.markers || []).find((item) => item.location === location);
-            if (!marker) return;
-            marker.x = Math.max(0, Math.min(100, x));
-            marker.y = Math.max(0, Math.min(100, y));
+
+          function updateMarkerPosition(location, x, y) {{
+            layout.markers = (layout.markers || []).map((marker) => marker.location === location ? {{ ...marker, x, y }} : marker);
+            setDirty(true);
           }}
-          stage.addEventListener('dragover', (event) => event.preventDefault());
-          stage.addEventListener('drop', (event) => {{
-            event.preventDefault();
-            const location = event.dataTransfer.getData('text/plain');
-            const pos = eventToNormalizedPosition(event);
-            const x = pos.x;
-            const y = pos.y;
-            selectLocation(location);
-            updateMarkerPosition(location, x, y);
-            setDirty(true);
-            renderEditor();
-          }});
+
+          function eventToNormalizedPosition(event) {{
+            const stageRect = stage.getBoundingClientRect();
+            const imageRect = getImagePlacementRect();
+            const x = ((event.clientX - stageRect.left - imageRect.left) / imageRect.width) * 100;
+            const y = ((event.clientY - stageRect.top - imageRect.top) / imageRect.height) * 100;
+            return {{ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) }};
+          }}
+
           stage.addEventListener('click', (event) => {{
-            if (layout.imageUrl && !stageImage.complete && !(stageImage.naturalWidth && stageImage.naturalHeight)) return;
+            if (event.target !== stage && event.target !== stageOverlay && event.target !== stageImage) return;
+            if (layout.imageUrl && !(stageImage.complete || (stageImage.naturalWidth && stageImage.naturalHeight))) return;
             const pos = eventToNormalizedPosition(event);
-            const x = pos.x;
-            const y = pos.y;
-            const nextLocation = placementQueue[0] || locationSelect.value;
+            const nextLocation = locationSelect.value || refreshPlacementQueue()[0];
             if (!nextLocation) return;
-            selectLocation(nextLocation, labelInput.value.trim() || nextLocation);
-            layout.markers = (layout.markers || []).filter((item) => item.location !== nextLocation);
-            layout.markers.push({{ location: nextLocation, x, y, label: labelInput.value.trim() || nextLocation }});
-            labelInput.value = '';
+            const label = labelInput.value.trim();
+            const existing = (layout.markers || []).filter((item) => item.location !== nextLocation);
+            layout.markers = [...existing, {{ location: nextLocation, x: pos.x, y: pos.y, label }}];
+            selectLocation(nextLocation, label);
             setDirty(true);
             renderEditor();
           }});
+
           document.getElementById('delete-marker').addEventListener('click', () => {{
-            const targets = selectedLocations.size ? Array.from(selectedLocations) : [locationSelect.value];
+            const targets = selectedLocations.size ? Array.from(selectedLocations) : [locationSelect.value].filter(Boolean);
             layout.markers = (layout.markers || []).filter((item) => !targets.includes(item.location));
             selectedLocations = new Set();
             setDirty(true);
             renderEditor();
           }});
+
           document.getElementById('reset-layout').addEventListener('click', async () => {{
             const proceed = window.confirm('這會清除目前已放置的位置標記，確定要繼續嗎？');
             if (!proceed) return;
             const response = await fetch('/dashboard/layout/reset', {{ method: 'POST' }});
-            layout = await response.json();
+            const payload = await response.json();
+            setLayout(payload);
             selectedLocations = new Set();
             setDirty(false);
-            showToast('已清除位置標記');
             renderEditor();
+            showToast('已清除位置標記');
           }});
+
           function alignSelected(axis) {{
             const targets = (layout.markers || []).filter((item) => selectedLocations.has(item.location));
             if (targets.length < 2) {{
@@ -577,63 +580,59 @@ def dashboard_config_page() -> str:
             setDirty(true);
             renderEditor();
           }}
+
           document.getElementById('align-horizontal').addEventListener('click', () => alignSelected('y'));
           document.getElementById('align-vertical').addEventListener('click', () => alignSelected('x'));
+
           document.getElementById('save-layout').addEventListener('click', async () => {{
-            if (placementQueue.length > 0) {{
-              const proceed = window.confirm(`還有 ${{placementQueue.length}} 個位置未放置，確定要儲存嗎？`);
-              if (!proceed) return;
-            }}
-            const response = await fetch('/dashboard/layout', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify(layout) }});
-            layout = await response.json();
-            setDirty(false);
-            showToast('儲存成功');
-            renderEditor();
-          }});
-          document.getElementById('reset-queue').addEventListener('click', async () => {{
-            const proceed = window.confirm('這會清除 registered / queue / served 全部資料，確定要繼續嗎？');
-            if (!proceed) return;
-            const response = await fetch('/api/queue/reset', {{ method: 'POST' }});
+            const response = await fetch('/dashboard/layout', {{
+              method: 'POST',
+              headers: {{ 'Content-Type': 'application/json' }},
+              body: JSON.stringify(layout),
+            }});
             const payload = await response.json();
-            if (!response.ok) {{
-              showToast(payload.detail || '清除失敗');
-              return;
-            }}
-            showToast(`已清除 ${{payload.removed_count}} 筆隊列資料`);
+            setLayout(payload);
+            setDirty(false);
+            renderEditor();
+            showToast('儲存成功');
           }});
+
           document.getElementById('image-form').addEventListener('submit', async (event) => {{
             event.preventDefault();
-            const formData = new FormData(event.target);
+            const fileInput = document.getElementById('image-file');
+            const file = fileInput.files[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('file', file);
             const response = await fetch('/dashboard/layout/image', {{ method: 'POST', body: formData }});
             const payload = await response.json();
-            layout = {{ imageUrl: payload.imageUrl, markers: [] }};
-            stageOverlay.innerHTML = '';
-            markerList.innerHTML = '';
-            unplacedList.innerHTML = '';
+            setLayout({{ ...layout, imageUrl: payload.imageUrl, markers: [] }});
             selectedLocations = new Set();
             selectedLocation = '';
-            stageImage.removeAttribute('src');
-            stageImage.src = payload.imageUrl;
-            stageImage.style.display = payload.imageUrl ? 'block' : 'none';
+            syncStageImage();
             setDirty(true);
+            renderEditor();
             showToast('圖片上傳成功');
-            requestAnimationFrame(() => renderEditor());
-            setTimeout(() => renderEditor(), 50);
-            setTimeout(() => renderEditor(), 150);
           }});
+
           locationSelect.addEventListener('change', () => {{
             selectLocation(locationSelect.value, labelInput.value);
             renderEditor();
           }});
-          stageImage.addEventListener('load', () => {{ updateStageAspectRatio(); renderEditor(); }});
-          if (stageImage.complete && layout.imageUrl) {{ updateStageAspectRatio(); renderEditor(); }}
+
+          stageImage.addEventListener('load', () => {{
+            updateStageAspectRatio();
+            renderEditor();
+          }});
+
           window.addEventListener('resize', () => renderEditor());
           window.addEventListener('beforeunload', (event) => {{
-            if (!hasUnsavedChanges) return;
+            if (!dirty) return;
             event.preventDefault();
             event.returnValue = '';
           }});
-          setDirty(false);
+
+          syncStageImage();
           renderEditor();
         </script>
       </body>

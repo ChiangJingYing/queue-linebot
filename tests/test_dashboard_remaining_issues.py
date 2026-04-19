@@ -14,7 +14,9 @@ def test_dashboard_config_no_longer_uses_stage_background_image(tmp_path):
 
     assert response.status_code == 200
     assert 'stage.style.backgroundImage' not in response.text
-    assert 'stageImage.src = layout.imageUrl || \"\"' in response.text
+    assert 'function syncStageImage()' in response.text
+    assert 'class="stage-image"' in response.text
+    assert "pointer-events:auto" not in response.text
 
 
 def test_dashboard_config_upload_replaces_image_src_immediately(tmp_path):
@@ -24,8 +26,9 @@ def test_dashboard_config_upload_replaces_image_src_immediately(tmp_path):
     response = client.get("/dashboard/config")
 
     assert response.status_code == 200
-    assert 'stageImage.src = layout.imageUrl || ""' in response.text
-    assert 'stageImage.src = payload.imageUrl;' in response.text
+    assert 'setLayout({ ...layout, imageUrl: payload.imageUrl, markers: [] });' in response.text
+    assert 'syncStageImage();' in response.text
+    assert "showToast('圖片上傳成功');" in response.text
 
 
 def test_dashboard_config_marker_editor_is_appended_to_overlay(tmp_path):
