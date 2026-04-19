@@ -77,7 +77,15 @@ class DashboardLayoutStore:
         stored_name = f"{uuid4().hex}{ext}"
         target = self.root / stored_name
         target.write_bytes(content)
-        return f"/dashboard/assets/{stored_name}"
+        image_url = f"/dashboard/assets/{stored_name}"
+        current = self.load()
+        self.save(
+            {
+                "imageUrl": image_url,
+                "markers": current.get("markers", []),
+            }
+        )
+        return image_url
 
     def resolve_asset(self, filename: str) -> Path:
         return self.root / Path(filename).name
