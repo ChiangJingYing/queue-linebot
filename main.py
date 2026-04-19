@@ -595,6 +595,8 @@ def dashboard_config_page() -> str:
             selectLocation(locationSelect.value, labelInput.value);
             renderEditor();
           }});
+          stageImage.addEventListener('load', () => renderEditor());
+          window.addEventListener('resize', () => renderEditor());
           window.addEventListener('beforeunload', (event) => {{
             if (!hasUnsavedChanges) return;
             event.preventDefault();
@@ -665,7 +667,10 @@ def dashboard() -> str:
           <span><i class=\"lamp yellow\"></i> 排隊中</span>
           <span><i class=\"lamp green\"></i> 已叫號</span>
         </div>
-        <div id=\"board\" class=\"board\">{''.join(markers_html)}</div>
+        <div id=\"board\" class=\"board\">
+          <img id=\"board-image\" class=\"board-image\" src=\"{layout.get("imageUrl") or ""}\" alt=\"layout\" />
+          <div id=\"board-overlay\" class=\"board-overlay\">{''.join(markers_html)}</div>
+        </div>
         <script>
           let previousGrid = {{}}, currentVersion = null;
           const initialPayload = {initial_payload};
@@ -715,6 +720,9 @@ def dashboard() -> str:
             const payload = await response.json();
             if (payload.version !== currentVersion) renderMarkers(payload);
           }}
+          const boardImage = document.getElementById('board-image');
+          if (boardImage) boardImage.addEventListener('load', () => renderMarkers(initialPayload));
+          window.addEventListener('resize', () => renderMarkers(initialPayload));
           renderMarkers(initialPayload);
           setInterval(pollDashboard, 3000);
         </script>
