@@ -3,23 +3,24 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 *.egg
-
-# Tests
-.coverage
-htmlcov/
-.pytest_cache/
+*.pyc
 
 # Virtual env
 .venv/
 
+# Test / Coverage
+.pytest_cache/
+htmlcov/
+.coverage
+htmlcov/
+
 # Database
 queue.db
 
-# Build / generated
-pyproject.toml
-uv.lock
+# Logs
+logs/
 
-# Dashboard layout storage
+# Dashboard layout storage (uploaded images are runtime data)
 dashboard_layout/
 
 # OS
@@ -29,3 +30,14 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Environment variables (secrets, tokens, etc.)
+.env
+.env.local
+
+# Flask / FastAPI deploy artifacts
+www/
+
+# OS / Editor
+Thumbs.db
+.DS_Store
