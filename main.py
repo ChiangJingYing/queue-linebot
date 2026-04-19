@@ -213,12 +213,20 @@ def _build_dashboard_payload() -> dict:
 
         cell["statusLabel"] = status_labels[cell["status"]]
 
+    # --- stats ---
+    stats = queue_manager.get_queue_stats()
+
     return {
         "rows": rows,
         "cols": cols,
         "grid": grid,
         "version": hashlib.md5(json.dumps({"rows": rows, "cols": cols, "grid": grid}, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest(),
         "legend": status_labels,
+        "stats": {
+            "registered": stats["registered"],
+            "queue": stats["queue"],
+            "served": stats["served"],
+        },
     }
 
 
@@ -227,6 +235,21 @@ def dashboard_data() -> dict:
     payload = _build_dashboard_payload()
     payload["layout"] = dashboard_layout_store.load()
     return payload
+
+
+@app.post("/api/queue/reset")
+def reset_queue() -> dict:
+    if queue_manager is None:
+        raise HTTPException(status_code=503, detail="Queue manager 尚未初始化")
+
+    result = queue_manager.clear_all_queue()
+    return {
+        "status": "reset",
+        "removed_count": result.get("removed_count", 0),
+        "removed_users": result.get("removed_users", []),
+        "cleared_profiles": result.get("cleared_profiles", 0),
+        "cleared_served": result.get("cleared_served", 0),
+    }
 
 
 def _all_locations() -> list[str]:
@@ -298,6 +321,7 @@ def dashboard_config_page() -> str:
           body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }}
           .wrap {{ display:grid; grid-template-columns: 320px 1fr; gap:20px; }}
           .panel {{ background:#111827; border:1px solid #334155; border-radius:12px; padding:16px; }}
+          .danger-button {{ background:#ef4444; color:white; }}
           .stage {{ position:relative; min-height:520px; background:#020617 center/contain no-repeat; border:1px dashed #475569; border-radius:12px; overflow:hidden; }}
           .marker-editor {{ position:absolute; transform:translate(-50%, -50%); background:#38bdf8; color:#082f49; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:700; cursor:grab; border:2px solid transparent; }}
           .selected-marker {{ box-shadow:0 0 0 3px #facc15, 0 0 18px rgba(250,204,21,.6); border-color:#facc15; }}
@@ -324,7 +348,8 @@ def dashboard_config_page() -> str:
             <label>標籤</label>
             <input id=\"label-input\" placeholder=\"例如：座位 A / 會議室 1\" />
             <button id=\"save-layout\" type=\"button\">儲存版面</button>
-            <button id=\"delete-marker\" type=\"button\" style=\"background:#ef4444;color:white;\">刪除目前位置標記</button>
+            <button id=\"delete-marker\" type=\"button\" class=\"danger-button\">刪除目前位置標記</button>
+            <button id=\"reset-queue\" type=\"button\" class=\"danger-button\">清除全部隊列資料</button>
             <h3>未放置位置</h3>
             <ul id=\"unplaced-list\"></ul>
             <h3>已放置位置</h3>
@@ -459,6 +484,17 @@ def dashboard_config_page() -> str:
             showToast('儲存成功');
             renderEditor();
           }});
+          document.getElementById('reset-queue').addEventListener('click', async () => {{
+            const proceed = window.confirm('這會清除 registered / queue / served 全部資料，確定要繼續嗎？');
+            if (!proceed) return;
+            const response = await fetch('/api/queue/reset', {{ method: 'POST' }});
+            const payload = await response.json();
+            if (!response.ok) {{
+              showToast(payload.detail || '清除失敗');
+              return;
+            }}
+            showToast(`已清除 ${{payload.removed_count}} 筆隊列資料`);
+          }});
           document.getElementById('image-form').addEventListener('submit', async (event) => {{
             event.preventDefault();
             const formData = new FormData(event.target);
@@ -513,6 +549,10 @@ def dashboard() -> str:
         <title>位置看板</title>
 <style>
           body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#020617; color:#e2e8f0; padding:24px; }}
+          .stats-panel {{ display:grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap:12px; margin:0 0 16px; }}
+          .stat-card {{ background:#0f172a; border:1px solid #334155; border-radius:14px; padding:14px 16px; }}
+          .stat-label {{ font-size:12px; color:#94a3b8; margin-bottom:6px; }}
+          .stat-value {{ font-size:28px; font-weight:800; color:#f8fafc; }}
           .legend {{ display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap; }}
           .legend span {{ display:flex; align-items:center; gap:8px; }}
           .board {{ position:relative; min-height:70vh; background:#0f172a center/contain no-repeat; border:1px solid #334155; border-radius:16px; overflow:hidden; {background_style} }}
@@ -526,6 +566,11 @@ def dashboard() -> str:
         </style>      </head>
       <body>
         <h1>位置看板</h1>
+        <div class="stats-panel">
+          <div class="stat-card"><div class="stat-label">Registered</div><div class="stat-value" id="stat-registered">{payload['stats']['registered']}</div></div>
+          <div class="stat-card"><div class="stat-label">Queue</div><div class="stat-value" id="stat-queue">{payload['stats']['queue']}</div></div>
+          <div class="stat-card"><div class="stat-label">Served</div><div class="stat-value" id="stat-served">{payload['stats']['served']}</div></div>
+        </div>
         <div class=\"legend\">
           <span><i class=\"lamp empty\"></i> 空位</span>
           <span><i class=\"lamp blue\"></i> 已註冊</span>
@@ -538,6 +583,9 @@ def dashboard() -> str:
           const initialPayload = {initial_payload};
           function renderMarkers(payload) {{
             previousGrid = payload.grid; currentVersion = payload.version;
+            document.getElementById('stat-registered').textContent = payload.stats.registered;
+            document.getElementById('stat-queue').textContent = payload.stats.queue;
+            document.getElementById('stat-served').textContent = payload.stats.served;
             document.querySelectorAll('.marker').forEach((marker) => {{
               const location = marker.dataset.location;
               const [row, col] = location.split('-');

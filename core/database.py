@@ -322,6 +322,22 @@ class DatabaseManager:
                 removed.append(cancelled)
         return removed
 
+    def clear_served_queue(self) -> int:
+        """Delete all served or cancelled queue records."""
+        with self._connection() as conn:
+            result = conn.execute(
+                "DELETE FROM queues WHERE served = 1 OR cancel_time IS NOT NULL OR served_time IS NOT NULL"
+            )
+            conn.commit()
+            return result.rowcount
+
+    def clear_all_queue_records(self) -> int:
+        """Delete all queue records regardless of state."""
+        with self._connection() as conn:
+            result = conn.execute("DELETE FROM queues")
+            conn.commit()
+            return result.rowcount
+
     def upsert_user_profile(
         self,
         user_id: str,
