@@ -377,7 +377,7 @@ def dashboard_config_page() -> str:
           <div class=\"panel\">
             <p>先選 location，再點圖片放置 marker。可多選後做水平 / 垂直對齊。</p>
             <div id=\"stage\" class=\"stage\">
-              <img id=\"stage-image\" class=\"stage-image\" alt=\"layout\" />
+              <img id=\"stage-image\" class=\"stage-image\" src=\"{layout.get("imageUrl", "")}\" alt=\"layout\" />
               <div id=\"stage-overlay\" class=\"stage-overlay\"></div>
             </div>
           </div>
@@ -599,6 +599,9 @@ def dashboard_config_page() -> str:
             const response = await fetch('/dashboard/layout/image', {{ method: 'POST', body: formData }});
             const payload = await response.json();
             layout.imageUrl = payload.imageUrl;
+            layout.markers = [];
+            selectedLocations = new Set();
+            selectedLocation = '';
             stageImage.src = payload.imageUrl;
             stageImage.style.display = payload.imageUrl ? 'block' : 'none';
             setDirty(true);
