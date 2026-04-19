@@ -512,6 +512,14 @@ def dashboard_config_page() -> str:
                 else selectLocation(marker.location, marker.label || '');
                 renderEditor();
               }});
+              el.draggable = true;
+              el.addEventListener('dragstart', (event) => {{
+                event.dataTransfer.setData('text/plain', marker.location);
+                el.style.opacity = '0.5';
+              }});
+              el.addEventListener('dragend', (event) => {{
+                el.style.opacity = '1';
+              }});
               stageOverlay.appendChild(el);
               const item = document.createElement('li');
               item.textContent = `${{marker.location}} @ (${{marker.x.toFixed(1)}}%, ${{marker.y.toFixed(1)}}%) ${{marker.label || ''}}`;
@@ -531,6 +539,27 @@ def dashboard_config_page() -> str:
             const y = ((event.clientY - stageRect.top - imageRect.top) / imageRect.height) * 100;
             return {{ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) }};
           }}
+
+          stage.addEventListener('dragover', (event) => {{ event.preventDefault(); }});
+
+          stage.addEventListener('drop', (event) => {{
+            event.preventDefault();
+            const location = event.dataTransfer.getData('text/plain');
+            if (!location) return;
+            const pos = eventToNormalizedPosition(event);
+            const marker = (layout.markers || []).find((m) => m.location === location);
+            if (marker) {{
+              marker.x = pos.x;
+              marker.y = pos.y;
+              setDirty(true);
+            }} else {{
+              const label = labelInput.value.trim() || location;
+              layout.markers = [...(layout.markers || []), {{ location, x: pos.x, y: pos.y, label }}];
+              selectLocation(location, label);
+              setDirty(true);
+            }}
+            renderEditor();
+          }});
 
           stage.addEventListener('click', (event) => {{
             if (event.target !== stage && event.target !== stageOverlay && event.target !== stageImage) return;

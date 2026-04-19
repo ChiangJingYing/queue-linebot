@@ -39,6 +39,17 @@ def queue_manager(db_path):
 
 
 @pytest.fixture
+def client(db_manager, queue_manager):
+    """Return a TestClient for the FastAPI app with test DB/QueueManager."""
+    import main
+    # Inject test instances into main module's namespace
+    main.db_manager = db_manager
+    main.queue_manager = queue_manager
+    from fastapi.testclient import TestClient
+    return TestClient(main.app)
+
+
+@pytest.fixture
 def valid_user_id():
     """Return a valid test user ID."""
     return TEST_USER_ID

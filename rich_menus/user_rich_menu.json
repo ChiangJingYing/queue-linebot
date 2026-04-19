@@ -13,7 +13,7 @@
     },
     {
       "bounds": { "x": 833, "y": 0, "width": 834, "height": 843 },
-      "action": { "type": "message", "text": "/join vip" }
+      "action": { "type": "message", "text": "/cancel" }
     },
     {
       "bounds": { "x": 1667, "y": 0, "width": 833, "height": 843 },
@@ -21,7 +21,7 @@
     },
     {
       "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "/cancel" }
+      "action": { "type": "message", "text": "/hostory" }
     },
     {
       "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
