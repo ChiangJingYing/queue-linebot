@@ -254,6 +254,20 @@ class QueueManager:
             "removed_users": removed_users,
         }
 
+    def get_queue_stats(self) -> dict:
+        """Get overall queue statistics (registered count, active queue, served count)."""
+        profiles = self.db.get_all_user_profiles()
+        registered = sum(1 for p in profiles if p.location and p.location.strip())
+        active_queue = self.db.get_all_queue()
+        served = self.db.get_queue_rows_for_export(limit=10000)
+        served_count = sum(1 for r in served if r.get("served") == 1 or r.get("served_time") is not None)
+
+        return {
+            "registered": registered,
+            "queue": len(active_queue),
+            "served": served_count,
+        }
+
     def clear_all_queue(self) -> dict:
         """Clear all active queue entries regardless of queue type."""
         removed_entries = self.db.clear_all_queue()
