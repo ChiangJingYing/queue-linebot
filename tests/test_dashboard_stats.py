@@ -97,6 +97,6 @@ class TestResetEndpoint:
     def test_dashboard_config_has_reset_button(self, client: TestClient):
         response = client.get("/dashboard/config")
         assert response.status_code == 200
-        assert 'id="reset-queue"' in response.text
-        assert '/api/queue/reset' in response.text
-        assert '清除全部隊列資料' in response.text
+        assert 'id="reset-layout"' in response.text
+        assert '/dashboard/layout/reset' in response.text
+        assert '清除已放置位置' in response.text

@@ -263,6 +263,7 @@ def dashboard_layout() -> dict:
 
 @app.post("/dashboard/layout")
 def save_dashboard_layout(payload: dict) -> dict:
+    current_layout = dashboard_layout_store.load()
     markers = payload.get("markers", [])
     normalized_markers = []
     for marker in markers:
@@ -274,15 +275,24 @@ def save_dashboard_layout(payload: dict) -> dict:
         normalized_markers.append(
             {
                 "location": location,
-                "x": float(marker.get("x", 0)),
-                "y": float(marker.get("y", 0)),
+                "x": max(0.0, min(100.0, float(marker.get("x", 0)))),
+                "y": max(0.0, min(100.0, float(marker.get("y", 0)))),
                 "label": str(marker.get("label", "")).strip(),
             }
         )
     return dashboard_layout_store.save({
-        "imageUrl": str(payload.get("imageUrl", "")).strip(),
+        "imageUrl": str(payload.get("imageUrl", current_layout.get("imageUrl", ""))).strip(),
         "markers": normalized_markers,
     })
+
+
+@app.post("/dashboard/layout/reset")
+def reset_dashboard_layout() -> dict:
+    layout = dashboard_layout_store.save({
+        "imageUrl": dashboard_layout_store.load().get("imageUrl", ""),
+        "markers": [],
+    })
+    return {"status": "reset", **layout}
 
 
 @app.post("/dashboard/layout/image")
@@ -321,8 +331,12 @@ def dashboard_config_page() -> str:
           body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }}
           .wrap {{ display:grid; grid-template-columns: 320px 1fr; gap:20px; }}
           .panel {{ background:#111827; border:1px solid #334155; border-radius:12px; padding:16px; }}
+          .toolbar {{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:12px; }}
           .danger-button {{ background:#ef4444; color:white; }}
-          .stage {{ position:relative; min-height:520px; background:#020617 center/contain no-repeat; border:1px dashed #475569; border-radius:12px; overflow:hidden; }}
+          .secondary-button {{ background:#38bdf8; color:#082f49; }}
+          .stage {{ position:relative; min-height:520px; background:#020617; border:1px dashed #475569; border-radius:12px; overflow:hidden; }}
+          .stage-image {{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; }}
+          .stage-overlay {{ position:absolute; inset:0; }}
           .marker-editor {{ position:absolute; transform:translate(-50%, -50%); background:#38bdf8; color:#082f49; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:700; cursor:grab; border:2px solid transparent; }}
           .selected-marker {{ box-shadow:0 0 0 3px #facc15, 0 0 18px rgba(250,204,21,.6); border-color:#facc15; }}
           .toast {{ position:fixed; right:24px; bottom:24px; background:#22c55e; color:#052e16; padding:12px 16px; border-radius:12px; font-weight:700; opacity:0; transform:translateY(12px); transition:.2s ease; pointer-events:none; }}
@@ -347,17 +361,24 @@ def dashboard_config_page() -> str:
             <p>依序放置模式：點一下圖片就放下一個位置，不需要手動切換下拉。</p>
             <label>標籤</label>
             <input id=\"label-input\" placeholder=\"例如：座位 A / 會議室 1\" />
-            <button id=\"save-layout\" type=\"button\">儲存版面</button>
-            <button id=\"delete-marker\" type=\"button\" class=\"danger-button\">刪除目前位置標記</button>
-            <button id=\"reset-queue\" type=\"button\" class=\"danger-button\">清除全部隊列資料</button>
+            <div class=\"toolbar\">
+              <button id=\"save-layout\" type=\"button\">儲存版面</button>
+              <button id=\"delete-marker\" type=\"button\" class=\"danger-button\">刪除目前位置標記</button>
+              <button id=\"reset-layout\" type=\"button\" class=\"danger-button\">清除已放置位置</button>
+              <button id=\"align-horizontal\" type=\"button\" class=\"secondary-button\">水平對齊</button>
+              <button id=\"align-vertical\" type=\"button\" class=\"secondary-button\">垂直對齊</button>
+            </div>
             <h3>未放置位置</h3>
             <ul id=\"unplaced-list\"></ul>
             <h3>已放置位置</h3>
             <ul id=\"marker-list\"></ul>
           </div>
           <div class=\"panel\">
-            <p>先選 location，再點圖片放置 marker。</p>
-            <div id=\"stage\" class=\"stage\"></div>
+            <p>先選 location，再點圖片放置 marker。可多選後做水平 / 垂直對齊。</p>
+            <div id=\"stage\" class=\"stage\">
+              <img id=\"stage-image\" class=\"stage-image\" alt=\"layout\" />
+              <div id=\"stage-overlay\" class=\"stage-overlay\"></div>
+            </div>
           </div>
         </div>
         <div id=\"toast\" class=\"toast\">儲存成功</div>
@@ -366,9 +387,12 @@ def dashboard_config_page() -> str:
           let layout = {initial_layout};
           let placementQueue = [];
           let selectedLocation = '';
+          let selectedLocations = new Set();
           let toastTimer = null;
           let hasUnsavedChanges = false;
           const stage = document.getElementById('stage');
+          const stageImage = document.getElementById('stage-image');
+          const stageOverlay = document.getElementById('stage-overlay');
           const markerList = document.getElementById('marker-list');
           const unplacedList = document.getElementById('unplaced-list');
           const locationSelect = document.getElementById('location-select');
@@ -388,10 +412,45 @@ def dashboard_config_page() -> str:
             hasUnsavedChanges = value;
             document.title = value ? '＊版面設定' : '版面設定';
           }}
-          function selectLocation(location, label = '') {{
+          function selectLocation(location, label = '', keepSelection = false) {{
             selectedLocation = location;
+            if (!keepSelection) selectedLocations = new Set([location]);
+            else if (location) selectedLocations.add(location);
             locationSelect.value = location;
             labelInput.value = label;
+          }}
+          function toggleSelectedLocation(location) {{
+            if (selectedLocations.has(location)) selectedLocations.delete(location);
+            else selectedLocations.add(location);
+            if (selectedLocations.size === 0 && location) selectedLocations.add(location);
+            selectedLocation = location;
+            locationSelect.value = location;
+          }}
+          function getImagePlacementRect() {{
+            const rect = stage.getBoundingClientRect();
+            const naturalWidth = stageImage.naturalWidth || rect.width || 1;
+            const naturalHeight = stageImage.naturalHeight || rect.height || 1;
+            const containerRatio = rect.width / rect.height;
+            const imageRatio = naturalWidth / naturalHeight;
+            let width = rect.width;
+            let height = rect.height;
+            let left = 0;
+            let top = 0;
+            if (imageRatio > containerRatio) {{
+              height = rect.width / imageRatio;
+              top = (rect.height - height) / 2;
+            }} else {{
+              width = rect.height * imageRatio;
+              left = (rect.width - width) / 2;
+            }}
+            return {{ left, top, width, height }};
+          }}
+          function eventToNormalizedPosition(event) {{
+            const stageRect = stage.getBoundingClientRect();
+            const imageRect = getImagePlacementRect();
+            const x = ((event.clientX - stageRect.left - imageRect.left) / imageRect.width) * 100;
+            const y = ((event.clientY - stageRect.top - imageRect.top) / imageRect.height) * 100;
+            return {{ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) }};
           }}
           function refreshPlacementQueue() {{
             const usedLocations = new Set((layout.markers || []).map((item) => item.location));
@@ -415,7 +474,7 @@ def dashboard_config_page() -> str:
             for (const marker of layout.markers || []) {{
               const el = document.createElement('div');
               el.className = 'marker-editor';
-              if (marker.location === selectedLocation) el.classList.add('selected-marker');
+              if (selectedLocations.has(marker.location)) el.classList.add('selected-marker');
               el.draggable = true;
               el.dataset.location = marker.location;
               el.style.left = `${{marker.x}}%`;
@@ -423,13 +482,14 @@ def dashboard_config_page() -> str:
               el.textContent = marker.label || marker.location;
               el.addEventListener('click', (event) => {{
                 event.stopPropagation();
-                selectLocation(marker.location, marker.label || '');
+                if (event.shiftKey || event.metaKey || event.ctrlKey) toggleSelectedLocation(marker.location);
+                else selectLocation(marker.location, marker.label || '');
                 renderEditor();
               }});
               el.addEventListener('dragstart', (event) => {{
                 event.dataTransfer.setData('text/plain', marker.location);
               }});
-              stage.appendChild(el);
+              stageOverlay.appendChild(el);
               const item = document.createElement('li');
               item.textContent = `${{marker.location}} @ (${{marker.x.toFixed(1)}}%, ${{marker.y.toFixed(1)}}%) ${{marker.label || ''}}`;
               markerList.appendChild(item);
@@ -445,18 +505,18 @@ def dashboard_config_page() -> str:
           stage.addEventListener('drop', (event) => {{
             event.preventDefault();
             const location = event.dataTransfer.getData('text/plain');
-            const rect = stage.getBoundingClientRect();
-            const x = ((event.clientX - rect.left) / rect.width) * 100;
-            const y = ((event.clientY - rect.top) / rect.height) * 100;
+            const pos = eventToNormalizedPosition(event);
+            const x = pos.x;
+            const y = pos.y;
             selectLocation(location);
             updateMarkerPosition(location, x, y);
             setDirty(true);
             renderEditor();
           }});
           stage.addEventListener('click', (event) => {{
-            const rect = stage.getBoundingClientRect();
-            const x = ((event.clientX - rect.left) / rect.width) * 100;
-            const y = ((event.clientY - rect.top) / rect.height) * 100;
+            const pos = eventToNormalizedPosition(event);
+            const x = pos.x;
+            const y = pos.y;
             const nextLocation = placementQueue[0] || locationSelect.value;
             if (!nextLocation) return;
             selectLocation(nextLocation, labelInput.value.trim() || nextLocation);
@@ -467,12 +527,38 @@ def dashboard_config_page() -> str:
             renderEditor();
           }});
           document.getElementById('delete-marker').addEventListener('click', () => {{
-            const location = locationSelect.value;
-            selectedLocation = location;
-            layout.markers = (layout.markers || []).filter((item) => item.location !== location);
+            const targets = selectedLocations.size ? Array.from(selectedLocations) : [locationSelect.value];
+            layout.markers = (layout.markers || []).filter((item) => !targets.includes(item.location));
+            selectedLocations = new Set();
             setDirty(true);
             renderEditor();
           }});
+          document.getElementById('reset-layout').addEventListener('click', async () => {{
+            const proceed = window.confirm('這會清除目前已放置的位置標記，確定要繼續嗎？');
+            if (!proceed) return;
+            const response = await fetch('/dashboard/layout/reset', {{ method: 'POST' }});
+            layout = await response.json();
+            selectedLocations = new Set();
+            setDirty(false);
+            showToast('已清除位置標記');
+            renderEditor();
+          }});
+          function alignSelected(axis) {{
+            const targets = (layout.markers || []).filter((item) => selectedLocations.has(item.location));
+            if (targets.length < 2) {{
+              showToast('請至少選兩個位置再對齊');
+              return;
+            }}
+            const avg = targets.reduce((sum, item) => sum + (axis === 'x' ? item.x : item.y), 0) / targets.length;
+            for (const marker of targets) {{
+              if (axis === 'x') marker.x = avg;
+              else marker.y = avg;
+            }}
+            setDirty(true);
+            renderEditor();
+          }}
+          document.getElementById('align-horizontal').addEventListener('click', () => alignSelected('y'));
+          document.getElementById('align-vertical').addEventListener('click', () => alignSelected('x'));
           document.getElementById('save-layout').addEventListener('click', async () => {{
             if (placementQueue.length > 0) {{
               const proceed = window.confirm(`還有 ${{placementQueue.length}} 個位置未放置，確定要儲存嗎？`);
@@ -535,7 +621,7 @@ def dashboard() -> str:
         if not cell:
             continue
         markers_html.append(
-            f'<div class="marker" data-location="{location}" style="left:{marker.get("x", 0)}%;top:{marker.get("y", 0)}%">'
+            f'<div class="marker" data-location="{location}" style="left:calc({marker.get("x", 0)}% + var(--image-left, 0px));top:calc({marker.get("y", 0)}% + var(--image-top, 0px));">'
             f'<div class="dot {cell["status"]}"></div>'
             f'<div class="tag">{marker.get("label") or location}<br>{cell.get("name") or cell.get("statusLabel")}</div>'
             f'</div>'
@@ -555,8 +641,10 @@ def dashboard() -> str:
           .stat-value {{ font-size:28px; font-weight:800; color:#f8fafc; }}
           .legend {{ display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap; }}
           .legend span {{ display:flex; align-items:center; gap:8px; }}
-          .board {{ position:relative; min-height:70vh; background:#0f172a center/contain no-repeat; border:1px solid #334155; border-radius:16px; overflow:hidden; {background_style} }}
+          .board {{ position:relative; min-height:70vh; background:#0f172a; border:1px solid #334155; border-radius:16px; overflow:hidden; }}
           .marker {{ position:absolute; transform:translate(-50%, -50%); text-align:center; }}
+          .board-image {{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }}
+          .board-overlay {{ position:absolute; inset:0; }}
           .dot {{ width:18px; height:18px; border-radius:999px; margin:0 auto 6px; box-shadow:0 0 14px currentColor; display:inline-block; }}
           .lamp {{ width:18px; height:18px; border-radius:999px; display:inline-block; box-shadow:0 0 14px currentColor; }}
           .dot.empty, .lamp.empty {{ background:#64748b; color:#64748b; }} .dot.registered, .lamp.blue {{ background:#38bdf8; color:#38bdf8; }} .dot.queued, .lamp.yellow {{ background:#facc15; color:#facc15; }} .dot.served, .lamp.green {{ background:#22c55e; color:#22c55e; }}
@@ -581,11 +669,37 @@ def dashboard() -> str:
         <script>
           let previousGrid = {{}}, currentVersion = null;
           const initialPayload = {initial_payload};
+          function getImagePlacementRect(container, image) {{
+            const rect = container.getBoundingClientRect();
+            const naturalWidth = image.naturalWidth || rect.width || 1;
+            const naturalHeight = image.naturalHeight || rect.height || 1;
+            const containerRatio = rect.width / rect.height;
+            const imageRatio = naturalWidth / naturalHeight;
+            let width = rect.width;
+            let height = rect.height;
+            let left = 0;
+            let top = 0;
+            if (imageRatio > containerRatio) {{
+              height = rect.width / imageRatio;
+              top = (rect.height - height) / 2;
+            }} else {{
+              width = rect.height * imageRatio;
+              left = (rect.width - width) / 2;
+            }}
+            return {{ left, top, width, height }};
+          }}
           function renderMarkers(payload) {{
             previousGrid = payload.grid; currentVersion = payload.version;
             document.getElementById('stat-registered').textContent = payload.stats.registered;
             document.getElementById('stat-queue').textContent = payload.stats.queue;
             document.getElementById('stat-served').textContent = payload.stats.served;
+            const board = document.getElementById('board');
+            const boardImage = document.getElementById('board-image');
+            const imageRect = getImagePlacementRect(board, boardImage);
+            board.style.setProperty('--image-left', `${{imageRect.left}}px`);
+            board.style.setProperty('--image-top', `${{imageRect.top}}px`);
+            board.style.setProperty('--image-width', `${{imageRect.width}}px`);
+            board.style.setProperty('--image-height', `${{imageRect.height}}px`);
             document.querySelectorAll('.marker').forEach((marker) => {{
               const location = marker.dataset.location;
               const [row, col] = location.split('-');

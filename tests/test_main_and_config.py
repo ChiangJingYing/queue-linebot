@@ -234,7 +234,8 @@ def test_dashboard_layout_can_be_saved_and_rendered(tmp_path):
     assert layout.json()["imageUrl"] == "/dashboard/assets/sample.png"
     assert len(layout.json()["markers"]) == 2
     assert "座位 A" in page.text
-    assert "background-image" in page.text
+    assert 'board-image' in page.text
+    assert 'board-overlay' in page.text
     assert 'data-location="1-1"' in page.text
     assert data.json()["layout"]["markers"][0]["location"] == "1-1"
     assert data.json()["layout"]["markers"][1]["location"] == "1-2"
