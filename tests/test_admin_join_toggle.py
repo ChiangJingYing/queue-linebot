@@ -88,42 +88,52 @@ class TestJoinToggle:
 class TestAdminJoinToggle:
     """Test /admin/join toggle/status commands via handler."""
 
-    def test_admin_toggle_off(self, tmp_path):
-        """Admin sends /admin/join toggle off → queue disabled."""
+    def test_admin_join_off(self, tmp_path):
+        """Admin sends /admin/join off → queue disabled."""
         db = DatabaseManager(str(tmp_path / "toggle.db"))
         qm = QueueManager(db)
         handler = LineBotHandler(queue_manager=qm, admin_ids=["admin"])
 
-        result = handler.handle_event(make_event("/admin/join toggle off", user_id="admin"))
+        result = handler.handle_event(make_event("/admin/join off", user_id="admin"))
         assert "關閉" in reply_texts(result)[0]
 
-    def test_admin_toggle_on(self, tmp_path):
-        """Admin sends /admin/join toggle on → queue enabled."""
+    def test_admin_join_on(self, tmp_path):
+        """Admin sends /admin/join on → queue enabled."""
         db = DatabaseManager(str(tmp_path / "toggle2.db"))
         qm = QueueManager(db)
         qm.db.set_config("queue_enabled", "false")
         handler = LineBotHandler(queue_manager=qm, admin_ids=["admin"])
 
-        result = handler.handle_event(make_event("/admin/join toggle on", user_id="admin"))
+        result = handler.handle_event(make_event("/admin/join on", user_id="admin"))
         assert "開啟" in reply_texts(result)[0]
 
-    def test_admin_toggle_no_arg(self, tmp_path):
-        """/admin/join toggle without on/off → error."""
+    def test_admin_join_toggle_no_arg(self, tmp_path):
+        """/admin/join without args → toggle state (enabled → disabled)."""
         db = DatabaseManager(str(tmp_path / "toggle3.db"))
         qm = QueueManager(db)
         handler = LineBotHandler(queue_manager=qm, admin_ids=["admin"])
 
-        result = handler.handle_event(make_event("/admin/join toggle", user_id="admin"))
-        assert "toggle" in reply_texts(result)[0].lower()
+        result = handler.handle_event(make_event("/admin/join", user_id="admin"))
+        assert "關閉" in reply_texts(result)[0]
 
-    def test_admin_toggle_invalid_arg(self, tmp_path):
-        """/admin/join toggle invalid → error."""
+    def test_admin_join_toggle_back(self, tmp_path):
+        """/admin/join toggle from disabled → enabled."""
+        db = DatabaseManager(str(tmp_path / "toggle3b.db"))
+        qm = QueueManager(db)
+        qm.db.set_config("queue_enabled", "false")
+        handler = LineBotHandler(queue_manager=qm, admin_ids=["admin"])
+
+        result = handler.handle_event(make_event("/admin/join", user_id="admin"))
+        assert "開啟" in reply_texts(result)[0]
+
+    def test_admin_join_invalid_arg(self, tmp_path):
+        """/admin/join invalid arg → error."""
         db = DatabaseManager(str(tmp_path / "toggle4.db"))
         qm = QueueManager(db)
         handler = LineBotHandler(queue_manager=qm, admin_ids=["admin"])
 
-        result = handler.handle_event(make_event("/admin/join toggle maybe", user_id="admin"))
-        assert "toggle" in reply_texts(result)[0].lower()
+        result = handler.handle_event(make_event("/admin/join maybe", user_id="admin"))
+        assert "on/off" in reply_texts(result)[0].lower()
 
     def test_admin_join_status(self, tmp_path):
         """/admin/join status → shows current state."""
@@ -135,12 +145,12 @@ class TestAdminJoinToggle:
         assert "隊列狀態" in reply_texts(result)[0]
 
     def test_non_admin_reject(self, tmp_path):
-        """Non-admin /admin/join toggle → denied."""
+        """Non-admin /admin/join off → denied."""
         db = DatabaseManager(str(tmp_path / "toggle6.db"))
         qm = QueueManager(db)
         handler = LineBotHandler(queue_manager=qm, admin_ids=["admin"])
 
-        result = handler.handle_event(make_event("/admin/join toggle off", user_id="alice"))
+        result = handler.handle_event(make_event("/admin/join off", user_id="alice"))
         assert "未授權" in reply_texts(result)[0]
 
     def test_join_blocked_when_disabled(self, tmp_path):
@@ -166,13 +176,13 @@ class TestAdminJoinToggle:
         assert "加入隊列成功" in reply_texts(result)[0]
 
     def test_full_enable_disable_enable(self, tmp_path):
-        """Toggle off → on → back and check joins."""
+        """Off → on → back and check joins."""
         db = DatabaseManager(str(tmp_path / "toggle_e2e.db"))
         qm = QueueManager(db)
         handler = LineBotHandler(queue_manager=qm, admin_ids=["admin"])
 
         # Turn off
-        off = handler.handle_event(make_event("/admin/join toggle off", user_id="admin"))
+        off = handler.handle_event(make_event("/admin/join off", user_id="admin"))
         assert "關閉" in reply_texts(off)[0]
 
         # Try to join -> should fail
@@ -185,7 +195,7 @@ class TestAdminJoinToggle:
         assert "隊列已關閉" in reply_texts(blocked)[0]
 
         # Turn back on
-        on = handler.handle_event(make_event("/admin/join toggle on", user_id="admin"))
+        on = handler.handle_event(make_event("/admin/join on", user_id="admin"))
         assert "開啟" in reply_texts(on)[0]
 
 

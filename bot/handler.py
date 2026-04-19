@@ -230,7 +230,7 @@ class LineBotHandler:
             "/admin/verify [id] [on/off] - 設定身分驗證\n"
             "/admin/vip toggle [on/off] - 開關 VIP 隊列\n"
             "/admin/vip clear - 清空 VIP 隊列\n"
-            "/admin/join toggle [on/off] - 開關總隊列\n"
+            "/admin/join [on/off] - 切換總隊列狀態\n"
             "/admin/join status - 查看總隊列狀態\n"
             "/admin/history [id] - 查詢使用者歷史\n"
             "/admin/export - 匯出 CSV 預覽\n"
@@ -560,21 +560,24 @@ class LineBotHandler:
         return self._reply(reply_token, "未知的設定鍵值。")
 
     def _admin_join(self, args: list, reply_token: str) -> list:
-        """Admin: /admin/join toggle [on/off] / /admin/join status"""
-        if not args:
-            return self._reply(reply_token, "用法：/admin/join toggle [on/off] 或 /admin/join status")
+        """Admin: /admin/join - toggle | /admin/join on | /admin/join off | /admin/join status"""
 
-        sub_cmd = args[0].lower()
-        if sub_cmd == "toggle":
-            if len(args) < 2:
-                return self._reply(reply_token, "用法：/admin/join toggle [on/off]")
-            value = args[1].lower()
-            if value not in {"on", "off"}:
-                return self._reply(reply_token, "用法：/admin/join toggle [on/off]")
-            enabled = value == "on"
+        if not args:
+            # No args: toggle (NOT logic)
+            enabled = not self.queue_manager.db.is_queue_enabled()
             self.queue_manager.db.set_config("queue_enabled", "true" if enabled else "false")
             status = "開啟" if enabled else "關閉"
             return self._reply(reply_token, f"✅ 隊列已{status}")
+
+        sub_cmd = args[0].lower()
+
+        if sub_cmd == "on":
+            self.queue_manager.db.set_config("queue_enabled", "true")
+            return self._reply(reply_token, "✅ 隊列已開啟")
+
+        if sub_cmd == "off":
+            self.queue_manager.db.set_config("queue_enabled", "false")
+            return self._reply(reply_token, "✅ 隊列已關閉")
 
         if sub_cmd == "status":
             enabled = self.queue_manager.db.is_queue_enabled()
@@ -583,7 +586,30 @@ class LineBotHandler:
                 f"📋 隊列狀態：{'已開啟' if enabled else '已關閉'}"
             )
 
-        return self._reply(reply_token, "用法：/admin/join toggle [on/off] 或 /admin/join status")
+        return self._reply(
+            reply_token,
+            "用法：/admin/join [on/off] 切換狀態 或 /admin/join status 查看狀態"
+        )
+
+        if sub_cmd == "on":
+            self.queue_manager.db.set_config("queue_enabled", "true")
+            return self._reply(reply_token, "✅ 隊列已開啟")
+
+        if sub_cmd == "off":
+            self.queue_manager.db.set_config("queue_enabled", "false")
+            return self._reply(reply_token, "✅ 隊列已關閉")
+
+        if sub_cmd == "status":
+            enabled = self.queue_manager.db.is_queue_enabled()
+            return self._reply(
+                reply_token,
+                f"📋 隊列狀態：{'已開啟' if enabled else '已關閉'}"
+            )
+
+        return self._reply(
+            reply_token,
+            "用法：/admin/join [on/off] 切換狀態 或 /admin/join status 查看狀態"
+        )
 
     def _reply(self, reply_token: str, message: str, quick_options: list | None = None) -> list:
         """Create reply action."""
