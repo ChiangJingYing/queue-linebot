@@ -301,10 +301,11 @@ async def upload_dashboard_layout_image(file: UploadFile = File(...)) -> dict:
     if not content:
         raise HTTPException(status_code=400, detail="圖片內容為空")
     image_url = dashboard_layout_store.save_image(file.filename or "layout.png", content)
+    image_url_with_version = f"{image_url}?v={uuid4().hex}"
     layout = dashboard_layout_store.load()
-    layout["imageUrl"] = image_url
+    layout["imageUrl"] = image_url_with_version
     dashboard_layout_store.save(layout)
-    return {"imageUrl": image_url}
+    return {"imageUrl": image_url_with_version}
 
 
 @app.get("/dashboard/assets/{filename}")
@@ -485,8 +486,10 @@ def dashboard_config_page() -> str:
               if (selectedLocations.has(marker.location)) el.classList.add('selected-marker');
               el.draggable = true;
               el.dataset.location = marker.location;
-              el.style.left = `calc(${{marker.x}}% + ${{imageRect.left}}px)`;
-              el.style.top = `calc(${{marker.y}}% + ${{imageRect.top}}px)`;
+              const markerLeft = imageRect.left + (marker.x / 100) * imageRect.width;
+              const markerTop = imageRect.top + (marker.y / 100) * imageRect.height;
+              el.style.left = `${{markerLeft}}px`;
+              el.style.top = `${{markerTop}}px`;
               el.textContent = marker.label || marker.location;
               el.addEventListener('click', (event) => {{
                 event.stopPropagation();

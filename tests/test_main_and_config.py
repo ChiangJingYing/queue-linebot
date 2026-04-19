@@ -261,7 +261,9 @@ def test_dashboard_layout_image_upload(tmp_path):
     assert response.status_code == 200
     payload = response.json()
     assert payload["imageUrl"].startswith("/dashboard/assets/")
-    asset_path = tmp_path / "dashboard_layout" / Path(payload["imageUrl"]).name
+    assert "?v=" in payload["imageUrl"]
+    image_path = payload["imageUrl"].split("?", 1)[0]
+    asset_path = tmp_path / "dashboard_layout" / Path(image_path).name
     assert asset_path.exists()
 
 
