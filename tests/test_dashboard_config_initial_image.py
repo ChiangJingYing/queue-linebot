@@ -25,4 +25,4 @@ def test_dashboard_config_upload_handler_clears_old_markers_after_new_image(tmp_
     response = client.get('/dashboard/config')
 
     assert response.status_code == 200
-    assert 'layout.markers = [];' in response.text
+    assert 'layout = { imageUrl: payload.imageUrl, markers: [] };' in response.text

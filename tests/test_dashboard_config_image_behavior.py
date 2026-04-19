@@ -34,4 +34,4 @@ def test_dashboard_config_click_places_marker_only_when_image_ready(tmp_path):
     response = client.get("/dashboard/config")
 
     assert response.status_code == 200
-    assert "if (layout.imageUrl && !stageImage.complete) return;" in response.text
+    assert "if (layout.imageUrl && !stageImage.complete && !(stageImage.naturalWidth && stageImage.naturalHeight)) return;" in response.text

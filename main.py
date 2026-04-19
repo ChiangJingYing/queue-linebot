@@ -470,7 +470,7 @@ def dashboard_config_page() -> str:
             stageImage.src = layout.imageUrl || "";
             stageImage.style.display = layout.imageUrl ? 'block' : 'none';
             stageOverlay.innerHTML = '';
-            if (layout.imageUrl && !stageImage.complete) return;
+            if (layout.imageUrl && !stageImage.complete && !(stageImage.naturalWidth && stageImage.naturalHeight)) return;
             markerList.innerHTML = '';
             unplacedList.innerHTML = '';
             refreshPlacementQueue();
@@ -525,7 +525,7 @@ def dashboard_config_page() -> str:
             renderEditor();
           }});
           stage.addEventListener('click', (event) => {{
-            if (layout.imageUrl && !stageImage.complete) return;
+            if (layout.imageUrl && !stageImage.complete && !(stageImage.naturalWidth && stageImage.naturalHeight)) return;
             const pos = eventToNormalizedPosition(event);
             const x = pos.x;
             const y = pos.y;
@@ -598,15 +598,20 @@ def dashboard_config_page() -> str:
             const formData = new FormData(event.target);
             const response = await fetch('/dashboard/layout/image', {{ method: 'POST', body: formData }});
             const payload = await response.json();
-            layout.imageUrl = payload.imageUrl;
-            layout.markers = [];
+            layout = {{ imageUrl: payload.imageUrl, markers: [] }};
+            stageOverlay.innerHTML = '';
+            markerList.innerHTML = '';
+            unplacedList.innerHTML = '';
             selectedLocations = new Set();
             selectedLocation = '';
+            stageImage.removeAttribute('src');
             stageImage.src = payload.imageUrl;
             stageImage.style.display = payload.imageUrl ? 'block' : 'none';
             setDirty(true);
             showToast('圖片上傳成功');
-            renderEditor();
+            requestAnimationFrame(() => renderEditor());
+            setTimeout(() => renderEditor(), 50);
+            setTimeout(() => renderEditor(), 150);
           }});
           locationSelect.addEventListener('change', () => {{
             selectLocation(locationSelect.value, labelInput.value);
