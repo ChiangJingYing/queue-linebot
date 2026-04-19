@@ -310,8 +310,9 @@ def dashboard_config_page() -> str:
               <input type=\"file\" name=\"file\" accept=\"image/*\" />
               <button type=\"submit\">上傳圖片</button>
             </form>
-            <label>位置</label>
+            <label>位置（也可點已放置 marker 自動選取）</label>
             <select id=\"location-select\"></select>
+            <p>依序放置模式：點一下圖片就放下一個位置，不需要手動切換下拉。</p>
             <label>標籤</label>
             <input id=\"label-input\" placeholder=\"例如：座位 A / 會議室 1\" />
             <button id=\"save-layout\" type=\"button\">儲存版面</button>
@@ -329,6 +330,7 @@ def dashboard_config_page() -> str:
         <script>
           const LOCATIONS = {locations};
           let layout = {initial_layout};
+          let placementQueue = [];
           const stage = document.getElementById('stage');
           const markerList = document.getElementById('marker-list');
           const unplacedList = document.getElementById('unplaced-list');
@@ -338,13 +340,18 @@ def dashboard_config_page() -> str:
             const option = document.createElement('option');
             option.value = location; option.textContent = location; locationSelect.appendChild(option);
           }}
+          function refreshPlacementQueue() {{
+            const usedLocations = new Set((layout.markers || []).map((item) => item.location));
+            placementQueue = LOCATIONS.filter((item) => !usedLocations.has(item));
+            if (placementQueue.length > 0) locationSelect.value = placementQueue[0];
+          }}
           function renderEditor() {{
             stage.style.backgroundImage = layout.imageUrl ? `url(${{layout.imageUrl}})` : 'none';
             stage.innerHTML = '';
             markerList.innerHTML = '';
             unplacedList.innerHTML = '';
-            const usedLocations = new Set((layout.markers || []).map((item) => item.location));
-            for (const location of LOCATIONS.filter((item) => !usedLocations.has(item))) {{
+            refreshPlacementQueue();
+            for (const location of placementQueue) {{
               const item = document.createElement('li');
               item.textContent = location;
               unplacedList.appendChild(item);
@@ -391,9 +398,11 @@ def dashboard_config_page() -> str:
             const rect = stage.getBoundingClientRect();
             const x = ((event.clientX - rect.left) / rect.width) * 100;
             const y = ((event.clientY - rect.top) / rect.height) * 100;
-            const location = locationSelect.value;
-            layout.markers = (layout.markers || []).filter((item) => item.location !== location);
-            layout.markers.push({{ location, x, y, label: labelInput.value.trim() }});
+            const nextLocation = placementQueue[0] || locationSelect.value;
+            if (!nextLocation) return;
+            layout.markers = (layout.markers || []).filter((item) => item.location !== nextLocation);
+            layout.markers.push({{ location: nextLocation, x, y, label: labelInput.value.trim() || nextLocation }});
+            labelInput.value = '';
             renderEditor();
           }});
           document.getElementById('delete-marker').addEventListener('click', () => {{
@@ -402,6 +411,10 @@ def dashboard_config_page() -> str:
             renderEditor();
           }});
           document.getElementById('save-layout').addEventListener('click', async () => {{
+            if (placementQueue.length > 0) {{
+              const proceed = window.confirm(`還有 ${{placementQueue.length}} 個位置未放置，確定要儲存嗎？`);
+              if (!proceed) return;
+            }}
             const response = await fetch('/dashboard/layout', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify(layout) }});
             layout = await response.json();
             renderEditor();

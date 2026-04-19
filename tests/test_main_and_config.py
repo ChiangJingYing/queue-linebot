@@ -199,6 +199,9 @@ def test_dashboard_config_page_and_layout_api(tmp_path):
     assert "刪除目前位置標記" in page.text
     assert "未放置位置" in page.text
     assert "draggable" in page.text
+    assert "依序放置模式" in page.text
+    assert "placementQueue" in page.text
+    assert "點一下圖片就放下一個位置" in page.text
     assert layout.status_code == 200
     assert layout.json()["markers"] == []
 
@@ -230,6 +233,7 @@ def test_dashboard_layout_can_be_saved_and_rendered(tmp_path):
     assert "background-image" in page.text
     assert 'data-location="1-1"' in page.text
     assert data.json()["layout"]["markers"][0]["location"] == "1-1"
+    assert data.json()["layout"]["markers"][1]["location"] == "1-2"
 
 
 def test_dashboard_layout_image_upload(tmp_path):
