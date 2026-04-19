@@ -335,7 +335,7 @@ def dashboard_config_page() -> str:
           .danger-button {{ background:#ef4444; color:white; }}
           .secondary-button {{ background:#38bdf8; color:#082f49; }}
           .stage {{ position:relative; min-height:520px; background:#020617; border:1px dashed #475569; border-radius:12px; overflow:hidden; }}
-          .stage-image {{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; }}
+          .stage-image {{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; background:none; }}
           .stage-overlay {{ position:absolute; inset:0; }}
           .marker-editor {{ position:absolute; transform:translate(-50%, -50%); background:#38bdf8; color:#082f49; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:700; cursor:grab; border:2px solid transparent; }}
           .selected-marker {{ box-shadow:0 0 0 3px #facc15, 0 0 18px rgba(250,204,21,.6); border-color:#facc15; }}
@@ -514,6 +514,7 @@ def dashboard_config_page() -> str:
             renderEditor();
           }});
           stage.addEventListener('click', (event) => {{
+            if (layout.imageUrl && !stageImage.complete) return;
             const pos = eventToNormalizedPosition(event);
             const x = pos.x;
             const y = pos.y;
@@ -596,6 +597,7 @@ def dashboard_config_page() -> str:
             renderEditor();
           }});
           stageImage.addEventListener('load', () => renderEditor());
+          if (stageImage.complete && layout.imageUrl) renderEditor();
           window.addEventListener('resize', () => renderEditor());
           window.addEventListener('beforeunload', (event) => {{
             if (!hasUnsavedChanges) return;
