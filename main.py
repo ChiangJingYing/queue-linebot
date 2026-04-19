@@ -337,6 +337,7 @@ def dashboard_config_page() -> str:
           let placementQueue = [];
           let selectedLocation = '';
           let toastTimer = null;
+          let hasUnsavedChanges = false;
           const stage = document.getElementById('stage');
           const markerList = document.getElementById('marker-list');
           const unplacedList = document.getElementById('unplaced-list');
@@ -352,6 +353,10 @@ def dashboard_config_page() -> str:
             toast.classList.add('show');
             clearTimeout(toastTimer);
             toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+          }}
+          function setDirty(value) {{
+            hasUnsavedChanges = value;
+            document.title = value ? '＊版面設定' : '版面設定';
           }}
           function selectLocation(location, label = '') {{
             selectedLocation = location;
@@ -415,6 +420,7 @@ def dashboard_config_page() -> str:
             const y = ((event.clientY - rect.top) / rect.height) * 100;
             selectLocation(location);
             updateMarkerPosition(location, x, y);
+            setDirty(true);
             renderEditor();
           }});
           stage.addEventListener('click', (event) => {{
@@ -427,12 +433,14 @@ def dashboard_config_page() -> str:
             layout.markers = (layout.markers || []).filter((item) => item.location !== nextLocation);
             layout.markers.push({{ location: nextLocation, x, y, label: labelInput.value.trim() || nextLocation }});
             labelInput.value = '';
+            setDirty(true);
             renderEditor();
           }});
           document.getElementById('delete-marker').addEventListener('click', () => {{
             const location = locationSelect.value;
             selectedLocation = location;
             layout.markers = (layout.markers || []).filter((item) => item.location !== location);
+            setDirty(true);
             renderEditor();
           }});
           document.getElementById('save-layout').addEventListener('click', async () => {{
@@ -442,6 +450,7 @@ def dashboard_config_page() -> str:
             }}
             const response = await fetch('/dashboard/layout', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify(layout) }});
             layout = await response.json();
+            setDirty(false);
             showToast('儲存成功');
             renderEditor();
           }});
@@ -451,6 +460,7 @@ def dashboard_config_page() -> str:
             const response = await fetch('/dashboard/layout/image', {{ method: 'POST', body: formData }});
             const payload = await response.json();
             layout.imageUrl = payload.imageUrl;
+            setDirty(true);
             showToast('圖片上傳成功');
             renderEditor();
           }});
@@ -458,6 +468,12 @@ def dashboard_config_page() -> str:
             selectLocation(locationSelect.value, labelInput.value);
             renderEditor();
           }});
+          window.addEventListener('beforeunload', (event) => {{
+            if (!hasUnsavedChanges) return;
+            event.preventDefault();
+            event.returnValue = '';
+          }});
+          setDirty(false);
           renderEditor();
         </script>
       </body>
