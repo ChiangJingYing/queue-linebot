@@ -202,6 +202,8 @@ def test_dashboard_config_page_and_layout_api(tmp_path):
     assert "依序放置模式" in page.text
     assert "placementQueue" in page.text
     assert "點一下圖片就放下一個位置" in page.text
+    assert "selected-marker" in page.text
+    assert "toast.classList.add('show')" in page.text
     assert layout.status_code == 200
     assert layout.json()["markers"] == []
 

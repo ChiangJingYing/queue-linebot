@@ -294,7 +294,10 @@ def dashboard_config_page() -> str:
           .wrap {{ display:grid; grid-template-columns: 320px 1fr; gap:20px; }}
           .panel {{ background:#111827; border:1px solid #334155; border-radius:12px; padding:16px; }}
           .stage {{ position:relative; min-height:520px; background:#020617 center/contain no-repeat; border:1px dashed #475569; border-radius:12px; overflow:hidden; }}
-          .marker-editor {{ position:absolute; transform:translate(-50%, -50%); background:#38bdf8; color:#082f49; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:700; }}
+          .marker-editor {{ position:absolute; transform:translate(-50%, -50%); background:#38bdf8; color:#082f49; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:700; cursor:grab; border:2px solid transparent; }}
+          .selected-marker {{ box-shadow:0 0 0 3px #facc15, 0 0 18px rgba(250,204,21,.6); border-color:#facc15; }}
+          .toast {{ position:fixed; right:24px; bottom:24px; background:#22c55e; color:#052e16; padding:12px 16px; border-radius:12px; font-weight:700; opacity:0; transform:translateY(12px); transition:.2s ease; pointer-events:none; }}
+          .toast.show {{ opacity:1; transform:translateY(0); }}
           label, select, input, button {{ display:block; width:100%; margin-bottom:12px; }}
           input, select {{ padding:10px; border-radius:8px; border:1px solid #475569; background:#0f172a; color:#e2e8f0; }}
           button {{ padding:10px; border-radius:8px; border:none; background:#22c55e; color:#052e16; font-weight:700; cursor:pointer; }}
@@ -327,23 +330,41 @@ def dashboard_config_page() -> str:
             <div id=\"stage\" class=\"stage\"></div>
           </div>
         </div>
+        <div id=\"toast\" class=\"toast\">儲存成功</div>
         <script>
           const LOCATIONS = {locations};
           let layout = {initial_layout};
           let placementQueue = [];
+          let selectedLocation = '';
+          let toastTimer = null;
           const stage = document.getElementById('stage');
           const markerList = document.getElementById('marker-list');
           const unplacedList = document.getElementById('unplaced-list');
           const locationSelect = document.getElementById('location-select');
           const labelInput = document.getElementById('label-input');
+          const toast = document.getElementById('toast');
           for (const location of LOCATIONS) {{
             const option = document.createElement('option');
             option.value = location; option.textContent = location; locationSelect.appendChild(option);
           }}
+          function showToast(message) {{
+            toast.textContent = message;
+            toast.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+          }}
+          function selectLocation(location, label = '') {{
+            selectedLocation = location;
+            locationSelect.value = location;
+            labelInput.value = label;
+          }}
           function refreshPlacementQueue() {{
             const usedLocations = new Set((layout.markers || []).map((item) => item.location));
             placementQueue = LOCATIONS.filter((item) => !usedLocations.has(item));
-            if (placementQueue.length > 0) locationSelect.value = placementQueue[0];
+            if (placementQueue.length > 0 && (!selectedLocation || !usedLocations.has(selectedLocation))) {{
+              selectedLocation = placementQueue[0];
+            }}
+            if (selectedLocation) locationSelect.value = selectedLocation;
           }}
           function renderEditor() {{
             stage.style.backgroundImage = layout.imageUrl ? `url(${{layout.imageUrl}})` : 'none';
@@ -359,6 +380,7 @@ def dashboard_config_page() -> str:
             for (const marker of layout.markers || []) {{
               const el = document.createElement('div');
               el.className = 'marker-editor';
+              if (marker.location === selectedLocation) el.classList.add('selected-marker');
               el.draggable = true;
               el.dataset.location = marker.location;
               el.style.left = `${{marker.x}}%`;
@@ -366,8 +388,8 @@ def dashboard_config_page() -> str:
               el.textContent = marker.label || marker.location;
               el.addEventListener('click', (event) => {{
                 event.stopPropagation();
-                locationSelect.value = marker.location;
-                labelInput.value = marker.label || '';
+                selectLocation(marker.location, marker.label || '');
+                renderEditor();
               }});
               el.addEventListener('dragstart', (event) => {{
                 event.dataTransfer.setData('text/plain', marker.location);
@@ -391,6 +413,7 @@ def dashboard_config_page() -> str:
             const rect = stage.getBoundingClientRect();
             const x = ((event.clientX - rect.left) / rect.width) * 100;
             const y = ((event.clientY - rect.top) / rect.height) * 100;
+            selectLocation(location);
             updateMarkerPosition(location, x, y);
             renderEditor();
           }});
@@ -400,6 +423,7 @@ def dashboard_config_page() -> str:
             const y = ((event.clientY - rect.top) / rect.height) * 100;
             const nextLocation = placementQueue[0] || locationSelect.value;
             if (!nextLocation) return;
+            selectLocation(nextLocation, labelInput.value.trim() || nextLocation);
             layout.markers = (layout.markers || []).filter((item) => item.location !== nextLocation);
             layout.markers.push({{ location: nextLocation, x, y, label: labelInput.value.trim() || nextLocation }});
             labelInput.value = '';
@@ -407,6 +431,7 @@ def dashboard_config_page() -> str:
           }});
           document.getElementById('delete-marker').addEventListener('click', () => {{
             const location = locationSelect.value;
+            selectedLocation = location;
             layout.markers = (layout.markers || []).filter((item) => item.location !== location);
             renderEditor();
           }});
@@ -417,6 +442,7 @@ def dashboard_config_page() -> str:
             }}
             const response = await fetch('/dashboard/layout', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify(layout) }});
             layout = await response.json();
+            showToast('儲存成功');
             renderEditor();
           }});
           document.getElementById('image-form').addEventListener('submit', async (event) => {{
@@ -425,6 +451,11 @@ def dashboard_config_page() -> str:
             const response = await fetch('/dashboard/layout/image', {{ method: 'POST', body: formData }});
             const payload = await response.json();
             layout.imageUrl = payload.imageUrl;
+            showToast('圖片上傳成功');
+            renderEditor();
+          }});
+          locationSelect.addEventListener('change', () => {{
+            selectLocation(locationSelect.value, labelInput.value);
             renderEditor();
           }});
           renderEditor();
