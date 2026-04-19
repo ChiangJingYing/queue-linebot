@@ -176,6 +176,9 @@ def _build_dashboard_payload() -> dict:
     }
     profiles = db_manager.get_all_user_profiles()
 
+    blink_window = 90  # seconds after serve until blink stops
+    now = datetime.now()
+
     for profile in profiles:
         if not profile.location or "-" not in profile.location:
             continue
@@ -186,6 +189,7 @@ def _build_dashboard_payload() -> dict:
         cell = grid[row_key][col_key]
         cell["name"] = profile.display_name
         cell["status"] = "registered"
+        cell["recently_served"] = False
 
         if profile.user_id in active_queue:
             cell["status"] = "queued"
@@ -203,16 +207,17 @@ def _build_dashboard_payload() -> dict:
             )
             if served_after_registration:
                 cell["status"] = "served"
+                serve_dt = _parse_timestamp(latest.served_time)
+                if serve_dt and (now - serve_dt).total_seconds() <= blink_window:
+                    cell["recently_served"] = True
 
         cell["statusLabel"] = status_labels[cell["status"]]
 
-    digest_source = json.dumps({"rows": rows, "cols": cols, "grid": grid}, ensure_ascii=False, sort_keys=True)
-    version = hashlib.md5(digest_source.encode("utf-8")).hexdigest()
     return {
         "rows": rows,
         "cols": cols,
         "grid": grid,
-        "version": version,
+        "version": hashlib.md5(json.dumps({"rows": rows, "cols": cols, "grid": grid}, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest(),
         "legend": status_labels,
     }
 
@@ -515,6 +520,8 @@ def dashboard() -> str:
           .dot {{ width:18px; height:18px; border-radius:999px; margin:0 auto 6px; box-shadow:0 0 14px currentColor; display:inline-block; }}
           .lamp {{ width:18px; height:18px; border-radius:999px; display:inline-block; box-shadow:0 0 14px currentColor; }}
           .dot.empty, .lamp.empty {{ background:#64748b; color:#64748b; }} .dot.registered, .lamp.blue {{ background:#38bdf8; color:#38bdf8; }} .dot.queued, .lamp.yellow {{ background:#facc15; color:#facc15; }} .dot.served, .lamp.green {{ background:#22c55e; color:#22c55e; }}
+          .blink {{ animation: blink-green 1.2s ease-in-out infinite; }}
+          @keyframes blink-green {{ 0%, 100% {{ box-shadow:0 0 14px #22c55e; opacity:1; }} 50% {{ box-shadow:0 0 4px #22c55e; opacity:.35; }} }}
           .tag {{ background:rgba(15,23,42,.8); padding:6px 8px; border-radius:10px; font-size:12px; min-width:72px; }}
         </style>
       </head>
@@ -538,7 +545,7 @@ def dashboard() -> str:
               const cell = payload.grid?.[row]?.[col];
               if (!cell) return;
               const dot = marker.querySelector('.dot');
-              dot.className = `dot ${{cell.status}}`;
+              dot.className = `dot ${{cell.status}}$${{cell.recently_served ? ' blink' : ''}}`;
               marker.querySelector('.tag').innerHTML = `${{location}}<br>${{cell.name || cell.statusLabel}}`;
             }});
           }}
