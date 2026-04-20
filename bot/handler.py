@@ -21,6 +21,7 @@ class LineBotHandler:
         vip_service: Optional[VipService] = None,
         admin_ids: list[str] | None = None,
         admin_rich_menu_id: str = "",
+        admin_rich_menu_page2_id: str = "",
         user_rich_menu_id: str = "",
         location_options: dict[str, list[str]] | None = None,
     ) -> None:
@@ -31,9 +32,11 @@ class LineBotHandler:
         self.notifier = Notifier(
             channel_secret=self.channel_secret,
             channel_access_token=self.channel_access_token,
+            admin_rich_menu_page2_id=admin_rich_menu_page2_id,
         )
         self.admin_ids = admin_ids or []
         self.admin_rich_menu_id = admin_rich_menu_id
+        self.admin_rich_menu_page2_id = admin_rich_menu_page2_id
         self.user_rich_menu_id = user_rich_menu_id
         self.location_options = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
         self.pending_actions: dict[str, dict] = {}
@@ -52,6 +55,12 @@ class LineBotHandler:
         text = event.message.text
         user_id = event.source.userId
         reply_token = getattr(event, "reply_token", getattr(event, "replyToken", ""))
+
+        # --- Rich Menu page switch buttons ---
+        if text == "switch_page2":
+            return self._handle_admin_page_switch(user_id, "page2", reply_token)
+        if text == "switch_page1":
+            return self._handle_admin_page_switch(user_id, "page1", reply_token)
 
         command, args = validate_command(text)
         pending_action = self.pending_actions.get(user_id)
@@ -591,26 +600,6 @@ class LineBotHandler:
             "用法：/admin/join [on/off] 切換狀態 或 /admin/join status 查看狀態"
         )
 
-        if sub_cmd == "on":
-            self.queue_manager.db.set_config("queue_enabled", "true")
-            return self._reply(reply_token, "✅ 隊列已開啟")
-
-        if sub_cmd == "off":
-            self.queue_manager.db.set_config("queue_enabled", "false")
-            return self._reply(reply_token, "✅ 隊列已關閉")
-
-        if sub_cmd == "status":
-            enabled = self.queue_manager.db.is_queue_enabled()
-            return self._reply(
-                reply_token,
-                f"📋 隊列狀態：{'已開啟' if enabled else '已關閉'}"
-            )
-
-        return self._reply(
-            reply_token,
-            "用法：/admin/join [on/off] 切換狀態 或 /admin/join status 查看狀態"
-        )
-
     def _reply(self, reply_token: str, message: str, quick_options: list | None = None) -> list:
         """Create reply action."""
         payload = {"replyToken": reply_token, "text": message}
@@ -619,8 +608,32 @@ class LineBotHandler:
         return [payload]
 
     def _sync_rich_menu(self, user_id: str) -> None:
-        """Link different rich menus for admin vs normal users."""
-        rich_menu_id = self.admin_rich_menu_id if self._is_admin(user_id) else self.user_rich_menu_id
-        if rich_menu_id:
-            self.notifier.link_rich_menu(user_id, rich_menu_id)
+        """Sync rich menu based on admin status.
+
+        - Admins: if they don't have a valid menu, link page1.
+        - Users: link user menu.
+        """
+        is_admin = self._is_admin(user_id)
+        if is_admin:
+            # Detect current menu first
+            current = self.notifier.get_user_rich_menu(user_id)
+            valid = current in (self.admin_rich_menu_id, self.admin_rich_menu_page2_id)
+            if not valid and self.admin_rich_menu_id:
+                self.notifier.link_rich_menu(user_id, self.admin_rich_menu_id)
+        else:
+            if self.user_rich_menu_id:
+                self.notifier.link_rich_menu(user_id, self.user_rich_menu_id)
+
+    def _handle_admin_page_switch(self, user_id: str, target_page: str, reply_token: str) -> list:
+        """Handle admin rich menu page switch."""
+        if not self._is_admin(user_id):
+            return self._reply(reply_token, "❌ 未授權，僅限管理員使用。")
+
+        target_id = (
+            self.admin_rich_menu_page2_id if target_page == "page2"
+            else self.admin_rich_menu_id
+        )
+        result = self.notifier.link_rich_menu(user_id, target_id)
+        page_num = 2 if target_page == "page2" else 1
+        return self._reply(reply_token, f"✅ 已切換至第 {page_num} 頁")
 

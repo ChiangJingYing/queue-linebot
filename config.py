@@ -65,6 +65,7 @@ def get_defaults() -> dict:
             "channel_access_token": os.getenv("LINE_CHANNEL_TOKEN", ""),
             "admin_ids": ["admin_xxxxx"],
             "admin_rich_menu_id": os.getenv("LINE_ADMIN_RICH_MENU_ID", ""),
+            "admin_rich_menu_page2_id": os.getenv("LINE_ADMIN_RICH_MENU_PAGE2_ID", ""),
             "user_rich_menu_id": os.getenv("LINE_USER_RICH_MENU_ID", ""),
         },
         "registration": {

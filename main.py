@@ -33,6 +33,7 @@ CHANNEL_SECRET = line_bot_config.get("channel_secret", "")
 CHANNEL_ACCESS_TOKEN = line_bot_config.get("channel_access_token", "")
 ADMIN_IDS: list[str] = line_bot_config.get("admin_ids", ["admin_xxxxx", "another_admin"])
 ADMIN_RICH_MENU_ID = line_bot_config.get("admin_rich_menu_id", "")
+ADMIN_RICH_MENU_PAGE2_ID = line_bot_config.get("admin_rich_menu_page2_id", "")
 USER_RICH_MENU_ID = line_bot_config.get("user_rich_menu_id", "")
 LOCATION_OPTIONS = config.get("registration", {}).get("location_options", {"A": ["1", "2"], "B": ["1", "2"]})
 
@@ -101,7 +102,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     from apscheduler.schedulers.background import BackgroundScheduler
 
     db_manager = DatabaseManager()
-    notifier = Notifier(CHANNEL_SECRET, CHANNEL_ACCESS_TOKEN)
+    notifier = Notifier(CHANNEL_SECRET, CHANNEL_ACCESS_TOKEN, ADMIN_RICH_MENU_PAGE2_ID)
     queue_manager = QueueManager(db_manager, notifier)
     vip_service = VipService(db_manager)
     line_handler = LineBotHandler(
@@ -111,6 +112,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         vip_service=vip_service,
         admin_ids=ADMIN_IDS,
         admin_rich_menu_id=ADMIN_RICH_MENU_ID,
+        admin_rich_menu_page2_id=ADMIN_RICH_MENU_PAGE2_ID,
         user_rich_menu_id=USER_RICH_MENU_ID,
         location_options=LOCATION_OPTIONS,
     )

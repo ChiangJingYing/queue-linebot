@@ -14,9 +14,11 @@ class Notifier:
         self,
         channel_secret: str = "",
         channel_access_token: str = "",
+        admin_rich_menu_page2_id: str = "",
     ) -> None:
         self.channel_secret = channel_secret
         self.channel_access_token = channel_access_token
+        self.admin_rich_menu_page2_id = admin_rich_menu_page2_id
 
     def push(self, user_id: str, message: str) -> str:
         """Send a LINE push message."""
@@ -96,6 +98,37 @@ class Notifier:
         """Notify user joined successfully."""
         msg = f"✅ 已成功加入隊列！你的號碼是：#{queue_number}"
         return self.notify_user(user_id, msg)
+
+    def get_user_rich_menu(self, user_id: str) -> str:
+        """取得 user 目前綁定的 rich menu ID。"""
+        if not self.channel_access_token:
+            return ""
+        try:
+            from linebot.v3.messaging import ApiClient, Configuration, MessagingApi
+        except Exception as exc:
+            logger.warning("LINE SDK 無法使用，無法取得 rich menu ID：%s", exc)
+            return ""
+        try:
+            config = Configuration(access_token=self.channel_access_token)
+            with ApiClient(config) as api_client:
+                return MessagingApi(api_client).get_rich_menu_id_of_user(user_id)
+        except Exception as exc:
+            logger.exception("取得 rich menu ID 失敗 user_id=%s", user_id)
+            return ""
+
+    def switch_admin_page(self, user_id: str) -> str:
+        """切換 admin rich menu page (1 ↔ 2)。"""
+        if not self.admin_rich_menu_page2_id:
+            logger.warning("admin_rich_menu_page2_id 未設定，跳過切換")
+            return "rich menu page2 尚未設定"
+
+        current_menu = self.get_user_rich_menu(user_id)
+        target_menu = (
+            self.admin_rich_menu_page2_id
+            if current_menu == self.admin_rich_menu_page2_id
+            else self.admin_rich_menu_id
+        )
+        return self.link_rich_menu(user_id, target_menu)
 
 
 

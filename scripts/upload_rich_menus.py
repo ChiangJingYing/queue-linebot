@@ -32,6 +32,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "queue_config.yaml"
 ADMIN_JSON = ROOT / "rich_menus" / "admin_rich_menu.json"
+ADMIN_PAGE2_JSON = ROOT / "rich_menus" / "admin_page2_rich_menu.json"
 USER_JSON = ROOT / "rich_menus" / "user_rich_menu.json"
 MAX_IMAGE_BYTES = 1024 * 1024
 
@@ -160,10 +161,15 @@ def upload_one(token: str, json_path: Path, image_path: Path, label: str, auto_c
     return rich_menu_id
 
 
-def maybe_write_config(config_path: Path, admin_id: str, user_id: str) -> None:
+def upload_page2(token: str, json_path: Path, image_path: Path, auto_compress: bool = False) -> str:
+    return upload_one(token, json_path, image_path, "admin page2", auto_compress=auto_compress)
+
+
+def maybe_write_config(config_path: Path, admin_id: str, user_id: str, admin_page2_id: str) -> None:
     config = _load_yaml(config_path)
     config.setdefault("line_bot", {})
     config["line_bot"]["admin_rich_menu_id"] = admin_id
+    config["line_bot"]["admin_rich_menu_page2_id"] = admin_page2_id
     config["line_bot"]["user_rich_menu_id"] = user_id
     _save_yaml(config_path, config)
     print(f"已寫入 {config_path}")
@@ -171,7 +177,8 @@ def maybe_write_config(config_path: Path, admin_id: str, user_id: str) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Upload admin/user LINE rich menus")
-    parser.add_argument("--admin-image", required=True, help="admin rich menu image path")
+    parser.add_argument("--admin-image", required=True, help="admin page1 rich menu image path")
+    parser.add_argument("--admin-page2-image", default=None, help="admin page2 rich menu image path (optional)")
     parser.add_argument("--user-image", required=True, help="user rich menu image path")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="config yaml path")
     parser.add_argument("--token", default=None, help="LINE channel access token")
@@ -195,12 +202,17 @@ def main() -> int:
 
     try:
         admin_id = upload_one(token, ADMIN_JSON, admin_image, "admin", auto_compress=args.auto_compress)
+        admin_page2_id = ""
+        if args.admin_page2_image:
+            admin_page2_id = upload_page2(token, ADMIN_PAGE2_JSON, Path(args.admin_page2_image).resolve(), auto_compress=args.auto_compress)
         user_id = upload_one(token, USER_JSON, user_image, "user", auto_compress=args.auto_compress)
         print("\n請把下列 ID 設到設定中：")
         print(f"admin_rich_menu_id: {admin_id}")
+        if admin_page2_id:
+            print(f"admin_rich_menu_page2_id: {admin_page2_id}")
         print(f"user_rich_menu_id: {user_id}")
         if args.write_config:
-            maybe_write_config(config_path, admin_id, user_id)
+            maybe_write_config(config_path, admin_id, user_id, admin_page2_id)
     except Exception as exc:
         print(f"上傳失敗：{exc}", file=sys.stderr)
         return 1
