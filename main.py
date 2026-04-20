@@ -565,7 +565,7 @@ def dashboard_config_page() -> str:
             if (event.target !== stage && event.target !== stageOverlay && event.target !== stageImage) return;
             if (layout.imageUrl && !(stageImage.complete || (stageImage.naturalWidth && stageImage.naturalHeight))) return;
             const pos = eventToNormalizedPosition(event);
-            const nextLocation = locationSelect.value || refreshPlacementQueue()[0];
+            const nextLocation = refreshPlacementQueue()[0] || locationSelect.value;
             if (!nextLocation) return;
             const label = labelInput.value.trim();
             const existing = (layout.markers || []).filter((item) => item.location !== nextLocation);
