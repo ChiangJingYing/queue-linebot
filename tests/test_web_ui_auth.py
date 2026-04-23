@@ -135,3 +135,29 @@ def test_query_token_is_rejected_when_disabled(tmp_path):
     response = client.get(f"/dashboard?token={ADMIN_TOKEN}")
 
     assert response.status_code == 401
+
+
+def test_query_token_is_accepted_when_enabled(tmp_path):
+    client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
+    main.config["web_ui"]["allow_query_token"] = True
+
+    response = client.get(f"/dashboard?token={ADMIN_TOKEN}")
+
+    assert response.status_code == 200
+
+
+def test_dashboard_pages_embed_auth_aware_fetch_helpers(tmp_path):
+    client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
+    main.config["web_ui"]["allow_query_token"] = True
+
+    dashboard_page = client.get(f"/dashboard?token={ADMIN_TOKEN}")
+    config_page = client.get(f"/dashboard/config?token={ADMIN_TOKEN}")
+
+    assert dashboard_page.status_code == 200
+    assert config_page.status_code == 200
+    assert "function withAuthHeaders" in dashboard_page.text
+    assert "function withAuthUrl" in dashboard_page.text
+    assert "localStorage.setItem('queue_admin_token'" in dashboard_page.text
+    assert "function withAuthHeaders" in config_page.text
+    assert "function withAuthUrl" in config_page.text
+    assert "X-Admin-Token" in config_page.text

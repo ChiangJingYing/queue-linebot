@@ -77,6 +77,44 @@ def _require_web_ui_auth(request: Request, *, protect_reads: bool = True) -> Non
     raise HTTPException(status_code=401, detail="Unauthorized")
 
 
+def _web_ui_bootstrap_script(request: Request) -> str:
+    token = ""
+    web_ui = _web_ui_config()
+    if web_ui.get("allow_query_token"):
+        token = (request.query_params.get("token") or "").strip()
+    token_json = json.dumps(token, ensure_ascii=False)
+    return f"""
+          const AUTH_TOKEN_STORAGE_KEY = 'queue_admin_token';
+          const bootToken = {token_json};
+          if (bootToken) localStorage.setItem('queue_admin_token', bootToken);
+
+          function getStoredAuthToken() {{
+            try {{
+              return localStorage.getItem('queue_admin_token') || '';
+            }} catch (error) {{
+              return bootToken || '';
+            }}
+          }}
+
+          function withAuthHeaders(init = {{}}) {{
+            const token = getStoredAuthToken();
+            const headers = new Headers(init.headers || {{}});
+            if (token) headers.set('X-Admin-Token', token);
+            return {{ ...init, headers }};
+          }}
+
+          function withAuthUrl(url) {{
+            const token = getStoredAuthToken();
+            if (!token) return url;
+            const next = new URL(url, window.location.origin);
+            if (!next.searchParams.has('token')) next.searchParams.set('token', token);
+            const path = next.pathname + next.search + next.hash;
+            if (next.origin === window.location.origin) return path;
+            return next.toString();
+          }}
+    """
+
+
 db_manager: DatabaseManager | None = None
 queue_manager: QueueManager | None = None
 vip_service: VipService | None = None
@@ -391,6 +429,7 @@ def dashboard_config_page(request: Request) -> str:
     layout = dashboard_layout_store.load()
     initial_layout = json.dumps(layout, ensure_ascii=False)
     locations = json.dumps(_all_locations(), ensure_ascii=False)
+    auth_bootstrap = _web_ui_bootstrap_script(request)
     return f"""
     <html>
       <head>
@@ -457,6 +496,7 @@ def dashboard_config_page(request: Request) -> str:
           let toastTimer = null;
           let dirty = false;
 
+{auth_bootstrap}
           const stage = document.getElementById('stage');
           const stageImage = document.getElementById('stage-image');
           const stageOverlay = document.getElementById('stage-overlay');
@@ -647,7 +687,7 @@ def dashboard_config_page(request: Request) -> str:
           document.getElementById('reset-layout').addEventListener('click', async () => {{
             const proceed = window.confirm('這會清除目前已放置的位置標記，確定要繼續嗎？');
             if (!proceed) return;
-            const response = await fetch('/dashboard/layout/reset', {{ method: 'POST' }});
+            const response = await fetch(withAuthUrl('/dashboard/layout/reset'), withAuthHeaders({{ method: 'POST' }}));
             const payload = await response.json();
             setLayout(payload);
             selectedLocations = new Set();
@@ -675,11 +715,11 @@ def dashboard_config_page(request: Request) -> str:
           document.getElementById('align-vertical').addEventListener('click', () => alignSelected('x'));
 
           document.getElementById('save-layout').addEventListener('click', async () => {{
-            const response = await fetch('/dashboard/layout', {{
+            const response = await fetch(withAuthUrl('/dashboard/layout'), withAuthHeaders({{
               method: 'POST',
               headers: {{ 'Content-Type': 'application/json' }},
               body: JSON.stringify(layout),
-            }});
+            }}));
             const payload = await response.json();
             setLayout(payload);
             setDirty(false);
@@ -694,7 +734,7 @@ def dashboard_config_page(request: Request) -> str:
             if (!file) return;
             const formData = new FormData();
             formData.append('file', file);
-            const response = await fetch('/dashboard/layout/image', {{ method: 'POST', body: formData }});
+            const response = await fetch(withAuthUrl('/dashboard/layout/image'), withAuthHeaders({{ method: 'POST', body: formData }}));
             const payload = await response.json();
             setLayout({{ ...layout, imageUrl: payload.imageUrl, markers: [] }});
             selectedLocations = new Set();
@@ -736,6 +776,7 @@ def dashboard(request: Request) -> str:
     payload = _build_dashboard_payload()
     layout = dashboard_layout_store.load()
     initial_payload = json.dumps(payload, ensure_ascii=False)
+    auth_bootstrap = _web_ui_bootstrap_script(request)
     markers_html = []
     for marker in layout.get("markers", []):
         location = marker.get("location", "")
@@ -805,7 +846,9 @@ def dashboard(request: Request) -> str:
           </div>
         </div>
         <script>
-          let previousGrid = {{}}, currentVersion = null;
+{auth_bootstrap}
+          let previousGrid = {{}};
+          let currentVersion = null;
           const initialPayload = {initial_payload};
           const board = document.getElementById('board');
           const boardImage = document.getElementById('board-image');
@@ -886,7 +929,7 @@ def dashboard(request: Request) -> str:
           }}
 
           async function pollDashboard() {{
-            const response = await fetch('/dashboard/data', {{ cache: 'no-store' }});
+            const response = await fetch(withAuthUrl('/dashboard/data'), withAuthHeaders({{ cache: 'no-store' }}));
             const payload = await response.json();
             if (payload.version !== currentVersion) renderMarkers(payload);
           }}
