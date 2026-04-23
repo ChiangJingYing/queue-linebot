@@ -182,9 +182,23 @@ def test_dashboard_login_sets_session_cookie_and_redirects(tmp_path):
         follow_redirects=False,
     )
 
+    cookie_name = main.config["web_ui"]["session_cookie_name"]
+    cookie_value = response.cookies.get(cookie_name)
+
     assert response.status_code in {302, 303}
     assert response.headers["location"] == "/dashboard"
-    assert main.config["web_ui"]["session_cookie_name"] in response.headers.get("set-cookie", "")
+    assert cookie_name in response.headers.get("set-cookie", "")
+    assert cookie_value
+    assert cookie_value != ADMIN_TOKEN
+
+
+def test_tampered_dashboard_session_cookie_is_rejected(tmp_path):
+    client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
+    cookie_name = main.config["web_ui"]["session_cookie_name"]
+
+    response = client.get("/dashboard", cookies={cookie_name: "tampered-cookie"})
+
+    assert response.status_code == 401
 
 
 def test_dashboard_login_rejects_wrong_token(tmp_path):

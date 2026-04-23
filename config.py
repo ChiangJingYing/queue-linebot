@@ -84,5 +84,6 @@ def get_defaults() -> dict:
             "protect_read_routes": False,
             "allow_query_token": False,
             "session_cookie_name": "queue_admin_session",
+            "session_secret": os.getenv("WEB_UI_SESSION_SECRET", ""),
         },
     }

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
 import json
 import logging
 import mimetypes
@@ -49,12 +51,44 @@ def _session_cookie_name() -> str:
     return str(_web_ui_config().get("session_cookie_name") or "queue_admin_session")
 
 
+def _configured_web_ui_token() -> str:
+    return str(_web_ui_config().get("admin_token") or "").strip()
+
+
+def _session_secret() -> str:
+    secret = str(_web_ui_config().get("session_secret") or "").strip()
+    return secret or _configured_web_ui_token()
+
+
+def _sign_web_ui_session(token: str) -> str:
+    payload = token.strip().encode("utf-8")
+    signature = hmac.new(_session_secret().encode("utf-8"), payload, hashlib.sha256).hexdigest()
+    encoded_payload = base64.urlsafe_b64encode(payload).decode("ascii")
+    return f"{encoded_payload}.{signature}"
+
+
+def _unsign_web_ui_session(cookie_value: str) -> str:
+    if not cookie_value or "." not in cookie_value:
+        return ""
+    encoded_payload, signature = cookie_value.split(".", 1)
+    if not encoded_payload or not signature:
+        return ""
+    try:
+        payload = base64.urlsafe_b64decode(encoded_payload.encode("ascii")).decode("utf-8")
+    except Exception:
+        return ""
+    expected = hmac.new(_session_secret().encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not compare_digest(expected, signature):
+        return ""
+    return payload
+
+
 def _extract_web_ui_token(request: Request) -> str:
     token = (request.headers.get("X-Admin-Token") or "").strip()
     if token:
         return token
 
-    cookie_token = (request.cookies.get(_session_cookie_name()) or "").strip()
+    cookie_token = _unsign_web_ui_session((request.cookies.get(_session_cookie_name()) or "").strip())
     if cookie_token:
         return cookie_token
 
@@ -63,10 +97,6 @@ def _extract_web_ui_token(request: Request) -> str:
         return (request.query_params.get("token") or "").strip()
 
     return ""
-
-
-def _configured_web_ui_token() -> str:
-    return str(_web_ui_config().get("admin_token") or "").strip()
 
 
 def _is_valid_web_ui_token(request: Request) -> bool:
@@ -476,7 +506,7 @@ def dashboard_login(token: str = Form(...)):
     response = RedirectResponse(url="/dashboard", status_code=303)
     response.set_cookie(
         key=_session_cookie_name(),
-        value=configured_token,
+        value=_sign_web_ui_session(configured_token),
         httponly=True,
         samesite="lax",
     )
