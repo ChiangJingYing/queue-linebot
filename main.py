@@ -107,15 +107,20 @@ def _is_valid_web_ui_token(request: Request) -> bool:
     return compare_digest(configured_token, provided_token)
 
 
-def _require_web_ui_auth(request: Request, *, protect_reads: bool = True) -> None:
-    web_ui = _web_ui_config()
+def _should_protect_web_ui_reads() -> bool:
+    return bool(_web_ui_config().get("protect_read_routes", False))
+
+
+def _require_web_ui_auth(request: Request, *, protect_reads: bool = True, html_redirect: bool = False) -> None:
     configured_token = _configured_web_ui_token()
     if not configured_token:
         return
-    if not protect_reads and not web_ui.get("protect_read_routes", False):
+    if not protect_reads and not _should_protect_web_ui_reads():
         return
     if _is_valid_web_ui_token(request):
         return
+    if html_redirect:
+        raise HTTPException(status_code=303, detail="Redirect", headers={"Location": "/dashboard/login"})
     raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -522,7 +527,7 @@ def dashboard_logout():
 
 @app.get("/dashboard/config", response_class=HTMLResponse)
 def dashboard_config_page(request: Request) -> str:
-    _require_web_ui_auth(request, protect_reads=False)
+    _require_web_ui_auth(request, protect_reads=False, html_redirect=True)
     layout = dashboard_layout_store.load()
     initial_layout = json.dumps(layout, ensure_ascii=False)
     locations = json.dumps(_all_locations(), ensure_ascii=False)
@@ -869,7 +874,7 @@ def dashboard_config_page(request: Request) -> str:
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request) -> str:
-    _require_web_ui_auth(request, protect_reads=False)
+    _require_web_ui_auth(request, protect_reads=False, html_redirect=True)
     payload = _build_dashboard_payload()
     layout = dashboard_layout_store.load()
     initial_payload = json.dumps(payload, ensure_ascii=False)

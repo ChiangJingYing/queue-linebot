@@ -109,9 +109,17 @@ def test_dashboard_read_routes_stay_public_when_protection_disabled(tmp_path):
 def test_dashboard_read_routes_require_token_when_protection_enabled(tmp_path):
     client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
 
-    for path in ["/dashboard", "/dashboard/data", "/dashboard/config", "/dashboard/layout"]:
-        response = client.get(path)
-        assert response.status_code == 401
+    page = client.get("/dashboard", follow_redirects=False)
+    config_page = client.get("/dashboard/config", follow_redirects=False)
+    data = client.get("/dashboard/data")
+    layout = client.get("/dashboard/layout")
+
+    assert page.status_code in {302, 303}
+    assert page.headers["location"] == "/dashboard/login"
+    assert config_page.status_code in {302, 303}
+    assert config_page.headers["location"] == "/dashboard/login"
+    assert data.status_code == 401
+    assert layout.status_code == 401
 
 
 def test_dashboard_read_routes_accept_valid_header_token_when_protection_enabled(tmp_path):
@@ -132,9 +140,10 @@ def test_dashboard_read_routes_accept_valid_header_token_when_protection_enabled
 def test_query_token_is_rejected_when_disabled(tmp_path):
     client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
 
-    response = client.get(f"/dashboard?token={ADMIN_TOKEN}")
+    response = client.get(f"/dashboard?token={ADMIN_TOKEN}", follow_redirects=False)
 
-    assert response.status_code == 401
+    assert response.status_code in {302, 303}
+    assert response.headers["location"] == "/dashboard/login"
 
 
 def test_query_token_is_accepted_when_enabled(tmp_path):
@@ -196,9 +205,12 @@ def test_tampered_dashboard_session_cookie_is_rejected(tmp_path):
     client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
     cookie_name = main.config["web_ui"]["session_cookie_name"]
 
-    response = client.get("/dashboard", cookies={cookie_name: "tampered-cookie"})
+    page = client.get("/dashboard", cookies={cookie_name: "tampered-cookie"}, follow_redirects=False)
+    data = client.get("/dashboard/data", cookies={cookie_name: "tampered-cookie"})
 
-    assert response.status_code == 401
+    assert page.status_code in {302, 303}
+    assert page.headers["location"] == "/dashboard/login"
+    assert data.status_code == 401
 
 
 def test_dashboard_login_rejects_wrong_token(tmp_path):
