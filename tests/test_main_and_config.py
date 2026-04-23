@@ -39,6 +39,13 @@ def _setup_runtime(tmp_path, location_options=None):
     main.CHANNEL_ACCESS_TOKEN = ""
     main.LOCATION_OPTIONS = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
     main.dashboard_layout_store = main.DashboardLayoutStore(tmp_path / "dashboard_layout")
+    main.config["web_ui"] = {
+        "admin_token": "",
+        "protect_read_routes": False,
+        "allow_query_token": False,
+        "session_cookie_name": "queue_admin_session",
+        "session_secret": "",
+    }
 
     return qm
 
