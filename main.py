@@ -684,7 +684,7 @@ def dashboard() -> str:
         if not cell:
             continue
         markers_html.append(
-            f'<div class="marker" data-location="{location}" style="left:calc({marker.get("x", 0)}% + var(--image-left, 0px));top:calc({marker.get("y", 0)}% + var(--image-top, 0px));">'
+            f'<div class="marker" data-location="{location}" data-x="{marker.get("x", 0)}" data-y="{marker.get("y", 0)}" style="visibility:hidden">'
             f'<div class="dot {cell["status"]}"></div>'
             f'<div class="tag">{marker.get("label") or location}<br>{cell.get("name") or cell.get("statusLabel")}</div>'
             f'</div>'
@@ -697,15 +697,18 @@ def dashboard() -> str:
         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
         <title>位置看板</title>
 <style>
-          body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#020617; color:#e2e8f0; padding:24px; overflow:hidden; }}
-          .page {{ max-width:min(100vw - 48px, 1400px); margin:0 auto; }}
-          .stats-panel {{ display:grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap:12px; margin:0 0 16px; }}
-          .stat-card {{ background:#0f172a; border:1px solid #334155; border-radius:14px; padding:14px 16px; }}
-          .stat-label {{ font-size:12px; color:#94a3b8; margin-bottom:6px; }}
-          .stat-value {{ font-size:28px; font-weight:800; color:#f8fafc; }}
-          .legend {{ display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap; }}
+          * {{ box-sizing:border-box; }}
+          html, body {{ height:100%; margin:0; }}
+          body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#020617; color:#e2e8f0; padding:16px; overflow:hidden; display:flex; flex-direction:column; }}
+          .page {{ flex:1; min-height:0; display:flex; flex-direction:column; gap:10px; }}
+          .stats-panel {{ display:grid; grid-template-columns: repeat(3, minmax(100px, 1fr)); gap:10px; flex-shrink:0; }}
+          .stat-card {{ background:#0f172a; border:1px solid #334155; border-radius:14px; padding:10px 14px; }}
+          .stat-label {{ font-size:12px; color:#94a3b8; margin-bottom:4px; }}
+          .stat-value {{ font-size:24px; font-weight:800; color:#f8fafc; }}
+          .legend {{ display:flex; gap:16px; flex-wrap:wrap; flex-shrink:0; }}
           .legend span {{ display:flex; align-items:center; gap:8px; }}
-          .board {{ position:relative; width:100%; max-width:min(100vw - 48px, 1400px); max-height:calc(100vh - 140px); aspect-ratio: var(--board-aspect-ratio, 16 / 9); background:#0f172a; border:1px solid #334155; border-radius:16px; overflow:hidden; margin:0 auto; }}
+          .board-wrapper {{ flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }}
+          .board {{ position:relative; background:#0f172a; border:1px solid #334155; border-radius:16px; overflow:hidden; }}
           .marker {{ position:absolute; transform:translate(-50%, -50%); text-align:center; }}
           .board-image {{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }}
           .board-overlay {{ position:absolute; inset:0; }}
@@ -718,7 +721,6 @@ def dashboard() -> str:
         </style>      </head>
       <body>
         <div class="page">
-        <h1>位置看板</h1>
         <div class="stats-panel">
           <div class="stat-card"><div class="stat-label">Registered</div><div class="stat-value" id="stat-registered">{payload['stats']['registered']}</div></div>
           <div class="stat-card"><div class="stat-label">Queue</div><div class="stat-value" id="stat-queue">{payload['stats']['queue']}</div></div>
@@ -730,30 +732,25 @@ def dashboard() -> str:
           <span><i class=\"lamp yellow\"></i> 排隊中</span>
           <span><i class=\"lamp green\"></i> 已叫號</span>
         </div>
-        <div id=\"board\" class=\"board\">
-          <img id=\"board-image\" class=\"board-image\" src=\"{layout.get("imageUrl") or ""}\" alt=\"layout\" />
-          <div id=\"board-overlay\" class=\"board-overlay\">{''.join(markers_html)}</div>
+        <div class=\"board-wrapper\">
+          <div id=\"board\" class=\"board\">
+            <img id=\"board-image\" class=\"board-image\" src=\"{layout.get("imageUrl") or ""}\" alt=\"layout\" />
+            <div id=\"board-overlay\" class=\"board-overlay\">{''.join(markers_html)}</div>
+          </div>
         </div>
         <script>
           let previousGrid = {{}}, currentVersion = null;
           const initialPayload = {initial_payload};
-          function updateBoardAspectRatio() {{
-            const board = document.getElementById('board');
-            const boardImage = document.getElementById('board-image');
-            if (board && boardImage && boardImage.naturalWidth && boardImage.naturalHeight) {{
-              board.style.setProperty('--board-aspect-ratio', `${{boardImage.naturalWidth}} / ${{boardImage.naturalHeight}}`);
-            }}
-          }}
-          function getImagePlacementRect(container, image) {{
-            const rect = container.getBoundingClientRect();
-            const naturalWidth = image.naturalWidth || rect.width || 1;
-            const naturalHeight = image.naturalHeight || rect.height || 1;
+          const board = document.getElementById('board');
+          const boardImage = document.getElementById('board-image');
+
+          function getImagePlacementRect() {{
+            const rect = board.getBoundingClientRect();
+            const naturalWidth = boardImage.naturalWidth || rect.width || 1;
+            const naturalHeight = boardImage.naturalHeight || rect.height || 1;
             const containerRatio = rect.width / rect.height;
             const imageRatio = naturalWidth / naturalHeight;
-            let width = rect.width;
-            let height = rect.height;
-            let left = 0;
-            let top = 0;
+            let width = rect.width, height = rect.height, left = 0, top = 0;
             if (imageRatio > containerRatio) {{
               height = rect.width / imageRatio;
               top = (rect.height - height) / 2;
@@ -763,19 +760,34 @@ def dashboard() -> str:
             }}
             return {{ left, top, width, height }};
           }}
+
+          function resizeBoard() {{
+            if (!boardImage.naturalWidth || !boardImage.naturalHeight) return;
+            const wrapper = board.parentElement;
+            const wrapW = wrapper.clientWidth;
+            const wrapH = wrapper.clientHeight;
+            const aspectRatio = boardImage.naturalWidth / boardImage.naturalHeight;
+            if (wrapW / wrapH > aspectRatio) {{
+              board.style.height = wrapH + 'px';
+              board.style.width = (wrapH * aspectRatio) + 'px';
+            }} else {{
+              board.style.width = wrapW + 'px';
+              board.style.height = (wrapW / aspectRatio) + 'px';
+            }}
+          }}
+
           function renderMarkers(payload) {{
             previousGrid = payload.grid; currentVersion = payload.version;
             document.getElementById('stat-registered').textContent = payload.stats.registered;
             document.getElementById('stat-queue').textContent = payload.stats.queue;
             document.getElementById('stat-served').textContent = payload.stats.served;
-            const board = document.getElementById('board');
-            const boardImage = document.getElementById('board-image');
-            const imageRect = getImagePlacementRect(board, boardImage);
-            board.style.setProperty('--image-left', `${{imageRect.left}}px`);
-            board.style.setProperty('--image-top', `${{imageRect.top}}px`);
-            board.style.setProperty('--image-width', `${{imageRect.width}}px`);
-            board.style.setProperty('--image-height', `${{imageRect.height}}px`);
+            const imageRect = getImagePlacementRect();
             document.querySelectorAll('.marker').forEach((marker) => {{
+              const x = parseFloat(marker.dataset.x);
+              const y = parseFloat(marker.dataset.y);
+              marker.style.left = (imageRect.left + (x / 100) * imageRect.width) + 'px';
+              marker.style.top  = (imageRect.top  + (y / 100) * imageRect.height) + 'px';
+              marker.style.visibility = 'visible';
               const location = marker.dataset.location;
               const [row, col] = location.split('-');
               const cell = payload.grid?.[row]?.[col];
@@ -785,15 +797,22 @@ def dashboard() -> str:
               marker.querySelector('.tag').innerHTML = `${{location}}<br>${{cell.name || cell.statusLabel}}`;
             }});
           }}
+
           async function pollDashboard() {{
             const response = await fetch('/dashboard/data', {{ cache: 'no-store' }});
             const payload = await response.json();
             if (payload.version !== currentVersion) renderMarkers(payload);
           }}
-          const boardImage = document.getElementById('board-image');
-          if (boardImage) boardImage.addEventListener('load', () => {{ updateBoardAspectRatio(); renderMarkers(initialPayload); }});
-          window.addEventListener('resize', () => renderMarkers(initialPayload));
-          updateBoardAspectRatio();
+
+          if (boardImage) boardImage.addEventListener('load', () => {{
+            resizeBoard();
+            renderMarkers(initialPayload);
+          }});
+          window.addEventListener('resize', () => {{
+            resizeBoard();
+            renderMarkers(initialPayload);
+          }});
+          resizeBoard();
           renderMarkers(initialPayload);
           setInterval(pollDashboard, 3000);
         </script>
@@ -974,7 +993,7 @@ def _send_replies(reply_actions: list) -> int:
             if isinstance(action, dict):
                 reply_token = action.get("replyToken", reply_token)
                 text = action.get("text", text)
-                quick_options = action.get("quickReply", [])
+                quick_options = action.get("quickReply", {}).get("items", [])
 
             if not reply_token or text is None:
                 continue
@@ -982,19 +1001,31 @@ def _send_replies(reply_actions: list) -> int:
             message = TextMessage(text=text)
             if quick_options:
                 try:
+                    qr_items = []
+                    for option in quick_options:
+                        if isinstance(option, dict):
+                            action_payload = option.get("action", option)
+                            label_raw = str(action_payload.get("label") or action_payload.get("text") or "操作")
+                            text_raw = str(action_payload.get("text") or action_payload.get("label") or "")
+                        else:
+                            label_raw = str(option)
+                            text_raw = str(option)
+
+                        # LINE quick reply label max length: 20
+                        label = label_raw if len(label_raw) <= 20 else f"{label_raw[:15]}..."
+
+                        qr_items.append(
+                            QuickReplyItem(
+                                action=MessageAction(
+                                    label=label,
+                                    text=text_raw,
+                                )
+                            )
+                        )
+
                     message = TextMessage(
                         text=text,
-                        quick_reply=QuickReply(
-                            items=[
-                                QuickReplyItem(
-                                    action=MessageAction(
-                                        label=(option.get("label") if isinstance(option, dict) else option),
-                                        text=(option.get("text") if isinstance(option, dict) else option),
-                                    )
-                                )
-                                for option in quick_options
-                            ]
-                        ),
+                        quick_reply=QuickReply(items=qr_items),
                     )
                 except Exception:
                     message = TextMessage(text=text)
