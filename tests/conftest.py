@@ -64,4 +64,30 @@ def admin_user_id():
 @pytest.fixture
 def admin_ids():
     """Return list of admin IDs for auth tests."""
-    return [ADMIN_USER_ID, "another_admin"]
+    return [ADMIN_USER_ID, "another_admin", "Uadmin001", "Uadmin002"]
+
+
+@pytest.fixture
+def handler(queue_manager):
+    """Create a LineBotHandler instance for tests."""
+    from bot.handler import LineBotHandler
+    return LineBotHandler(
+        channel_secret="test",
+        channel_access_token="test",
+        queue_manager=queue_manager,
+        admin_ids=[ADMIN_USER_ID, "Uadmin001", "Uadmin002"],
+    )
+
+
+def create_handler():
+    """Create a LineBotHandler instance (non-fixture version for direct calls)."""
+    import tempfile
+    db = DatabaseManager(tempfile.mktemp(suffix=".db"))
+    qm = QueueManager(db)
+    from bot.handler import LineBotHandler
+    return LineBotHandler(
+        channel_secret="test",
+        channel_access_token="test",
+        queue_manager=qm,
+        admin_ids=[ADMIN_USER_ID, "Uadmin001", "Uadmin002"],
+    )

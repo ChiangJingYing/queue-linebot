@@ -85,8 +85,6 @@ class LineBotHandler:
             return self._handle_status(reply_token)
         elif command == "/history" and not admin_history_mode:
             return self._handle_user_history(user_id, reply_token)
-        elif command == "/remind":
-            return self._handle_remind(user_id, args, reply_token)
         elif command == "/help":
             return self._handle_help(user_id, reply_token)
         elif command == "/register":
@@ -119,7 +117,7 @@ class LineBotHandler:
         if profile is None or not profile.display_name or not profile.location:
             return self._reply(
                 reply_token,
-                "❌ 錯誤：請先完成註冊（名稱與位置）後再加入隊列。",
+                "❌ 錯誤：請先完成註冊（學號與座位）後再加入隊列。",
                 quick_options=[{"label": "設定基本資料", "text": "/register"}],
             )
 
@@ -176,20 +174,6 @@ class LineBotHandler:
             )
         return self._reply(reply_token, "\n".join(lines))
 
-    def _handle_remind(self, user_id: str, args: list, reply_token: str) -> list:
-        """Handle /remind command."""
-        if len(args) < 1:
-            return self._reply(reply_token, "用法：/remind N\n範例：/remind 3")
-
-        try:
-            n = int(args[0])
-            if n <= 0:
-                raise ValueError
-            self.notifier.notify_queue_updated(user_id, n)
-            return self._reply(reply_token, f"✅ 已設定順位提醒：到第 {n} 位時通知你")
-        except ValueError:
-            return self._reply(reply_token, "數字格式錯誤，請使用 /remind N")
-
     def _handle_coffee(self, user_id: str, reply_token: str) -> list:
         """Handle /coffee command."""
         msg = (
@@ -226,20 +210,15 @@ class LineBotHandler:
             "/cancel - 取消排隊\n"
             "/status - 查看隊列狀態\n"
             "/history - 查看你的排隊歷史\n"
-            "/remind N - 在順位到 N 時提醒\n"
             "/coffee - 取得 VIP 連結\n"
-            "/help - 顯示說明\n\n"
             "**管理員指令（/admin/ 開頭）：**\n"
             "/admin/serve - 叫下一位\n"
             "/admin/serve [id] - 叫指定使用者\n"
             "/admin/ping - 手動提醒下一位\n"
             "/admin/ping [id] - 手動提醒指定使用者\n"
-            "/admin/skip - 跳過下一位\n"
-            "/admin/skip [id] - 跳過指定使用者\n"
             "/admin/status - 完整狀態\n"
             "/admin/stats - 統計面板\n"
             "/admin/clear - 清空全部隊列\n"
-            "/admin/verify [id] [on/off] - 設定身分驗證\n"
             "/admin/vip toggle [on/off] - 開關 VIP 隊列\n"
             "/admin/vip clear - 清空 VIP 隊列\n"
             "/admin/join [on/off] - 切換總隊列狀態\n"
@@ -247,6 +226,7 @@ class LineBotHandler:
             "/admin/history [id] - 查詢使用者歷史\n"
             "/admin/export - 匯出 CSV 預覽\n"
             "/admin/config max [N] - 設定最大容量"
+            "/help - 顯示說明\n\n"
         )
         return self._reply(reply_token, msg)
 
@@ -256,13 +236,13 @@ class LineBotHandler:
             return self._complete_register(user_id, " ".join(args), reply_token)
 
         self.pending_actions[user_id] = {"type": "register_name"}
-        return self._reply(reply_token, "請輸入你要註冊的名稱。")
+        return self._reply(reply_token, "請輸入你的學號。")
 
     def _capture_register_name(self, user_id: str, display_name: str, reply_token: str) -> list:
         """Capture register display name and ask for location group."""
         normalized_name = display_name.strip()
         if not normalized_name:
-            return self._reply(reply_token, "名稱不可為空白，請重新輸入名稱。")
+            return self._reply(reply_token, "學號不可為空白，請重新輸入學號。")
 
         self.pending_actions[user_id] = {
             "type": "register_location_group",
@@ -271,7 +251,7 @@ class LineBotHandler:
         groups = list(self.location_options.keys())
         return self._reply(
             reply_token,
-            f"請選擇位置第一段：{'、'.join(groups)}",
+            f"請選擇您在第幾排座位：{'、'.join(groups)}",
             quick_options=groups,
         )
 
@@ -283,7 +263,7 @@ class LineBotHandler:
             groups = list(self.location_options.keys())
             return self._reply(
                 reply_token,
-                f"無效的位置第一段，請從以下選擇：{'、'.join(groups)}",
+                f"無效的位置，請從以下選擇：{'、'.join(groups)}",
                 quick_options=groups,
             )
 
@@ -295,7 +275,7 @@ class LineBotHandler:
         options = self.location_options[normalized_group]
         return self._reply(
             reply_token,
-            f"請選擇位置第二段（{normalized_group}-?）：{'、'.join(options)}",
+            f"請選擇您的座位（{normalized_group}-?）：{'、'.join(options)}",
             quick_options=options,
         )
 
@@ -309,7 +289,7 @@ class LineBotHandler:
         if normalized_item not in options:
             return self._reply(
                 reply_token,
-                f"無效的位置第二段，請從以下選擇：{'、'.join(options)}",
+                f"無效的位置，請從以下選擇：{'、'.join(options)}",
                 quick_options=options,
             )
 
@@ -323,7 +303,7 @@ class LineBotHandler:
         if result["status"] != "success":
             return self._reply(reply_token, f"❌ 錯誤：{result['message']}")
 
-        return self._reply(reply_token, f"✅ 已更新名稱：{result['display_name']}\n位置：{result['location']}")
+        return self._reply(reply_token, f"✅ 已更新學號：{result['display_name']}\n位置：{result['location']}")
 
 
     def _handle_admin(self, user_id: str, command: str, args: list,
@@ -336,10 +316,6 @@ class LineBotHandler:
             return self._admin_serve(user_id, args[0], reply_token)
         elif command == "/admin/serve":
             return self._admin_serve_next(reply_token)
-        elif command == "/admin/skip" and len(args) > 0:
-            return self._admin_skip(user_id, args[0], reply_token)
-        elif command == "/admin/skip":
-            return self._admin_skip_next(reply_token)
         elif command == "/admin/status":
             return self._admin_status(reply_token)
         elif command == "/admin/stats":
@@ -352,8 +328,6 @@ class LineBotHandler:
             return self._handle_admin_clear(reply_token)
         elif command == "/admin/ping":
             return self._handle_admin_ping(args, reply_token)
-        elif command == "/admin/verify":
-            return self._handle_admin_verify(args, reply_token)
         elif command == "/admin/vip":
             if len(args) >= 1 and args[0] == "status":
                 return self._handle_vip_status(reply_token)
@@ -516,25 +490,7 @@ class LineBotHandler:
         """Serve specific user."""
         result = self.queue_manager.serve_specific(target_id)
         if result["status"] == "served":
-            msg = f"✅ 已叫號：#{result['id']}（號碼 {result['queue_number']}）"
-        else:
-            msg = f"❌ 錯誤：{result['message']}"
-        return self._reply(reply_token, msg)
-
-    def _admin_skip_next(self, reply_token: str) -> list:
-        """Skip next in queue."""
-        result = self.queue_manager.skip_next()
-        if result["status"] == "skipped":
-            msg = f"⏭ 已跳過：#{result['id']}（號碼 {result['queue_number']}）"
-        else:
-            msg = f"❌ 錯誤：{result['message']}"
-        return self._reply(reply_token, msg)
-
-    def _admin_skip(self, user_id: str, target_id: str, reply_token: str) -> list:
-        """Skip specific user."""
-        result = self.queue_manager.skip_specific(target_id)
-        if result["status"] == "skipped":
-            msg = f"⏭ 已跳過：#{result['id']}（號碼 {result['queue_number']}）"
+            msg = f"✅ 已叫號：{result['queue_number']}"
         else:
             msg = f"❌ 錯誤：{result['message']}"
         return self._reply(reply_token, msg)
@@ -629,24 +585,6 @@ class LineBotHandler:
             return self._reply(reply_token, f"❌ 錯誤：{result['message']}")
         return self._reply(reply_token, f"✅ 已提醒 {result['display_name']}（{result['user_id']}）")
 
-    def _handle_admin_verify(self, args: list, reply_token: str) -> list:
-        """Handle /admin/verify [user_id] [on/off]."""
-        if len(args) < 2:
-            return self._reply(reply_token, "用法：/admin/verify [ID] [on/off]")
-
-        value = args[1].lower()
-        if value not in {"on", "off"}:
-            return self._reply(reply_token, "用法：/admin/verify [ID] [on/off]")
-
-        result = self.queue_manager.verify_user(args[0], verified=(value == "on"))
-        if result["status"] != "success":
-            return self._reply(reply_token, f"❌ 錯誤：{result['message']}")
-
-        return self._reply(
-            reply_token,
-            f"✅ 已更新 {result['display_name']}（{result['user_id']}）的身分驗證：{'通過' if result['verified'] else '未通過'}",
-        )
-
     def _handle_admin_history(self, args: list, reply_token: str) -> list:
         """Handle /admin/history [ID]."""
         if not args:
@@ -734,6 +672,7 @@ class LineBotHandler:
             "用法：/admin/join [on/off] 切換狀態 或 /admin/join status 查看狀態"
         )
 
+
     def _reply(self, reply_token: str, message: str, quick_options: list | None = None) -> list:
         """Create reply action with optional quick reply buttons."""
 
@@ -753,7 +692,6 @@ class LineBotHandler:
             return [{"replyToken": reply_token, "text": message, "quickReply": {"items": items}}]
 
         return [{"replyToken": reply_token, "text": message}]
-
 
     def _sync_rich_menu(self, user_id: str) -> None:
         """Sync rich menu based on admin status.

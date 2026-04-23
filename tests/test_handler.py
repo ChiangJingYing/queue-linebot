@@ -239,11 +239,19 @@ def test_register_enters_pending_mode_and_next_message_sets_name(tmp_path):
 
     reply2 = handler.handle_event(make_event("王小明", user_id="alice", reply_token="r2"))
     assert "請選擇位置第一段" in reply2[0]["text"]
-    assert reply2[0]["quickReply"] == ["A", "B"]
+    qr2 = reply2[0].get("quickReply", {})
+    assert isinstance(qr2, dict) and "items" in qr2
+    assert len(qr2["items"]) == 2
+    assert qr2["items"][0]["action"]["label"] == "A"
+    assert qr2["items"][1]["action"]["label"] == "B"
 
     reply3 = handler.handle_event(make_event("A", user_id="alice", reply_token="r3"))
     assert "請選擇位置第二段" in reply3[0]["text"]
-    assert reply3[0]["quickReply"] == ["1", "2"]
+    qr3 = reply3[0].get("quickReply", {})
+    assert isinstance(qr3, dict) and "items" in qr3
+    assert len(qr3["items"]) == 2
+    assert qr3["items"][0]["action"]["label"] == "1"
+    assert qr3["items"][1]["action"]["label"] == "2"
 
     reply4 = handler.handle_event(make_event("1", user_id="alice", reply_token="r4"))
     assert reply4[0]["text"] == "✅ 已更新名稱：王小明\n位置：A-1"
