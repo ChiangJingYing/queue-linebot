@@ -13,8 +13,8 @@ from contextlib import asynccontextmanager
 from hmac import compare_digest
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from bot.handler import LineBotHandler
 from config import load_config
@@ -45,10 +45,18 @@ def _web_ui_config() -> dict:
     return web_ui
 
 
+def _session_cookie_name() -> str:
+    return str(_web_ui_config().get("session_cookie_name") or "queue_admin_session")
+
+
 def _extract_web_ui_token(request: Request) -> str:
     token = (request.headers.get("X-Admin-Token") or "").strip()
     if token:
         return token
+
+    cookie_token = (request.cookies.get(_session_cookie_name()) or "").strip()
+    if cookie_token:
+        return cookie_token
 
     web_ui = _web_ui_config()
     if web_ui.get("allow_query_token"):
@@ -57,8 +65,12 @@ def _extract_web_ui_token(request: Request) -> str:
     return ""
 
 
+def _configured_web_ui_token() -> str:
+    return str(_web_ui_config().get("admin_token") or "").strip()
+
+
 def _is_valid_web_ui_token(request: Request) -> bool:
-    configured_token = str(_web_ui_config().get("admin_token") or "").strip()
+    configured_token = _configured_web_ui_token()
     provided_token = _extract_web_ui_token(request)
     if not configured_token or not provided_token:
         return False
@@ -67,7 +79,7 @@ def _is_valid_web_ui_token(request: Request) -> bool:
 
 def _require_web_ui_auth(request: Request, *, protect_reads: bool = True) -> None:
     web_ui = _web_ui_config()
-    configured_token = str(web_ui.get("admin_token") or "").strip()
+    configured_token = _configured_web_ui_token()
     if not configured_token:
         return
     if not protect_reads and not web_ui.get("protect_read_routes", False):
@@ -421,6 +433,61 @@ def dashboard_asset(filename: str, request: Request):
         raise HTTPException(status_code=404, detail="找不到圖片")
     media_type, _ = mimetypes.guess_type(target.name)
     return FileResponse(target, media_type=media_type or "application/octet-stream")
+
+
+@app.get("/dashboard/login", response_class=HTMLResponse)
+def dashboard_login_page() -> str:
+    return """
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Dashboard Login</title>
+        <style>
+          body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#020617; color:#e2e8f0; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; }
+          .card { width:min(420px, 92vw); background:#0f172a; border:1px solid #334155; border-radius:16px; padding:24px; box-shadow:0 20px 50px rgba(0,0,0,.35); }
+          input, button { width:100%; box-sizing:border-box; margin-top:12px; padding:12px 14px; border-radius:10px; border:1px solid #475569; }
+          input { background:#020617; color:#e2e8f0; }
+          button { background:#2563eb; color:white; border:none; font-weight:700; cursor:pointer; }
+          p { color:#94a3b8; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h1>Dashboard Login</h1>
+          <p>Enter admin token to continue.</p>
+          <form method="post" action="/dashboard/login">
+            <label for="token">Admin Token</label>
+            <input id="token" name="token" type="password" autocomplete="current-password" />
+            <button type="submit">Login</button>
+          </form>
+        </div>
+      </body>
+    </html>
+    """
+
+
+@app.post("/dashboard/login")
+def dashboard_login(token: str = Form(...)):
+    configured_token = _configured_web_ui_token()
+    if not configured_token or not compare_digest(configured_token, token.strip()):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    response = RedirectResponse(url="/dashboard", status_code=303)
+    response.set_cookie(
+        key=_session_cookie_name(),
+        value=configured_token,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
+@app.post("/dashboard/logout")
+def dashboard_logout():
+    response = RedirectResponse(url="/dashboard/login", status_code=303)
+    response.delete_cookie(_session_cookie_name())
+    return response
 
 
 @app.get("/dashboard/config", response_class=HTMLResponse)

@@ -161,3 +161,73 @@ def test_dashboard_pages_embed_auth_aware_fetch_helpers(tmp_path):
     assert "function withAuthHeaders" in config_page.text
     assert "function withAuthUrl" in config_page.text
     assert "X-Admin-Token" in config_page.text
+
+
+def test_dashboard_login_page_renders_form(tmp_path):
+    client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
+
+    response = client.get("/dashboard/login")
+
+    assert response.status_code == 200
+    assert "admin token" in response.text.lower()
+    assert "<form" in response.text.lower()
+
+
+def test_dashboard_login_sets_session_cookie_and_redirects(tmp_path):
+    client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
+
+    response = client.post(
+        "/dashboard/login",
+        data={"token": ADMIN_TOKEN},
+        follow_redirects=False,
+    )
+
+    assert response.status_code in {302, 303}
+    assert response.headers["location"] == "/dashboard"
+    assert main.config["web_ui"]["session_cookie_name"] in response.headers.get("set-cookie", "")
+
+
+def test_dashboard_login_rejects_wrong_token(tmp_path):
+    client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
+
+    response = client.post("/dashboard/login", data={"token": "wrong-token"})
+
+    assert response.status_code == 401
+
+
+def test_dashboard_cookie_session_can_access_protected_read_routes(tmp_path):
+    client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
+    login_response = client.post(
+        "/dashboard/login",
+        data={"token": ADMIN_TOKEN},
+        follow_redirects=False,
+    )
+    cookie_name = main.config["web_ui"]["session_cookie_name"]
+    cookie_value = login_response.cookies.get(cookie_name)
+
+    assert cookie_value
+
+    page = client.get("/dashboard", cookies={cookie_name: cookie_value})
+    data = client.get("/dashboard/data", cookies={cookie_name: cookie_value})
+    config_page = client.get("/dashboard/config", cookies={cookie_name: cookie_value})
+
+    assert page.status_code == 200
+    assert data.status_code == 200
+    assert config_page.status_code == 200
+
+
+def test_dashboard_logout_clears_session_cookie(tmp_path):
+    client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
+    login_response = client.post(
+        "/dashboard/login",
+        data={"token": ADMIN_TOKEN},
+        follow_redirects=False,
+    )
+    cookie_name = main.config["web_ui"]["session_cookie_name"]
+    cookie_value = login_response.cookies.get(cookie_name)
+
+    response = client.post("/dashboard/logout", cookies={cookie_name: cookie_value}, follow_redirects=False)
+
+    assert response.status_code in {302, 303}
+    assert response.headers["location"] == "/dashboard/login"
+    assert f"{cookie_name}=" in response.headers.get("set-cookie", "")
