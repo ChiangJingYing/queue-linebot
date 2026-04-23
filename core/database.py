@@ -99,6 +99,7 @@ class DatabaseManager:
 
         self._migrate_queues_remove_user_unique()
         self._migrate_user_profiles_add_location()
+        self._migrate_admin_applications()
 
     def _migrate_queues_remove_user_unique(self) -> None:
         """Remove legacy UNIQUE constraint on queues.user_id so users can rejoin later."""
@@ -139,6 +140,31 @@ class DatabaseManager:
             if "location" not in columns:
                 conn.execute("ALTER TABLE user_profiles ADD COLUMN location TEXT NOT NULL DEFAULT ''")
                 conn.commit()
+
+    def _migrate_admin_applications(self) -> None:
+        """Ensure admin_applications table exists."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'admin_applications'"
+            ).fetchone()
+            if row is not None:
+                return
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS admin_applications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT UNIQUE NOT NULL,
+                    display_name TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    applied_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_by TEXT,
+                    reviewed_at TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_admin_app_status
+                ON admin_applications(status)
+            """)
+            conn.commit()
 
     def get_config(self, key: str) -> Optional[str]:
         """Get a config value by key."""
@@ -463,6 +489,91 @@ class DatabaseManager:
                 )
             return history
 
+    def add_admin_application(self, user_id: str, display_name: str) -> dict:
+        """Submit an admin application. Returns {status, message}."""
+        display_name = display_name.strip()
+        if not display_name:
+            return {"status": "error", "message": "display name cannot be empty."}
+        with self._connection() as conn:
+            try:
+                conn.execute(
+                    "INSERT INTO admin_applications (user_id, display_name, status) "
+                    "VALUES (?, ?, 'pending')",
+                    (user_id, display_name),
+                )
+                conn.commit()
+                return {"status": "success", "message": "Application submitted."}
+            except sqlite3.IntegrityError:
+                return {"status": "duplicate", "message": "Duplicate application."}
+
+    def get_pending_applications(self) -> list[dict]:
+        """Get all pending admin applications ordered by applied_at DESC."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT user_id, display_name, status, applied_at, reviewed_by, reviewed_at "
+                "FROM admin_applications WHERE status = 'pending' "
+                "ORDER BY applied_at DESC, id ASC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_pending_count(self) -> int:
+        """Count pending admin applications."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM admin_applications WHERE status = 'pending'"
+            ).fetchone()
+            return int(row["cnt"])
+
+    def approve_admin_application(self, user_id: str, reviewed_by: str) -> dict:
+        """Approve an admin application. Returns {status, message}."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT id FROM admin_applications WHERE user_id = ? AND status = 'pending' LIMIT 1",
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                return {"status": "error", "message": "Application not found or already processed."}
+            now = datetime.now().isoformat()
+            conn.execute(
+                "UPDATE admin_applications SET status = 'approved', reviewed_by = ?, reviewed_at = ? WHERE user_id = ?",
+                (reviewed_by, now, user_id),
+            )
+            conn.commit()
+            # Update user_profiles role to admin
+            self.upsert_user_profile(user_id, "", verified=False, role="admin")
+            return {"status": "success", "message": "Application approved."}
+
+    def reject_admin_application(self, user_id: str, reviewed_by: str) -> dict:
+        """Reject an admin application. Returns {status, message}."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT id FROM admin_applications WHERE user_id = ? AND status = 'pending' LIMIT 1",
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                return {"status": "error", "message": "Application not found or already processed."}
+            now = datetime.now().isoformat()
+            conn.execute(
+                "UPDATE admin_applications SET status = 'rejected', reviewed_by = ?, reviewed_at = ? WHERE user_id = ?",
+                (reviewed_by, now, user_id),
+            )
+            conn.commit()
+            return {"status": "success", "message": "Application rejected."}
+
+    def is_admin(self, user_id: str) -> bool:
+        """Check if a user has admin role in user_profiles."""
+        profile = self.get_user_profile(user_id)
+        return profile is not None and getattr(profile, "role", "") == "admin"
+
+    def get_all_admins(self) -> list[dict]:
+        """Get all approved admins (from user_profiles with role='admin')."""
+        profiles = self.get_all_user_profiles()
+        return [
+            {"user_id": p.user_id, "display_name": p.display_name}
+            for p in profiles
+            if getattr(p, "role", "") == "admin"
+        ]
+
     def get_event_history(self, user_id: str, limit: int = 20) -> list[QueueEvent]:
         """Get queue event history for a user, newest first."""
         with self._connection() as conn:
@@ -540,6 +651,26 @@ class DatabaseManager:
             rows = conn.execute(
                 "SELECT user_id, queue_type, queue_number, join_time, cancel_time, "
                 "served_time, served FROM queues ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_recent_served(self, limit: int = 5) -> list[dict]:
+        """Get recently served queue rows, newest first."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT q.user_id,
+                       q.queue_type,
+                       q.served_time,
+                       up.display_name,
+                       up.location
+                FROM queues q
+                LEFT JOIN user_profiles up ON up.user_id = q.user_id
+                WHERE q.served = 1 AND q.served_time IS NOT NULL
+                ORDER BY q.served_time DESC, q.id DESC
+                LIMIT ?
+                """,
                 (limit,),
             ).fetchall()
             return [dict(r) for r in rows]

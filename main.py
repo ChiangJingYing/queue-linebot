@@ -225,6 +225,17 @@ def _build_dashboard_payload() -> dict:
 
     # --- stats ---
     stats = queue_manager.get_queue_stats()
+    served_recent = db_manager.get_recent_served(limit=5)
+    served_recent_payload = [
+        {
+            "user_id": item.get("user_id") or "",
+            "display_name": item.get("display_name") or item.get("user_id") or "",
+            "location": item.get("location") or "",
+            "served_time": item.get("served_time") or "",
+            "queue_type": item.get("queue_type") or "",
+        }
+        for item in served_recent
+    ]
 
     return {
         "rows": rows,
@@ -237,6 +248,7 @@ def _build_dashboard_payload() -> dict:
             "queue": stats["queue"],
             "served": stats["served"],
         },
+        "served_recent": served_recent_payload,
     }
 
 
@@ -702,7 +714,13 @@ def dashboard() -> str:
           body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#020617; color:#e2e8f0; padding:16px; overflow:hidden; display:flex; flex-direction:column; }}
           .page {{ flex:1; min-height:0; display:flex; flex-direction:column; gap:10px; }}
           .stats-panel {{ display:grid; grid-template-columns: repeat(3, minmax(100px, 1fr)); gap:10px; flex-shrink:0; }}
-          .stat-card {{ background:#0f172a; border:1px solid #334155; border-radius:14px; padding:10px 14px; }}
+          .stat-card {{ background:#0f172a; border:1px solid #334155; border-radius:14px; padding:10px 14px; position:relative; }}
+          .served-card:hover .served-tooltip {{ opacity:1; pointer-events:auto; transform:translateY(0); }}
+          .served-tooltip {{ position:absolute; left:50%; top:calc(100% + 10px); transform:translateX(-50%) translateY(-4px); width:min(320px, 70vw); background:rgba(2,6,23,.96); border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:10px 12px; box-shadow:0 16px 40px rgba(0,0,0,.35); opacity:0; pointer-events:none; transition:opacity .16s ease, transform .16s ease; z-index:20; }}
+          .served-tooltip-title {{ font-size:12px; color:#94a3b8; margin-bottom:6px; }}
+          .served-tooltip-list {{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }}
+          .served-tooltip-item {{ font-size:13px; color:#e2e8f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+          .served-tooltip-empty {{ font-size:13px; color:#94a3b8; }}
           .stat-label {{ font-size:12px; color:#94a3b8; margin-bottom:4px; }}
           .stat-value {{ font-size:24px; font-weight:800; color:#f8fafc; }}
           .legend {{ display:flex; gap:16px; flex-wrap:wrap; flex-shrink:0; }}
@@ -724,7 +742,7 @@ def dashboard() -> str:
         <div class="stats-panel">
           <div class="stat-card"><div class="stat-label">Registered</div><div class="stat-value" id="stat-registered">{payload['stats']['registered']}</div></div>
           <div class="stat-card"><div class="stat-label">Queue</div><div class="stat-value" id="stat-queue">{payload['stats']['queue']}</div></div>
-          <div class="stat-card"><div class="stat-label">Served</div><div class="stat-value" id="stat-served">{payload['stats']['served']}</div></div>
+          <div class="stat-card served-card"><div class="stat-label">Served</div><div class="stat-value" id="stat-served">{payload['stats']['served']}</div><div class="served-tooltip" id="served-tooltip"><div class="served-tooltip-title">最近已叫號（最新在上）</div><div id="served-tooltip-body"></div></div></div>
         </div>
         <div class=\"legend\">
           <span><i class=\"lamp empty\"></i> 空位</span>
@@ -776,11 +794,32 @@ def dashboard() -> str:
             }}
           }}
 
+          function renderServedTooltip(items) {{
+            const body = document.getElementById('served-tooltip-body');
+            if (!body) return;
+            const rows = Array.isArray(items) ? items.slice(0, 5) : [];
+            if (!rows.length) {{
+              body.innerHTML = '<div class="served-tooltip-empty">目前沒有已叫號紀錄</div>';
+              return;
+            }}
+            const html = rows.map((item) => {{
+              const servedAt = item.served_time ? new Date(item.served_time) : null;
+              const timeText = servedAt && !Number.isNaN(servedAt.getTime())
+                ? servedAt.toLocaleTimeString([], {{ hour: '2-digit', minute: '2-digit' }})
+                : '--:--';
+              const location = item.location || '-';
+              const name = item.display_name || item.user_id || 'Unknown';
+              return `<li class="served-tooltip-item">${{timeText}}　${{location}}　${{name}}</li>`;
+            }}).join('');
+            body.innerHTML = `<ul class="served-tooltip-list">${{html}}</ul>`;
+          }}
+
           function renderMarkers(payload) {{
             previousGrid = payload.grid; currentVersion = payload.version;
             document.getElementById('stat-registered').textContent = payload.stats.registered;
             document.getElementById('stat-queue').textContent = payload.stats.queue;
             document.getElementById('stat-served').textContent = payload.stats.served;
+            renderServedTooltip(payload.served_recent);
             const imageRect = getImagePlacementRect();
             document.querySelectorAll('.marker').forEach((marker) => {{
               const x = parseFloat(marker.dataset.x);

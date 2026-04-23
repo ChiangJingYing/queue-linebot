@@ -32,10 +32,15 @@ class TestDashboardStats:
         qm.join("bob", "regular")
         qm.serve_next()
 
-        stats = _get_stats(client)
+        response = client.get("/dashboard/data")
+        assert response.status_code == 200
+        payload = response.json()
+        stats = payload["stats"]
         assert stats["registered"] == 2
         assert stats["queue"] == 1
         assert stats["served"] == 1
+        assert payload["served_recent"][0]["user_id"] == "alice"
+        assert payload["served_recent"][0]["location"] == "A-1"
 
     def test_dashboard_stats_queue_includes_vip(self, client: TestClient):
         import main
@@ -59,6 +64,24 @@ class TestDashboardStats:
         assert 'id="stat-registered"' in response.text
         assert 'id="stat-queue"' in response.text
         assert 'id="stat-served"' in response.text
+        assert 'id="served-tooltip-body"' in response.text
+        assert '最近已叫號（最新在上）' in response.text
+
+    def test_dashboard_data_served_recent_latest_first_max_five(self, client: TestClient):
+        import main
+        qm = main.queue_manager
+        for idx in range(6):
+            user_id = f"u{idx}"
+            _register(qm, user_id, f"User {idx}", f"A-{idx}")
+            qm.join(user_id, "regular")
+            qm.serve_next()
+
+        response = client.get("/dashboard/data")
+        assert response.status_code == 200
+        served_recent = response.json()["served_recent"]
+        assert len(served_recent) == 5
+        assert served_recent[0]["user_id"] == "u5"
+        assert served_recent[-1]["user_id"] == "u1"
 
 
 class TestResetEndpoint:
