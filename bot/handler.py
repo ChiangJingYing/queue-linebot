@@ -34,7 +34,7 @@ class LineBotHandler:
             channel_access_token=self.channel_access_token,
             admin_rich_menu_page2_id=admin_rich_menu_page2_id,
         )
-        self.admin_ids = admin_ids or []
+        self.admin_ids = list(admin_ids) if admin_ids else []
         self.admin_rich_menu_id = admin_rich_menu_id
         self.admin_rich_menu_page2_id = admin_rich_menu_page2_id
         self.user_rich_menu_id = user_rich_menu_id
@@ -95,6 +95,9 @@ class LineBotHandler:
             return self._handle_coffee(user_id, reply_token)
         elif command == "done":
             return self._handle_done(user_id, reply_token)
+        elif command == "/admin/apply":
+            # /admin/apply must bypass admin auth check (users apply to become admins)
+            return self._handle_admin_apply_command(user_id, args, reply_token)
         elif command.startswith("/admin/"):
             return self._handle_admin(user_id, command, args, reply_token)
 
@@ -365,9 +368,140 @@ class LineBotHandler:
 
         return self._reply(reply_token, "未知管理員指令。")
 
+    def _handle_admin_apply_command(self, user_id: str, args: list, reply_token: str) -> list:
+        """Handle /admin/apply with subcommands (list, approve, reject).
+
+        This is the public-facing entry point for admin application management.
+        - No args → submit application (anyone can apply)
+        - list → show pending applications (admin only)
+        - approve [id] → approve application (admin only)
+        - reject [id] → reject application (admin only)
+        """
+        if not args:
+            # Submit admin application (anyone can apply)
+            return self._handle_admin_apply(user_id, reply_token)
+
+        sub = args[0].lower()
+
+        if sub == "list":
+            # Admin only: view pending applications
+            page_str = args[1] if len(args) > 1 else "1"
+            try:
+                page = int(page_str.replace("page+", "").replace("page-", ""))
+            except ValueError:
+                page = 1
+            return self._handle_admin_apply_list(reply_token=reply_token, page=page)
+
+        if sub == "approve":
+            # Admin only: approve application
+            if len(args) > 1:
+                return self._handle_admin_apply_approve(user_id=user_id, target_id=args[1], reply_token=reply_token)
+            return self._reply(reply_token, "用法：/admin/apply approve [user_id]")
+
+        if sub == "reject":
+            # Admin only: reject application
+            if len(args) > 1:
+                return self._handle_admin_apply_reject(user_id=user_id, target_id=args[1], reply_token=reply_token)
+            return self._reply(reply_token, "用法：/admin/apply reject [user_id]")
+
+        return self._reply(reply_token, "用法：/admin/apply [list|approve|reject]")
+
+    def _handle_admin_apply(self, user_id: str, reply_token: str) -> list:
+        """Handle /admin/apply – user submits admin application."""
+        if self._is_admin(user_id):
+            return self._reply(reply_token, "❌ 你已經是管理員了，無需再次申請。")
+
+        profile = self.queue_manager.db.get_user_profile(user_id)
+        display_name = profile.display_name if profile else user_id
+        result = self.queue_manager.db.add_admin_application(user_id, display_name)
+
+        if result["status"] == "success":
+            return self._reply(
+                reply_token,
+                f"✅ 已提交 admin 申請\n─────────────\n您的 user_id: {user_id}\n\n管理員將審核您的申請。",
+            )
+        if result["status"] == "duplicate":
+            return self._reply(
+                reply_token,
+                f"❌ 重複申請：你已經有待審核的 admin 申請了。\n   user_id: {user_id}",
+            )
+        return self._reply(reply_token, f"❌ 錯誤：{result.get('message', 'Unknown error')}")
+
+    def _handle_admin_apply_list(self, reply_token: str = "", user_id: str | None = None, page: int = 1) -> list:
+        """Handle /admin/apply list – show pending applications with pagination."""
+        # Auth already checked by _handle_admin routing
+
+        pending = self.queue_manager.db.get_pending_applications()
+        if not pending:
+            return self._reply(reply_token, "📋 Admin 申請列表\n─────────────\n目前沒有待審核的申請。")
+
+        PAGE_SIZE = 12
+        total_pages = max(1, (len(pending) + PAGE_SIZE - 1) // PAGE_SIZE)
+
+        if page < -1:
+            page = total_pages
+        elif page == -1:
+            page = total_pages
+        elif page < 1:
+            page = total_pages
+
+        start = (page - 1) * PAGE_SIZE
+        end = min(start + PAGE_SIZE, len(pending))
+        page_apps = pending[start:end]
+
+        items = []
+        for app in page_apps:
+            label = f"{app['user_id']} ({app['display_name']})"
+            items.append({
+                "type": "action",
+                "action": {
+                    "type": "message",
+                    "label": label,
+                    "text": f"/admin/apply approve {app['user_id']}",
+                },
+            })
+
+        if page > 1:
+            items.append({"type": "action", "action": {"type": "message", "label": "←上一頁", "text": "/admin/apply list page-1"}})
+        if page < total_pages:
+            items.append({"type": "action", "action": {"type": "message", "label": "→下一頁", "text": f"/admin/apply list page+{page}"}})
+        if page == total_pages:
+            items.append({"type": "action", "action": {"type": "message", "label": "←返回", "text": "/admin/apply list"}})
+
+        msg = f"📋 Admin 申請列表（第 {page}/{total_pages} 頁）\n─────────────\n"
+        for i, app in enumerate(page_apps, 1):
+            msg += f"{i}. {app['user_id']} ({app['display_name']})\n"
+
+        return self._reply(reply_token, msg, quick_options=items)
+
+    def _handle_admin_apply_approve(self, user_id: str | None = None, target_id: str = "", reply_token: str = "") -> list:
+        """Handle /admin/apply approve [target_id]."""
+        # Auth already checked by _handle_admin routing
+
+        result = self.queue_manager.db.approve_admin_application(target_id, user_id or "")
+        if result["status"] == "success":
+            return self._reply(reply_token, f"✅ 已批准 {target_id} 的 admin 申請。")
+        return self._reply(reply_token, f"❌ 找不到 {target_id} 的待審核申請。")
+
+    def _handle_admin_apply_reject(self, user_id: str | None = None, target_id: str = "", reply_token: str = "") -> list:
+        """Handle /admin/apply reject [target_id]."""
+        # Auth already checked by _handle_admin routing
+
+        result = self.queue_manager.db.reject_admin_application(target_id, user_id or "")
+        if result["status"] == "success":
+            return self._reply(reply_token, f"✅ 已拒絕 {target_id} 的 admin 申請。")
+        return self._reply(reply_token, f"❌ 找不到 {target_id} 的待審核申請（已處理或不存在）。")
+
     def _is_admin(self, user_id: str) -> bool:
         """Check if user is admin."""
-        return user_id in self.admin_ids
+        if user_id in self.admin_ids:
+            return True
+
+        # Dynamic admin role from DB (e.g. approved /admin/apply users)
+        try:
+            return self.queue_manager.db.is_admin(user_id)
+        except Exception:
+            return False
 
     def _admin_serve_next(self, reply_token: str) -> list:
         """Serve next in queue."""
@@ -601,11 +735,25 @@ class LineBotHandler:
         )
 
     def _reply(self, reply_token: str, message: str, quick_options: list | None = None) -> list:
-        """Create reply action."""
-        payload = {"replyToken": reply_token, "text": message}
+        """Create reply action with optional quick reply buttons."""
+
         if quick_options:
-            payload["quickReply"] = quick_options
-        return [payload]
+            items = []
+            for item in quick_options:
+                # Support both formats: {"type": "action", "action": {...}} and plain dict
+                if isinstance(item, dict):
+                    action_dict = item.get("action", item)
+                    items.append({"type": "action", "action": action_dict})
+                else:
+                    items.append({"type": "action", "action": {
+                        "type": "message",
+                        "label": str(item),
+                        "text": str(item),
+                    }})
+            return [{"replyToken": reply_token, "text": message, "quickReply": {"items": items}}]
+
+        return [{"replyToken": reply_token, "text": message}]
+
 
     def _sync_rich_menu(self, user_id: str) -> None:
         """Sync rich menu based on admin status.
