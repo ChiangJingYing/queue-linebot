@@ -26,6 +26,8 @@ def test_dashboard_page_uses_image_ratio_board(tmp_path):
     response = client.get("/dashboard")
 
     assert response.status_code == 200
-    assert 'aspect-ratio: var(--board-aspect-ratio, 16 / 9)' in response.text
-    assert 'function updateBoardAspectRatio()' in response.text
-    assert "board.style.setProperty('--board-aspect-ratio'" in response.text
+    assert 'const board = document.getElementById(\'board\');' in response.text
+    assert 'const boardImage = document.getElementById(\'board-image\');' in response.text
+    assert 'function getImagePlacementRect()' in response.text
+    assert 'function resizeBoard()' in response.text
+    assert 'const aspectRatio = boardImage.naturalWidth / boardImage.naturalHeight;' in response.text

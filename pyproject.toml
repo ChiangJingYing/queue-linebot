@@ -40,7 +40,9 @@ addopts = [
     "-v",
     "--strict-markers",
     "--tb=short",
+    "--cov=bot",
     "--cov=core",
+    "--cov=main",
     "--cov=services",
     "--cov-report=term-missing",
     "--maxfail=5",
@@ -55,7 +57,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["core", "services"]
+source = ["bot", "core", "main", "services"]
 branch = true
 omit = [
     "tests/*",

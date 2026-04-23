@@ -91,8 +91,6 @@ class LineBotHandler:
             return self._handle_register(user_id, args, reply_token)
         elif command == "/coffee":
             return self._handle_coffee(user_id, reply_token)
-        elif command == "done":
-            return self._handle_done(user_id, reply_token)
         elif command == "/admin/apply":
             # /admin/apply must bypass admin auth check (users apply to become admins)
             return self._handle_admin_apply_command(user_id, args, reply_token)
@@ -110,8 +108,7 @@ class LineBotHandler:
             target_id = user_id
             queue_type = args[0]
         else:
-            target_id = args[0]
-            queue_type = args[1] if len(args) > 1 else "regular"
+            return self._reply(reply_token, "❌ 錯誤：不支援替其他使用者加入隊列，請使用 /join 或 /join vip。")
 
         profile = self.queue_manager.db.get_user_profile(target_id)
         if profile is None or not profile.display_name or not profile.location:
@@ -206,7 +203,6 @@ class LineBotHandler:
             "/register [名稱] - 註冊或更新顯示名稱\n"
             "/join - 以自己身分加入一般隊列\n"
             "/join vip - 以自己身分加入 VIP 隊列\n"
-            "/join [id] [queue_type] - 指定使用者加入隊列\n"
             "/cancel - 取消排隊\n"
             "/status - 查看隊列狀態\n"
             "/history - 查看你的排隊歷史\n"
@@ -233,7 +229,7 @@ class LineBotHandler:
     def _handle_register(self, user_id: str, args: list, reply_token: str) -> list:
         """Handle /register by entering pending input mode."""
         if args:
-            return self._complete_register(user_id, " ".join(args), reply_token)
+            return self._reply(reply_token, "❌ 錯誤：/register 不接受參數，請直接輸入 /register 後依提示完成註冊。")
 
         self.pending_actions[user_id] = {"type": "register_name"}
         return self._reply(reply_token, "請輸入你的學號。")
@@ -354,6 +350,9 @@ class LineBotHandler:
         if not args:
             # Submit admin application (anyone can apply)
             return self._handle_admin_apply(user_id, reply_token)
+
+        if not self._is_admin(user_id):
+            return self._reply(reply_token, "❌ 未授權，僅限管理員使用。")
 
         sub = args[0].lower()
 

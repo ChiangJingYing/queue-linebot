@@ -199,11 +199,6 @@ class DatabaseManager:
         val = self.get_config("queue_enabled")
         return val.lower() == "true" if val else True
 
-    def is_queue_enabled(self) -> bool:
-        """Check if queue joining is enabled."""
-        val = self.get_config("queue_enabled")
-        return val.lower() == "true" if val else True
-
     def is_vip_enabled(self) -> bool:
         """Check if VIP queue is enabled."""
         val = self.get_config("vip_enabled")

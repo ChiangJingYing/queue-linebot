@@ -235,10 +235,10 @@ def test_register_enters_pending_mode_and_next_message_sets_name(tmp_path):
     )
 
     reply = handler.handle_event(make_event("/register", user_id="alice", reply_token="r1"))
-    assert "請輸入你要註冊的名稱" in reply[0]["text"]
+    assert "請輸入你的學號" in reply[0]["text"]
 
     reply2 = handler.handle_event(make_event("王小明", user_id="alice", reply_token="r2"))
-    assert "請選擇位置第一段" in reply2[0]["text"]
+    assert "請選擇您在第幾排座位" in reply2[0]["text"]
     qr2 = reply2[0].get("quickReply", {})
     assert isinstance(qr2, dict) and "items" in qr2
     assert len(qr2["items"]) == 2
@@ -246,7 +246,7 @@ def test_register_enters_pending_mode_and_next_message_sets_name(tmp_path):
     assert qr2["items"][1]["action"]["label"] == "B"
 
     reply3 = handler.handle_event(make_event("A", user_id="alice", reply_token="r3"))
-    assert "請選擇位置第二段" in reply3[0]["text"]
+    assert "請選擇您的座位（A-?）" in reply3[0]["text"]
     qr3 = reply3[0].get("quickReply", {})
     assert isinstance(qr3, dict) and "items" in qr3
     assert len(qr3["items"]) == 2
@@ -254,8 +254,26 @@ def test_register_enters_pending_mode_and_next_message_sets_name(tmp_path):
     assert qr3["items"][1]["action"]["label"] == "2"
 
     reply4 = handler.handle_event(make_event("1", user_id="alice", reply_token="r4"))
-    assert reply4[0]["text"] == "✅ 已更新名稱：王小明\n位置：A-1"
+    assert reply4[0]["text"] == "✅ 已更新學號：王小明\n位置：A-1"
     assert db.get_display_name("alice") == "王小明（A-1）"
+
+
+def test_register_rejects_inline_args(tmp_path):
+    db = DatabaseManager(str(tmp_path / "register-inline.db"))
+    handler = LineBotHandler(queue_manager=QueueManager(db), vip_service=VipService(db), admin_ids=["admin"])
+
+    reply = handler.handle_event(make_event("/register 王小明", user_id="alice"))
+
+    assert "/register 不接受參數" in reply[0]["text"]
+
+
+def test_admin_apply_subcommands_require_admin(tmp_path):
+    db = DatabaseManager(str(tmp_path / "admin-apply.db"))
+    handler = LineBotHandler(queue_manager=QueueManager(db), vip_service=VipService(db), admin_ids=["admin"])
+
+    reply = handler.handle_event(make_event("/admin/apply list", user_id="alice"))
+
+    assert "未授權" in reply[0]["text"]
 
 
 def test_help_is_admin_only(tmp_path):
