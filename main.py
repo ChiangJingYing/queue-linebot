@@ -38,6 +38,45 @@ USER_RICH_MENU_ID = line_bot_config.get("user_rich_menu_id", "")
 LOCATION_OPTIONS = config.get("registration", {}).get("location_options", {"A": ["1", "2"], "B": ["1", "2"]})
 
 
+def _web_ui_config() -> dict:
+    web_ui = config.get("web_ui", {})
+    if not isinstance(web_ui, dict):
+        return {}
+    return web_ui
+
+
+def _extract_web_ui_token(request: Request) -> str:
+    token = (request.headers.get("X-Admin-Token") or "").strip()
+    if token:
+        return token
+
+    web_ui = _web_ui_config()
+    if web_ui.get("allow_query_token"):
+        return (request.query_params.get("token") or "").strip()
+
+    return ""
+
+
+def _is_valid_web_ui_token(request: Request) -> bool:
+    configured_token = str(_web_ui_config().get("admin_token") or "").strip()
+    provided_token = _extract_web_ui_token(request)
+    if not configured_token or not provided_token:
+        return False
+    return compare_digest(configured_token, provided_token)
+
+
+def _require_web_ui_auth(request: Request, *, protect_reads: bool = True) -> None:
+    web_ui = _web_ui_config()
+    configured_token = str(web_ui.get("admin_token") or "").strip()
+    if not configured_token:
+        return
+    if not protect_reads and not web_ui.get("protect_read_routes", False):
+        return
+    if _is_valid_web_ui_token(request):
+        return
+    raise HTTPException(status_code=401, detail="Unauthorized")
+
+
 db_manager: DatabaseManager | None = None
 queue_manager: QueueManager | None = None
 vip_service: VipService | None = None
@@ -253,14 +292,16 @@ def _build_dashboard_payload() -> dict:
 
 
 @app.get("/dashboard/data")
-def dashboard_data() -> dict:
+def dashboard_data(request: Request) -> dict:
+    _require_web_ui_auth(request, protect_reads=False)
     payload = _build_dashboard_payload()
     payload["layout"] = dashboard_layout_store.load()
     return payload
 
 
 @app.post("/api/queue/reset")
-def reset_queue() -> dict:
+def reset_queue(request: Request) -> dict:
+    _require_web_ui_auth(request)
     if queue_manager is None:
         raise HTTPException(status_code=503, detail="Queue manager 尚未初始化")
 
@@ -279,12 +320,14 @@ def _all_locations() -> list[str]:
 
 
 @app.get("/dashboard/layout")
-def dashboard_layout() -> dict:
+def dashboard_layout(request: Request) -> dict:
+    _require_web_ui_auth(request, protect_reads=False)
     return dashboard_layout_store.load()
 
 
 @app.post("/dashboard/layout")
-def save_dashboard_layout(payload: dict) -> dict:
+def save_dashboard_layout(request: Request, payload: dict) -> dict:
+    _require_web_ui_auth(request)
     current_layout = dashboard_layout_store.load()
     markers = payload.get("markers", [])
     normalized_markers = []
@@ -309,7 +352,8 @@ def save_dashboard_layout(payload: dict) -> dict:
 
 
 @app.post("/dashboard/layout/reset")
-def reset_dashboard_layout() -> dict:
+def reset_dashboard_layout(request: Request) -> dict:
+    _require_web_ui_auth(request)
     layout = dashboard_layout_store.save({
         "imageUrl": dashboard_layout_store.load().get("imageUrl", ""),
         "markers": [],
@@ -318,7 +362,8 @@ def reset_dashboard_layout() -> dict:
 
 
 @app.post("/dashboard/layout/image")
-async def upload_dashboard_layout_image(file: UploadFile = File(...)) -> dict:
+async def upload_dashboard_layout_image(request: Request, file: UploadFile = File(...)) -> dict:
+    _require_web_ui_auth(request)
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="圖片內容為空")
@@ -331,7 +376,8 @@ async def upload_dashboard_layout_image(file: UploadFile = File(...)) -> dict:
 
 
 @app.get("/dashboard/assets/{filename}")
-def dashboard_asset(filename: str):
+def dashboard_asset(filename: str, request: Request):
+    _require_web_ui_auth(request, protect_reads=False)
     target = dashboard_layout_store.resolve_asset(filename)
     if not target.exists():
         raise HTTPException(status_code=404, detail="找不到圖片")
@@ -340,7 +386,8 @@ def dashboard_asset(filename: str):
 
 
 @app.get("/dashboard/config", response_class=HTMLResponse)
-def dashboard_config_page() -> str:
+def dashboard_config_page(request: Request) -> str:
+    _require_web_ui_auth(request, protect_reads=False)
     layout = dashboard_layout_store.load()
     initial_layout = json.dumps(layout, ensure_ascii=False)
     locations = json.dumps(_all_locations(), ensure_ascii=False)
@@ -684,7 +731,8 @@ def dashboard_config_page() -> str:
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-def dashboard() -> str:
+def dashboard(request: Request) -> str:
+    _require_web_ui_auth(request, protect_reads=False)
     payload = _build_dashboard_payload()
     layout = dashboard_layout_store.load()
     initial_payload = json.dumps(payload, ensure_ascii=False)

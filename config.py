@@ -2,7 +2,6 @@
 
 import os
 import yaml
-from typing import Any
 
 
 def load_config(path: str = "queue_config.yaml") -> dict:
@@ -79,5 +78,11 @@ def get_defaults() -> dict:
             "log_file": "logs/queue_events.log",
             "max_size_mb": 10,
             "backup_count": 5,
+        },
+        "web_ui": {
+            "admin_token": os.getenv("WEB_UI_ADMIN_TOKEN", ""),
+            "protect_read_routes": False,
+            "allow_query_token": False,
+            "session_cookie_name": "queue_admin_session",
         },
     }
