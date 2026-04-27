@@ -1,0 +1,14 @@
+services:
+  queue-linebot:
+    build: .
+    container_name: queue-linebot
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./queue.db:/app/queue.db
+      - ./queue_config.yaml:/app/queue_config.yaml
+      - ./logs:/app/logs
+      - ./rich_menus:/app/rich_menus
+      - ./dashboard_layout:/app/dashboard_layout
