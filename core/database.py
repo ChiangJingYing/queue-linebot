@@ -342,6 +342,13 @@ class DatabaseManager:
             if cancelled is not None:
                 removed.append(cancelled)
         return removed
+    
+    def clear_all_admin_applications(self) -> int:
+        """Delete all admin applications."""
+        with self._connection() as conn:
+            result = conn.execute("DELETE FROM admin_applications")
+            conn.commit()
+            return result.rowcount
 
     def clear_served_queue(self) -> int:
         """Delete all served or cancelled queue records."""

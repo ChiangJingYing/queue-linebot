@@ -274,6 +274,7 @@ class QueueManager:
         removed_users = [entry.user_id for entry in removed_entries]
         cleared_served = self.db.clear_served_queue()
         cleared_profiles = self.db.clear_all_user_profiles()
+        cleared_admin_applications = self.db.clear_all_admin_applications()
         for entry in removed_entries:
             self.db.log_event("clear", entry.user_id, entry.queue_type, "管理員清空全部隊列")
         return {
@@ -282,6 +283,7 @@ class QueueManager:
             "removed_users": removed_users,
             "cleared_profiles": cleared_profiles,
             "cleared_served": cleared_served,
+            "cleared_admin_applications": cleared_admin_applications,
         }
 
     def register_name(self, user_id: str, display_name: str, location: str = "") -> dict:
