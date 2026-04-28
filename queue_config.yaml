@@ -1,0 +1,94 @@
+server:
+  host: 0.0.0.0
+  port: 8000
+  debug: false
+queue:
+  max_capacity: 50
+  timeout_minutes: 30
+  timeout_action: remove
+vip:
+  enabled: true
+  coffee_price: 60
+  coffee_url: https://buymeacoffee.com/yourname
+line_bot:
+  channel_secret: ""
+  channel_access_token: ""
+  admin_ids:
+    - YOUR_ADMIN_USER_ID
+  admin_rich_menu_id: ""
+  admin_rich_menu_page2_id: ""
+  user_rich_menu_id: ""
+registration:
+  location_options:
+    '1':
+      - '1'
+      - '2'
+      - '3'
+      - '4'
+      - '5'
+      - '6'
+      - '7'
+    '2':
+      - '1'
+      - '2'
+      - '3'
+      - '4'
+      - '5'
+      - '6'
+      - '7'
+    '3':
+      - '1'
+      - '2'
+      - '3'
+      - '4'
+      - '5'
+      - '6'
+      - '7'
+      - '8'
+    '4':
+      - '1'
+      - '2'
+      - '3'
+      - '4'
+      - '5'
+      - '6'
+      - '7'
+      - '8'
+    '5':
+      - '1'
+      - '2'
+      - '3'
+      - '4'
+      - '5'
+      - '6'
+      - '7'
+      - '8'
+    '6':
+      - '1'
+      - '2'
+      - '3'
+      - '4'
+      - '5'
+      - '6'
+      - '7'
+      - '8'
+    '7':
+      - '1'
+      - '2'
+      - '3'
+      - '4'
+      - '5'
+      - '6'
+      - '7'
+      - '8'
+logging:
+  level: INFO
+  log_file: logs/queue_events.log
+  max_size_mb: 10
+  backup_count: 5
+web_ui:
+  admin_token: ""
+  protect_read_routes: false
+  allow_query_token: false
+  session_cookie_name: queue_admin_session
+  session_secret: ""
