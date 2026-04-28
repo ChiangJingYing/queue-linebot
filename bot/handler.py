@@ -24,6 +24,7 @@ class LineBotHandler:
         admin_rich_menu_page2_id: str = "",
         user_rich_menu_id: str = "",
         location_options: dict[str, list[str]] | None = None,
+        announcement_service: object | None = None,
     ) -> None:
         self.channel_secret = channel_secret
         self.channel_access_token = channel_access_token
@@ -39,6 +40,7 @@ class LineBotHandler:
         self.admin_rich_menu_page2_id = admin_rich_menu_page2_id
         self.user_rich_menu_id = user_rich_menu_id
         self.location_options = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
+        self.announcement_service = announcement_service
         self.pending_actions: dict[str, dict] = {}
 
     def handle_event(self, event) -> list:
@@ -476,10 +478,21 @@ class LineBotHandler:
         except Exception:
             return False
 
+    def _push_dashboard_announcement(self, user_id: str) -> None:
+        if not self.announcement_service:
+            return
+        profile = self.queue_manager.db.get_user_profile(user_id)
+        display_name = profile.display_name if profile and profile.display_name else user_id
+        try:
+            self.announcement_service.announce_called_guest(display_name=display_name)
+        except Exception:
+            return
+
     def _admin_serve_next(self, reply_token: str) -> list:
         """Serve next in queue."""
         result = self.queue_manager.serve_next()
         if result["status"] == "served":
+            self._push_dashboard_announcement(result["id"])
             display_name = self.queue_manager.db.get_display_name(result["id"])
             msg = f"✅ 已叫號：{display_name}"
         else:
@@ -490,6 +503,7 @@ class LineBotHandler:
         """Serve specific user."""
         result = self.queue_manager.serve_specific(target_id)
         if result["status"] == "served":
+            self._push_dashboard_announcement(target_id)
             msg = f"✅ 已叫號：{self.queue_manager.db.get_display_name(target_id)}"
         else:
             msg = f"❌ 錯誤：{result['message']}"

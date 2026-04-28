@@ -28,6 +28,11 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### Google Cloud TTS dependency
+
+This project supports dashboard voice announcements via Google Cloud Text-to-Speech.
+The Python SDK is included in `requirements.txt` and `pyproject.toml`.
+
 ## Rich Menu 上傳
 
 已提供兩套 6 格 Rich Menu 定義：
@@ -56,6 +61,12 @@ python scripts/upload_rich_menus.py \
 
 ## Running the app
 
+Before starting, copy `.env.example` to `.env` and fill in the required values.
+
+```bash
+cp .env.example .env
+```
+
 Start the FastAPI server:
 
 ```bash
@@ -67,6 +78,57 @@ Or with uvicorn directly:
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+## Environment variables
+
+### Required for LINE bot
+
+- `LINE_CHANNEL_SECRET`
+- `LINE_CHANNEL_TOKEN`
+
+### Recommended for dashboard login
+
+- `WEB_UI_ADMIN_TOKEN`
+- `WEB_UI_SESSION_SECRET`
+
+### Optional for Google Cloud TTS dashboard announcements
+
+- `GOOGLE_CLOUD_TTS_ENABLED=true`
+- `GOOGLE_CLOUD_TTS_LANGUAGE_CODE=cmn-TW`
+- `GOOGLE_CLOUD_TTS_VOICE_NAME=cmn-TW-Standard-A`
+- `GOOGLE_CLOUD_TTS_AUDIO_ENCODING=MP3`
+- `GOOGLE_CLOUD_TTS_SPEAKING_RATE=1.0`
+- `GOOGLE_CLOUD_TTS_PITCH=0.0`
+- `DASHBOARD_ANNOUNCEMENT_TEMPLATE=來賓 {display_name} 請準備demo`
+- `GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/google-service-account.json`
+
+### Recommended Traditional Chinese voice preset
+
+For a stable default, this repo currently recommends:
+
+- language code: `cmn-TW`
+- voice name: `cmn-TW-Standard-A`
+- audio encoding: `MP3`
+- speaking rate: `1.0`
+- pitch: `0.0`
+
+## Dashboard audio announcement flow
+
+When an admin runs:
+
+- `/admin/serve`
+- `/admin/serve [user_id]`
+
+The system now:
+
+1. serves the queue entry normally,
+2. builds an announcement text from `display_name`,
+3. stores the latest dashboard announcement payload,
+4. generates audio through Google Cloud TTS when enabled,
+5. exposes the audio through `/dashboard/audio/{filename}`,
+6. lets the dashboard page poll and play the latest announcement after audio is enabled in the browser.
+
+If Google Cloud credentials or SDK are missing, the queue serve flow still works and only the audio generation is skipped.
 
 Health endpoints:
 

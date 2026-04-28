@@ -421,6 +421,79 @@ def test_admin_serve_specific_uses_display_name_and_location(tmp_path):
     assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
 
 
+class FakeAnnouncementService:
+    def __init__(self):
+        self.calls = []
+
+    def announce_called_guest(self, *, display_name: str):
+        self.calls.append(display_name)
+        return {
+            "status": "ok",
+            "text": f"來賓 {display_name} 請準備demo",
+            "audioUrl": "/dashboard/audio/fake.mp3",
+        }
+
+
+def test_admin_serve_next_creates_dashboard_announcement_with_display_name(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-next-announcement.db"))
+    qm = QueueManager(db)
+    announcement_service = FakeAnnouncementService()
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+        announcement_service=announcement_service,
+    )
+
+    qm.register_name("alice", "110316888", location="A-1")
+    qm.join("alice", "regular")
+
+    reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）"
+    assert announcement_service.calls == ["110316888"]
+
+
+def test_admin_serve_specific_creates_dashboard_announcement_with_display_name(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-specific-announcement.db"))
+    qm = QueueManager(db)
+    announcement_service = FakeAnnouncementService()
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+        announcement_service=announcement_service,
+    )
+
+    qm.register_name("alice", "110316888", location="A-1")
+    qm.join("alice", "regular")
+
+    reply = handler.handle_event(make_event("/admin/serve alice", user_id="admin"))
+
+    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）"
+    assert announcement_service.calls == ["110316888"]
+
+
+def test_dashboard_announcement_formats_digit_only_id_for_tts(tmp_path):
+    from services.dashboard_announcement import DashboardAnnouncementService
+
+    class CapturingTTS:
+        def __init__(self):
+            self.calls = []
+
+        def synthesize(self, text: str) -> bytes:
+            self.calls.append(text)
+            return b""
+
+    tts = CapturingTTS()
+    service = DashboardAnnouncementService(root=tmp_path / "announcements", tts_service=tts)
+
+    payload = service.announce_called_guest(display_name="114205")
+
+    assert payload["text"] == "來賓 一一四二零五 請準備demo"
+    assert tts.calls == ["來賓 一一四二零五 請準備demo"]
+
+
 def test_admin_ping_next_user(tmp_path):
     db = DatabaseManager(str(tmp_path / "ping.db"))
     qm = QueueManager(db)

@@ -29,6 +29,7 @@ def _setup_runtime(tmp_path, location_options=None):
         admin_ids=["admin"],
         location_options=location_options or {"A": ["1", "2"], "B": ["1", "2"]},
     )
+    main.dashboard_announcement_service = None
 
     main.db_manager = db
     main.queue_manager = qm
@@ -191,6 +192,50 @@ def test_dashboard_data_cleared_and_reregistered_user_is_not_served(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["grid"]["1"]["1"]["status"] == "registered"
+
+
+class FakeDashboardAnnouncementService:
+    def __init__(self):
+        self.payload = {
+            "id": "ann-1",
+            "text": "來賓 110316888 請準備demo",
+            "audioUrl": "/dashboard/audio/ann-1.mp3",
+            "createdAt": "2026-04-29T00:00:00",
+        }
+
+    def get_latest(self):
+        return self.payload
+
+
+def test_dashboard_data_includes_latest_announcement_payload(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    main.dashboard_announcement_service = FakeDashboardAnnouncementService()
+    client = TestClient(main.app)
+
+    response = client.get("/dashboard/data")
+
+    assert response.status_code == 200
+    assert response.json()["announcement"]["id"] == "ann-1"
+    assert response.json()["announcement"]["audioUrl"] == "/dashboard/audio/ann-1.mp3"
+
+
+def test_dashboard_page_includes_audio_announcement_player_hooks(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    main.dashboard_announcement_service = FakeDashboardAnnouncementService()
+    client = TestClient(main.app)
+
+    response = client.get("/dashboard")
+
+    assert response.status_code == 200
+    assert "announcement-audio-toggle" in response.text
+    assert "announcement-audio-status" in response.text
+    assert "announcement-audio" in response.text
+    assert "playAnnouncementIfNeeded" in response.text
+    assert "payload.announcement" in response.text
+    assert "legend-actions" in response.text
+    assert "toggle-switch" in response.text
+    assert "toggle-track" in response.text
+    assert "flex-wrap:nowrap" in response.text
 
 
 def test_dashboard_config_page_and_layout_api(tmp_path):

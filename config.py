@@ -86,4 +86,13 @@ def get_defaults() -> dict:
             "session_cookie_name": "queue_admin_session",
             "session_secret": os.getenv("WEB_UI_SESSION_SECRET", ""),
         },
+        "tts": {
+            "enabled": os.getenv("GOOGLE_CLOUD_TTS_ENABLED", "false").lower() == "true",
+            "language_code": os.getenv("GOOGLE_CLOUD_TTS_LANGUAGE_CODE", "cmn-TW"),
+            "voice_name": os.getenv("GOOGLE_CLOUD_TTS_VOICE_NAME", "cmn-TW-Standard-A"),
+            "audio_encoding": os.getenv("GOOGLE_CLOUD_TTS_AUDIO_ENCODING", "MP3"),
+            "speaking_rate": float(os.getenv("GOOGLE_CLOUD_TTS_SPEAKING_RATE", "1.0")),
+            "pitch": float(os.getenv("GOOGLE_CLOUD_TTS_PITCH", "0.0")),
+            "announcement_template": os.getenv("DASHBOARD_ANNOUNCEMENT_TEMPLATE", "來賓 {display_name} 請準備demo"),
+        },
     }

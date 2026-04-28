@@ -24,6 +24,7 @@ from core.database import DatabaseManager
 from core.queue_manager import QueueManager
 from services.notifier import Notifier
 from services.vip_service import VipService
+from services.dashboard_announcement import DashboardAnnouncementService, GoogleCloudTTSService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -167,6 +168,7 @@ queue_manager: QueueManager | None = None
 vip_service: VipService | None = None
 notifier: Notifier | None = None
 line_handler: LineBotHandler | None = None
+dashboard_announcement_service: DashboardAnnouncementService | None = None
 
 
 class DashboardLayoutStore:
@@ -222,13 +224,27 @@ dashboard_layout_store = DashboardLayoutStore()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Initialize DB and services on startup."""
-    global db_manager, queue_manager, vip_service, notifier, line_handler, scheduler
+    global db_manager, queue_manager, vip_service, notifier, line_handler, scheduler, dashboard_announcement_service
     from apscheduler.schedulers.background import BackgroundScheduler
 
     db_manager = DatabaseManager()
     notifier = Notifier(CHANNEL_SECRET, CHANNEL_ACCESS_TOKEN, ADMIN_RICH_MENU_PAGE2_ID)
     queue_manager = QueueManager(db_manager, notifier)
     vip_service = VipService(db_manager)
+    tts_config = config.get("tts", {}) if isinstance(config.get("tts"), dict) else {}
+    dashboard_announcement_service = DashboardAnnouncementService(
+        root="dashboard_announcements",
+        public_base_path="/dashboard/audio",
+        tts_service=GoogleCloudTTSService(
+            enabled=bool(tts_config.get("enabled", False)),
+            language_code=str(tts_config.get("language_code", "cmn-TW")),
+            voice_name=str(tts_config.get("voice_name", "cmn-TW-Standard-A")),
+            audio_encoding=str(tts_config.get("audio_encoding", "MP3")),
+            speaking_rate=float(tts_config.get("speaking_rate", 1.0)),
+            pitch=float(tts_config.get("pitch", 0.0)),
+        ),
+        announcement_template=str(tts_config.get("announcement_template", "來賓 {display_name} 請準備demo")),
+    )
     line_handler = LineBotHandler(
         channel_secret=CHANNEL_SECRET,
         channel_access_token=CHANNEL_ACCESS_TOKEN,
@@ -239,6 +255,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         admin_rich_menu_page2_id=ADMIN_RICH_MENU_PAGE2_ID,
         user_rich_menu_id=USER_RICH_MENU_ID,
         location_options=LOCATION_OPTIONS,
+        announcement_service=dashboard_announcement_service,
     )
 
     scheduler = BackgroundScheduler()
@@ -379,7 +396,7 @@ def _build_dashboard_payload() -> dict:
         "rows": rows,
         "cols": cols,
         "grid": grid,
-        "version": hashlib.md5(json.dumps({"rows": rows, "cols": cols, "grid": grid, "active_queue": active_queue_payload}, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest(),
+        "version": hashlib.md5(json.dumps({"rows": rows, "cols": cols, "grid": grid, "active_queue": active_queue_payload, "announcement": (dashboard_announcement_service.get_latest() if dashboard_announcement_service else None)}, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest(),
         "legend": status_labels,
         "stats": {
             "registered": stats["registered"],
@@ -388,6 +405,7 @@ def _build_dashboard_payload() -> dict:
         },
         "served_recent": served_recent_payload,
         "active_queue": active_queue_payload,
+        "announcement": dashboard_announcement_service.get_latest() if dashboard_announcement_service else None,
     }
 
 
@@ -483,6 +501,18 @@ def dashboard_asset(filename: str, request: Request):
         raise HTTPException(status_code=404, detail="找不到圖片")
     media_type, _ = mimetypes.guess_type(target.name)
     return FileResponse(target, media_type=media_type or "application/octet-stream")
+
+
+@app.get("/dashboard/audio/{filename}")
+def dashboard_audio_asset(filename: str, request: Request):
+    _require_web_ui_auth(request, protect_reads=False)
+    if dashboard_announcement_service is None:
+        raise HTTPException(status_code=404, detail="找不到音訊")
+    target = dashboard_announcement_service.resolve_audio_asset(filename)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="找不到音訊")
+    media_type, _ = mimetypes.guess_type(target.name)
+    return FileResponse(target, media_type=media_type or "audio/mpeg")
 
 
 @app.get("/dashboard/login", response_class=HTMLResponse)
@@ -929,8 +959,18 @@ def dashboard(request: Request) -> str:
           .served-tooltip-empty {{ font-size:13px; color:#94a3b8; }}
           .stat-label {{ font-size:12px; color:#94a3b8; margin-bottom:4px; }}
           .stat-value {{ font-size:24px; font-weight:800; color:#f8fafc; }}
-          .legend {{ display:flex; gap:16px; flex-wrap:wrap; flex-shrink:0; }}
-          .legend span {{ display:flex; align-items:center; gap:8px; }}
+          .legend {{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:nowrap; flex-shrink:0; }}
+          .legend-items {{ display:flex; align-items:center; gap:16px; flex-wrap:nowrap; min-width:0; }}
+          .legend-items span {{ display:flex; align-items:center; gap:8px; white-space:nowrap; }}
+          .legend-actions {{ display:flex; align-items:center; gap:10px; flex-shrink:0; margin-left:auto; }}
+          .toggle-switch {{ display:inline-flex; align-items:center; gap:10px; cursor:pointer; user-select:none; white-space:nowrap; }}
+          .toggle-switch input {{ position:absolute; opacity:0; width:1px; height:1px; pointer-events:none; }}
+          .toggle-track {{ position:relative; width:44px; height:24px; border-radius:999px; background:#334155; border:1px solid #475569; transition:all .18s ease; flex-shrink:0; }}
+          .toggle-track::after {{ content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:999px; background:#f8fafc; box-shadow:0 1px 3px rgba(15,23,42,.35); transition:transform .18s ease; }}
+          .toggle-switch input:checked + .toggle-track {{ background:#2563eb; border-color:#3b82f6; }}
+          .toggle-switch input:checked + .toggle-track::after {{ transform:translateX(20px); }}
+          .toggle-label {{ font-size:13px; color:#e2e8f0; font-weight:600; line-height:1.2; }}
+          .toggle-hint {{ font-size:12px; color:#94a3b8; line-height:1.2; }}
           .layout {{ flex:1; min-height:0; display:grid; grid-template-columns:minmax(300px, 360px) 1fr; gap:12px; }}
           .queue-panel {{ background:#0f172a; border:1px solid #334155; border-radius:16px; padding:12px; overflow:auto; }}
           .queue-panel h3 {{ margin:0 0 10px; font-size:16px; }}
@@ -960,10 +1000,23 @@ def dashboard(request: Request) -> str:
           <div class="stat-card served-card"><div class="stat-label">Served</div><div class="stat-value" id="stat-served">{payload['stats']['served']}</div><div class="served-tooltip" id="served-tooltip"><div class="served-tooltip-title">最近已叫號（最新在上）</div><div id="served-tooltip-body"></div></div></div>
         </div>
         <div class=\"legend\">
-          <span><i class=\"lamp empty\"></i> 空位</span>
-          <span><i class=\"lamp blue\"></i> 已註冊</span>
-          <span><i class=\"lamp yellow\"></i> 排隊中</span>
-          <span><i class=\"lamp green\"></i> 已叫號</span>
+          <div class=\"legend-items\">
+            <span><i class=\"lamp empty\"></i> 空位</span>
+            <span><i class=\"lamp blue\"></i> 已註冊</span>
+            <span><i class=\"lamp yellow\"></i> 排隊中</span>
+            <span><i class=\"lamp green\"></i> 已叫號</span>
+          </div>
+          <div class=\"legend-actions\">
+            <label class=\"toggle-switch\" for=\"announcement-audio-toggle\">
+              <input id=\"announcement-audio-toggle\" type=\"checkbox\" />
+              <span class=\"toggle-track\" aria-hidden=\"true\"></span>
+              <span>
+                <span class=\"toggle-label\">語音播報</span><br />
+                <span id=\"announcement-audio-status\" class=\"toggle-hint\">未啟用</span>
+              </span>
+            </label>
+            <audio id=\"announcement-audio\" preload=\"auto\"></audio>
+          </div>
         </div>
         <div class=\"layout\">
           <aside class=\"queue-panel\">
@@ -991,9 +1044,20 @@ def dashboard(request: Request) -> str:
 {auth_bootstrap}
           let previousGrid = {{}};
           let currentVersion = null;
+          let lastAnnouncementId = null;
+          let audioEnabled = false;
           const initialPayload = {initial_payload};
           const board = document.getElementById('board');
           const boardImage = document.getElementById('board-image');
+          const announcementAudio = document.getElementById('announcement-audio');
+          const audioToggle = document.getElementById('announcement-audio-toggle');
+          const audioStatus = document.getElementById('announcement-audio-status');
+
+          function setAudioEnabled(nextEnabled) {{
+            audioEnabled = !!nextEnabled;
+            if (audioToggle) audioToggle.checked = audioEnabled;
+            if (audioStatus) audioStatus.textContent = audioEnabled ? '已啟用' : '未啟用';
+          }}
 
           function getImagePlacementRect() {{
             const rect = board.getBoundingClientRect();
@@ -1065,6 +1129,15 @@ def dashboard(request: Request) -> str:
             `).join('');
           }}
 
+          function playAnnouncementIfNeeded(payload) {{
+            const announcement = payload.announcement;
+            if (!announcement || !announcement.id || announcement.id === lastAnnouncementId) return;
+            lastAnnouncementId = announcement.id;
+            if (!audioEnabled || !announcement.audioUrl || !announcementAudio) return;
+            announcementAudio.src = withAuthUrl(announcement.audioUrl);
+            announcementAudio.play().catch(() => {{}});
+          }}
+
           function renderMarkers(payload) {{
             previousGrid = payload.grid; currentVersion = payload.version;
             document.getElementById('stat-registered').textContent = payload.stats.registered;
@@ -1072,6 +1145,7 @@ def dashboard(request: Request) -> str:
             document.getElementById('stat-served').textContent = payload.stats.served;
             renderServedTooltip(payload.served_recent);
             renderQueueTable(payload.active_queue);
+            playAnnouncementIfNeeded(payload);
             const imageRect = getImagePlacementRect();
             document.querySelectorAll('.marker').forEach((marker) => {{
               const x = parseFloat(marker.dataset.x);
@@ -1093,6 +1167,14 @@ def dashboard(request: Request) -> str:
             const response = await fetch(withAuthUrl('/dashboard/data'), withAuthHeaders({{ cache: 'no-store' }}));
             const payload = await response.json();
             if (payload.version !== currentVersion) renderMarkers(payload);
+            else playAnnouncementIfNeeded(payload);
+          }}
+
+          if (audioToggle) {{
+            audioToggle.addEventListener('change', () => {{
+              setAudioEnabled(audioToggle.checked);
+              if (audioEnabled) playAnnouncementIfNeeded(initialPayload);
+            }});
           }}
 
           if (boardImage) boardImage.addEventListener('load', () => {{
