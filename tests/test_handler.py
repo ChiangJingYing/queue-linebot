@@ -297,9 +297,92 @@ def test_admin_clear_clears_queue_and_registered_profiles(tmp_path):
 
     reply = handler.handle_event(make_event("/admin/clear", user_id="admin"))
 
-    assert "清除 1 筆註冊資料" in reply[0]["text"]
+    assert "清除 1 筆使用者資料" in reply[0]["text"]
     assert db.get_all_queue() == []
     assert db.get_user_profile("alice") is None
+
+
+def test_admin_clear_keeps_existing_admin_profiles_and_clears_their_dashboard_fields(tmp_path):
+    db = DatabaseManager(str(tmp_path / "clear-admins.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["config_admin"])
+
+    qm.register_name("config_admin", "靜態管理員", location="A-1")
+    db.upsert_user_profile("config_admin", "靜態管理員", location="A-1", role="admin")
+
+    qm.register_name("dynamic_admin", "動態管理員", location="B-1")
+    db.upsert_user_profile("dynamic_admin", "動態管理員", location="B-1", role="admin")
+
+    reply = handler.handle_event(make_event("/admin/clear", user_id="config_admin"))
+
+    config_admin = db.get_user_profile("config_admin")
+    dynamic_admin = db.get_user_profile("dynamic_admin")
+
+    assert "保留 2 筆 admin 資料" in reply[0]["text"]
+    assert config_admin is not None
+    assert config_admin.role == "admin"
+    assert config_admin.display_name == ""
+    assert config_admin.location == ""
+    assert dynamic_admin is not None
+    assert dynamic_admin.role == "admin"
+    assert dynamic_admin.display_name == ""
+    assert dynamic_admin.location == ""
+
+
+def test_admin_clear_keeps_all_admin_roles_but_clears_dashboard_registration_fields(tmp_path):
+    db = DatabaseManager(str(tmp_path / "clear-admin-dashboard.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["config_admin"])
+
+    qm.register_name("config_admin", "靜態管理員", location="A-1")
+    db.upsert_user_profile("config_admin", "靜態管理員", location="A-1", verified=True, role="admin")
+
+    qm.register_name("dynamic_admin", "動態管理員", location="B-1")
+    db.upsert_user_profile("dynamic_admin", "動態管理員", location="B-1", verified=True, role="admin")
+
+    reply = handler.handle_event(make_event("/admin/clear", user_id="config_admin"))
+
+    config_kept = db.get_user_profile("config_admin")
+    dynamic_kept = db.get_user_profile("dynamic_admin")
+    assert "保留 2 筆 admin 資料" in reply[0]["text"]
+
+    assert config_kept is not None
+    assert config_kept.role == "admin"
+    assert config_kept.display_name == ""
+    assert config_kept.location == ""
+    assert config_kept.verified == 0
+
+    assert dynamic_kept is not None
+    assert dynamic_kept.role == "admin"
+    assert dynamic_kept.display_name == ""
+    assert dynamic_kept.location == ""
+    assert dynamic_kept.verified == 0
+
+
+def test_admin_serve_next_uses_display_name_and_location(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-next.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.join("alice", "regular")
+
+    reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+
+
+def test_admin_serve_specific_uses_display_name_and_location(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-specific.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.join("alice", "regular")
+
+    reply = handler.handle_event(make_event("/admin/serve alice", user_id="admin"))
+
+    assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
 
 
 def test_admin_ping_next_user(tmp_path):

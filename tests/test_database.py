@@ -105,3 +105,29 @@ class TestDatabaseManager:
         assert db_manager.get_queue_max_capacity() == 12
         assert db_manager.get_queue_timeout_minutes() == 45
         assert db_manager.is_vip_enabled() is False
+
+    def test_clear_all_user_profiles_keeps_all_admin_roles_but_clears_dashboard_fields(self, db_manager):
+        db_manager.upsert_user_profile("config_admin", "Config Admin", location="A-1", verified=True, role="admin")
+        db_manager.upsert_user_profile("dynamic_admin", "Dynamic Admin", location="B-1", verified=True, role="admin")
+        db_manager.upsert_user_profile("regular_user", "Regular User", location="C-1", role="user")
+
+        cleared_user_count, kept_admin_count = db_manager.clear_all_user_profiles(keep_user_ids={"config_admin"})
+
+        assert cleared_user_count == 1
+        assert kept_admin_count == 2
+
+        config_profile = db_manager.get_user_profile("config_admin")
+        assert config_profile is not None
+        assert config_profile.role == "admin"
+        assert config_profile.display_name == ""
+        assert config_profile.location == ""
+        assert config_profile.verified == 0
+
+        dynamic_profile = db_manager.get_user_profile("dynamic_admin")
+        assert dynamic_profile is not None
+        assert dynamic_profile.role == "admin"
+        assert dynamic_profile.display_name == ""
+        assert dynamic_profile.location == ""
+        assert dynamic_profile.verified == 0
+
+        assert db_manager.get_user_profile("regular_user") is None

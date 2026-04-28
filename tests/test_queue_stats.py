@@ -77,6 +77,13 @@ class TestQueueStats:
         stats = queue_manager.get_queue_stats()
         assert stats["queue"] == 0
 
+    def test_served_count_excludes_cancelled(self, queue_manager):
+        """Cancelled entries should NOT count toward served."""
+        queue_manager.join("cx1", "regular")
+        queue_manager.cancel("cx1")
+        stats = queue_manager.get_queue_stats()
+        assert stats["served"] == 0
+
     def test_served_count_is_zero_empty(self, queue_manager):
         """Served count should be 0 when no one has been served."""
         stats = queue_manager.get_queue_stats()

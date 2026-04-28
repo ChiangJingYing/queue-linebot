@@ -8,7 +8,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from types import SimpleNamespace
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from .models import QueueEntry, VipPurchase, QueueEvent, UserProfile
 
@@ -447,14 +447,40 @@ class DatabaseManager:
             ).fetchone()
             return QueueEntry(**dict(row)) if row else None
 
-    def clear_all_user_profiles(self) -> int:
-        """Delete all registered user profiles."""
+    def clear_all_user_profiles(self, keep_user_ids: Iterable[str] | None = None) -> tuple[int, int]:
+        """Delete registered user profiles while preserving admin roles.
+
+        All profiles with role='admin' are retained so admin authorization keeps
+        working, but their dashboard-visible registration fields are cleared.
+        Non-admin profiles are deleted.
+
+        Returns:
+            (cleared_count, kept_admin_count)
+        """
+        _ = {str(user_id) for user_id in (keep_user_ids or set()) if str(user_id).strip()}  # backward-compatible noop
         with self._connection() as conn:
-            row = conn.execute("SELECT COUNT(*) AS cnt FROM user_profiles").fetchone()
-            total = int(row["cnt"]) if row else 0
-            conn.execute("DELETE FROM user_profiles")
+            rows = conn.execute(
+                "SELECT user_id, role FROM user_profiles"
+            ).fetchall()
+
+            cleared_count = 0
+            kept_admin_count = 0
+            now = datetime.now().isoformat(timespec="microseconds")
+            for row in rows:
+                user_id = row["user_id"]
+                role = row["role"]
+                if role == "admin":
+                    conn.execute(
+                        "UPDATE user_profiles SET display_name = '', location = '', verified = 0, updated_at = ? WHERE user_id = ?",
+                        (now, user_id),
+                    )
+                    kept_admin_count += 1
+                    continue
+                conn.execute("DELETE FROM user_profiles WHERE user_id = ?", (user_id,))
+                cleared_count += 1
+
             conn.commit()
-            return total
+            return cleared_count, kept_admin_count
 
     def get_user_history(self, user_id: str) -> list:
         """Get queue history for a user, newest first."""

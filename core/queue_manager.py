@@ -260,7 +260,11 @@ class QueueManager:
         registered = sum(1 for p in profiles if p.location and p.location.strip())
         active_queue = self.db.get_all_queue()
         served = self.db.get_queue_rows_for_export(limit=10000)
-        served_count = sum(1 for r in served if r.get("served") == 1 or r.get("served_time") is not None)
+        served_count = sum(
+            1
+            for r in served
+            if r.get("served_time") is not None and not r.get("cancel_time")
+        )
 
         return {
             "registered": registered,
@@ -268,12 +272,14 @@ class QueueManager:
             "served": served_count,
         }
 
-    def clear_all_queue(self) -> dict:
+    def clear_all_queue(self, keep_admin_user_ids: set[str] | None = None) -> dict:
         """Clear all queue records and user profiles."""
         removed_entries = self.db.clear_all_queue()
         removed_users = [entry.user_id for entry in removed_entries]
         cleared_served = self.db.clear_served_queue()
-        cleared_profiles = self.db.clear_all_user_profiles()
+        cleared_profiles, kept_admin_profiles = self.db.clear_all_user_profiles(
+            keep_user_ids=keep_admin_user_ids or set()
+        )
         cleared_admin_applications = self.db.clear_all_admin_applications()
         for entry in removed_entries:
             self.db.log_event("clear", entry.user_id, entry.queue_type, "管理員清空全部隊列")
@@ -282,6 +288,9 @@ class QueueManager:
             "removed_count": len(removed_users),
             "removed_users": removed_users,
             "cleared_profiles": cleared_profiles,
+            "cleared_profiles_user": cleared_profiles,
+            "kept_admin_profiles": kept_admin_profiles,
+            "cleared_profiles_admin": kept_admin_profiles,
             "cleared_served": cleared_served,
             "cleared_admin_applications": cleared_admin_applications,
         }

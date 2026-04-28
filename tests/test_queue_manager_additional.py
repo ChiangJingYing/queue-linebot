@@ -201,8 +201,8 @@ class TestQueueManagerAdditional:
         result = queue_manager.clear_all_queue()
 
         assert result["removed_count"] == 1
-        assert result["cleared_profiles"] == 1
-        assert db.get_user_profile("alice") is None
+        assert result["cleared_profiles_user"] == 1
+        assert db.get_user_profile("alice") is None    
 
     def test_ping_user_targets_queue_head_when_missing_id(self, tmp_path):
         db = DatabaseManager(str(tmp_path / "ping-user.db"))

@@ -480,7 +480,8 @@ class LineBotHandler:
         """Serve next in queue."""
         result = self.queue_manager.serve_next()
         if result["status"] == "served":
-            msg = f"✅ 已叫號：#{result['id']}（號碼 {result['queue_number']}）"
+            display_name = self.queue_manager.db.get_display_name(result["id"])
+            msg = f"✅ 已叫號：{display_name}"
         else:
             msg = f"❌ 錯誤：{result['message']}"
         return self._reply(reply_token, msg)
@@ -489,7 +490,7 @@ class LineBotHandler:
         """Serve specific user."""
         result = self.queue_manager.serve_specific(target_id)
         if result["status"] == "served":
-            msg = f"✅ 已叫號：{result['queue_number']}"
+            msg = f"✅ 已叫號：{self.queue_manager.db.get_display_name(target_id)}"
         else:
             msg = f"❌ 錯誤：{result['message']}"
         return self._reply(reply_token, msg)
@@ -570,10 +571,11 @@ class LineBotHandler:
 
     def _handle_admin_clear(self, reply_token: str) -> list:
         """Handle /admin/clear."""
-        result = self.queue_manager.clear_all_queue()
+        keep_admin_user_ids = set(self.admin_ids)
+        result = self.queue_manager.clear_all_queue(keep_admin_user_ids=keep_admin_user_ids)
         return self._reply(
             reply_token,
-            f"✅ 已清空全部隊列，移除 {result['removed_count']} 筆，並清除 {result['cleared_profiles']} 筆註冊資料"
+            f"✅ 已清空全部隊列，移除 {result['removed_count']} 筆，並清除 {result['cleared_profiles']} 筆使用者資料、保留 {result['kept_admin_profiles']} 筆 admin 資料"
         )
 
     def _handle_admin_ping(self, args: list, reply_token: str) -> list:

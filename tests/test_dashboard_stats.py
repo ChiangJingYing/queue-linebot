@@ -57,6 +57,18 @@ class TestDashboardStats:
         assert stats["queue"] == 1
         assert stats["served"] == 0
 
+    def test_dashboard_stats_cancel_does_not_increase_served_count(self, client: TestClient):
+        import main
+        qm = main.queue_manager
+        _register(qm, "alice", "Alice A", "A-1")
+        qm.join("alice", "regular")
+        qm.cancel("alice")
+
+        stats = _get_stats(client)
+        assert stats["registered"] == 1
+        assert stats["queue"] == 0
+        assert stats["served"] == 0
+
     def test_dashboard_page_renders_stats_panel(self, client: TestClient):
         response = client.get("/dashboard")
         assert response.status_code == 200

@@ -46,7 +46,9 @@ def client(db_manager, queue_manager):
     main.db_manager = db_manager
     main.queue_manager = queue_manager
     from fastapi.testclient import TestClient
-    return TestClient(main.app)
+    token = main.config.get("web_ui", {}).get("admin_token", "")
+    headers = {"X-Admin-Token": token} if token else {}
+    return TestClient(main.app, headers=headers)
 
 
 @pytest.fixture

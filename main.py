@@ -301,7 +301,8 @@ def _build_dashboard_payload() -> dict:
         for row in rows
     }
 
-    active_queue = {entry.user_id for entry in db_manager.get_all_queue()}
+    active_queue_entries = db_manager.get_all_queue()
+    active_queue_user_ids = {entry.user_id for entry in active_queue_entries}
     status_labels = {
         "empty": "空位",
         "registered": "已註冊",
@@ -325,7 +326,7 @@ def _build_dashboard_payload() -> dict:
         cell["status"] = "registered"
         cell["recently_served"] = False
 
-        if profile.user_id in active_queue:
+        if profile.user_id in active_queue_user_ids:
             cell["status"] = "queued"
         else:
             latest = db_manager.get_latest_queue_entry_for_user(profile.user_id)
@@ -340,14 +341,16 @@ def _build_dashboard_payload() -> dict:
                 and latest_joined_at >= profile_updated_at
             )
             if served_after_registration:
-                cell["status"] = "served"
                 serve_dt = _parse_timestamp(latest.served_time)
                 if serve_dt and (now - serve_dt).total_seconds() <= blink_window:
+                    cell["status"] = "served"
                     cell["recently_served"] = True
+                else:
+                    cell["status"] = "registered"
+                    cell["recently_served"] = False
 
         cell["statusLabel"] = status_labels[cell["status"]]
 
-    # --- stats ---
     stats = queue_manager.get_queue_stats()
     served_recent = db_manager.get_recent_served(limit=5)
     served_recent_payload = [
@@ -361,11 +364,24 @@ def _build_dashboard_payload() -> dict:
         for item in served_recent
     ]
 
+    profile_map = {profile.user_id: profile for profile in profiles}
+    active_queue_payload = [
+        {
+            "user_id": entry.user_id,
+            "display_name": (profile_map.get(entry.user_id).display_name if profile_map.get(entry.user_id) else entry.user_id),
+            "location": (profile_map.get(entry.user_id).location if profile_map.get(entry.user_id) else ""),
+            "queue_type": entry.queue_type,
+            "queue_number": entry.queue_number,
+            "join_time": entry.join_time,
+        }
+        for entry in active_queue_entries
+    ]
+
     return {
         "rows": rows,
         "cols": cols,
         "grid": grid,
-        "version": hashlib.md5(json.dumps({"rows": rows, "cols": cols, "grid": grid}, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest(),
+        "version": hashlib.md5(json.dumps({"rows": rows, "cols": cols, "grid": grid, "active_queue": active_queue_payload}, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest(),
         "legend": status_labels,
         "stats": {
             "registered": stats["registered"],
@@ -373,6 +389,7 @@ def _build_dashboard_payload() -> dict:
             "served": stats["served"],
         },
         "served_recent": served_recent_payload,
+        "active_queue": active_queue_payload,
     }
 
 
@@ -916,6 +933,15 @@ def dashboard(request: Request) -> str:
           .stat-value {{ font-size:24px; font-weight:800; color:#f8fafc; }}
           .legend {{ display:flex; gap:16px; flex-wrap:wrap; flex-shrink:0; }}
           .legend span {{ display:flex; align-items:center; gap:8px; }}
+          .layout {{ flex:1; min-height:0; display:grid; grid-template-columns:minmax(300px, 360px) 1fr; gap:12px; }}
+          .queue-panel {{ background:#0f172a; border:1px solid #334155; border-radius:16px; padding:12px; overflow:auto; }}
+          .queue-panel h3 {{ margin:0 0 10px; font-size:16px; }}
+          .queue-table {{ width:100%; border-collapse:collapse; font-size:13px; }}
+          .queue-table th, .queue-table td {{ padding:8px 6px; border-bottom:1px solid #1e293b; text-align:left; }}
+          .queue-table th {{ color:#94a3b8; font-weight:600; position:sticky; top:0; background:#0f172a; }}
+          .queue-type-badge {{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:700; }}
+          .queue-type-regular {{ background:#1d4ed8; color:#dbeafe; }}
+          .queue-type-vip {{ background:#7c3aed; color:#ede9fe; }}
           .board-wrapper {{ flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }}
           .board {{ position:relative; background:#0f172a; border:1px solid #334155; border-radius:16px; overflow:hidden; }}
           .marker {{ position:absolute; transform:translate(-50%, -50%); text-align:center; }}
@@ -941,10 +967,26 @@ def dashboard(request: Request) -> str:
           <span><i class=\"lamp yellow\"></i> 排隊中</span>
           <span><i class=\"lamp green\"></i> 已叫號</span>
         </div>
-        <div class=\"board-wrapper\">
-          <div id=\"board\" class=\"board\">
-            <img id=\"board-image\" class=\"board-image\" src=\"{layout.get("imageUrl") or ""}\" alt=\"layout\" />
-            <div id=\"board-overlay\" class=\"board-overlay\">{''.join(markers_html)}</div>
+        <div class=\"layout\">
+          <aside class=\"queue-panel\">
+            <h3>目前隊列名單</h3>
+            <table class=\"queue-table\">
+              <thead>
+                <tr>
+                  <th>順位</th>
+                  <th>類型</th>
+                  <th>學號</th>
+                  <th>座位</th>
+                </tr>
+              </thead>
+              <tbody id=\"queue-table-body\"></tbody>
+            </table>
+          </aside>
+          <div class=\"board-wrapper\">
+            <div id=\"board\" class=\"board\">
+              <img id=\"board-image\" class=\"board-image\" src=\"{layout.get("imageUrl") or ""}\" alt=\"layout\" />
+              <div id=\"board-overlay\" class=\"board-overlay\">{''.join(markers_html)}</div>
+            </div>
           </div>
         </div>
         <script>
@@ -1007,12 +1049,31 @@ def dashboard(request: Request) -> str:
             body.innerHTML = `<ul class="served-tooltip-list">${{html}}</ul>`;
           }}
 
+          function renderQueueTable(items) {{
+            const body = document.getElementById('queue-table-body');
+            if (!body) return;
+            const rows = Array.isArray(items) ? items : [];
+            if (!rows.length) {{
+              body.innerHTML = '<tr><td colspan="4" style="color:#94a3b8;">目前沒有排隊中的名單</td></tr>';
+              return;
+            }}
+            body.innerHTML = rows.map((item, index) => `
+              <tr>
+                <td>#${{index + 1}}</td>
+                <td><span class="queue-type-badge queue-type-${{item.queue_type}}">${{item.queue_type.toUpperCase()}}</span></td>
+                <td>${{item.display_name || item.user_id || '-'}}</td>
+                <td>${{item.location || '-'}}</td>
+              </tr>
+            `).join('');
+          }}
+
           function renderMarkers(payload) {{
             previousGrid = payload.grid; currentVersion = payload.version;
             document.getElementById('stat-registered').textContent = payload.stats.registered;
             document.getElementById('stat-queue').textContent = payload.stats.queue;
             document.getElementById('stat-served').textContent = payload.stats.served;
             renderServedTooltip(payload.served_recent);
+            renderQueueTable(payload.active_queue);
             const imageRect = getImagePlacementRect();
             document.querySelectorAll('.marker').forEach((marker) => {{
               const x = parseFloat(marker.dataset.x);
