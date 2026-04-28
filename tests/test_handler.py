@@ -38,6 +38,42 @@ def test_handle_join_without_args_joins_current_user(tmp_path):
 
 
 
+def test_handle_status_shows_people_ahead_for_current_user_and_hides_vip(tmp_path):
+    db = DatabaseManager(str(tmp_path / "handler-status.db"))
+    qm = QueueManager(db)
+    qm.register_name("alice", "Alice", location="A-1")
+    qm.register_name("bob", "Bob", location="A-2")
+    qm.register_name("charlie", "Charlie", location="A-3")
+    qm.join("alice", "regular")
+    qm.join("bob", "regular")
+    qm.join("charlie", "regular")
+    handler = LineBotHandler(queue_manager=qm)
+
+    result = handler.handle_event(make_event("/status", user_id="charlie"))
+
+    text = reply_texts(result)[0]
+    assert "你前面還有 2 人" in text
+    assert "VIP" not in text
+
+
+
+def test_handle_status_when_user_not_in_queue_shows_total_queue_count(tmp_path):
+    db = DatabaseManager(str(tmp_path / "handler-status-empty.db"))
+    qm = QueueManager(db)
+    qm.register_name("alice", "Alice", location="A-1")
+    qm.register_name("bob", "Bob", location="A-2")
+    qm.join("alice", "regular")
+    qm.join("bob", "regular")
+    handler = LineBotHandler(queue_manager=qm)
+
+    result = handler.handle_event(make_event("/status", user_id="charlie"))
+
+    text = reply_texts(result)[0]
+    assert "目前有 2 人在排隊中" in text
+    assert "VIP" not in text
+
+
+
 def test_handle_history_returns_user_history(tmp_path):
     db = DatabaseManager(str(tmp_path / "handler.db"))
     qm = QueueManager(db)

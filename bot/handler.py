@@ -82,7 +82,7 @@ class LineBotHandler:
         elif command == "/cancel":
             return self._handle_cancel(user_id, reply_token)
         elif command == "/status":
-            return self._handle_status(reply_token)
+            return self._handle_status(user_id, reply_token)
         elif command == "/history" and not admin_history_mode:
             return self._handle_user_history(user_id, reply_token)
         elif command == "/help":
@@ -147,15 +147,15 @@ class LineBotHandler:
 
         return self._reply(reply_token, msg)
 
-    def _handle_status(self, reply_token: str) -> list:
+    def _handle_status(self, user_id: str, reply_token: str) -> list:
         """Handle /status command."""
-        status = self.queue_manager.get_status()
-        msg = (
-            f"📊 隊列狀態\n\n"
-            f"一般隊列：{status['regular_count']} 人\n"
-            f"VIP 隊列：{status['vip_count']} 人\n"
-            f"VIP 啟用：{'是' if status['vip_enabled'] else '否'}"
-        )
+        position = self.queue_manager.get_user_position(user_id)
+        if position is None:
+            total_count = len(self.queue_manager.get_queue())
+            msg = f"📊 目前有 {total_count} 人在排隊中"
+        else:
+            ahead_count = max(position - 1, 0)
+            msg = f"📊 目前你前面還有 {ahead_count} 人"
         return self._reply(reply_token, msg)
 
     def _handle_user_history(self, user_id: str, reply_token: str) -> list:

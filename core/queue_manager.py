@@ -254,6 +254,17 @@ class QueueManager:
             "removed_users": removed_users,
         }
 
+    def get_user_position(self, user_id: str) -> int | None:
+        """Return 1-based position for the current active queue entry, or None."""
+        valid_id = validate_user_id(user_id)
+        if valid_id is None:
+            return None
+
+        for index, entry in enumerate(self.db.get_all_queue(), start=1):
+            if entry.user_id == valid_id:
+                return index
+        return None
+
     def get_queue_stats(self) -> dict:
         """Get overall queue statistics (registered count, active queue, served count)."""
         profiles = self.db.get_all_user_profiles()

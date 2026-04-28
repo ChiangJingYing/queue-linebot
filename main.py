@@ -242,8 +242,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     )
 
     scheduler = BackgroundScheduler()
-    from scheduler import register_timeout_job
-    register_timeout_job(scheduler, queue_manager, notifier)
     scheduler.start()
 
     logger.info("Queue system started")
