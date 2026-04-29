@@ -74,6 +74,25 @@ def test_load_config_merges_partial_yaml_with_defaults(tmp_path):
     assert "channel_secret" in config["line_bot"]
 
 
+def test_load_config_ignores_empty_section_and_keeps_env_defaults(monkeypatch, tmp_path):
+    monkeypatch.setenv("LINE_CHANNEL_SECRET", "env-secret")
+    monkeypatch.setenv("LINE_CHANNEL_TOKEN", "env-token")
+    monkeypatch.setenv("WEB_UI_ADMIN_TOKEN", "env-admin-token")
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "line_bot:\nweb_ui:\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(str(config_path))
+
+    assert config["line_bot"]["channel_secret"] == "env-secret"
+    assert config["line_bot"]["channel_access_token"] == "env-token"
+    assert config["web_ui"]["admin_token"] == "env-admin-token"
+    assert config["web_ui"]["session_cookie_name"] == "queue_admin_session"
+
+
 def test_webhook_processes_join_event_and_returns_counts(tmp_path):
     qm = _setup_runtime(tmp_path)
     qm.register_name("alice", "Alice", location="A-1")

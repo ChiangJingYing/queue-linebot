@@ -11,13 +11,8 @@ vip:
   coffee_price: 60
   coffee_url: https://buymeacoffee.com/yourname
 line_bot:
-  channel_secret: ""
-  channel_access_token: ""
   admin_ids:
     - YOUR_ADMIN_USER_ID
-  admin_rich_menu_id: ""
-  admin_rich_menu_page2_id: ""
-  user_rich_menu_id: ""
 registration:
   location_options:
     '1':
@@ -87,8 +82,6 @@ logging:
   max_size_mb: 10
   backup_count: 5
 web_ui:
-  admin_token: ""
   protect_read_routes: false
   allow_query_token: false
   session_cookie_name: queue_admin_session
-  session_secret: ""

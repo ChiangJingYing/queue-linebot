@@ -34,6 +34,8 @@ def _deep_merge(base: dict, override: dict) -> dict:
     """Recursively merge override values into base config."""
     merged = dict(base)
     for key, value in override.items():
+        if value is None:
+            continue
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
             merged[key] = _deep_merge(merged[key], value)
         else:
@@ -94,5 +96,7 @@ def get_defaults() -> dict:
             "speaking_rate": float(os.getenv("GOOGLE_CLOUD_TTS_SPEAKING_RATE", "1.0")),
             "pitch": float(os.getenv("GOOGLE_CLOUD_TTS_PITCH", "0.0")),
             "announcement_template": os.getenv("DASHBOARD_ANNOUNCEMENT_TEMPLATE", "來賓 {display_name} 請準備demo"),
+            "new_order_idle_seconds": int(os.getenv("NEW_ORDER_IDLE_SECONDS", "300")),
+            "new_order_announcement_text": os.getenv("NEW_ORDER_ANNOUNCEMENT_TEXT", "您有新訂單"),
         },
     }

@@ -244,6 +244,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             pitch=float(tts_config.get("pitch", 0.0)),
         ),
         announcement_template=str(tts_config.get("announcement_template", "來賓 {display_name} 請準備demo")),
+        new_order_announcement_text=str(tts_config.get("new_order_announcement_text", "您有新訂單")),
     )
     line_handler = LineBotHandler(
         channel_secret=CHANNEL_SECRET,
@@ -256,6 +257,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         user_rich_menu_id=USER_RICH_MENU_ID,
         location_options=LOCATION_OPTIONS,
         announcement_service=dashboard_announcement_service,
+        new_order_idle_seconds=int(tts_config.get("new_order_idle_seconds", 300)),
+        new_order_announcement_text=str(tts_config.get("new_order_announcement_text", "您有新訂單")),
     )
 
     scheduler = BackgroundScheduler()

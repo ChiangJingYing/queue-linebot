@@ -23,6 +23,14 @@ logs/
 # Dashboard layout storage (uploaded images are runtime data)
 dashboard_layout/
 
+# Google service account / local credentials
+*.json
+!package*.json
+!tsconfig*.json
+!jsconfig*.json
+!dashboard_layout/layout.json
+!rich_menus/*.json
+
 # OS
 .DS_Store
 Thumbs.db

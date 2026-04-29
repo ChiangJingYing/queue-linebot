@@ -426,11 +426,19 @@ class FakeAnnouncementService:
         self.calls = []
 
     def announce_called_guest(self, *, display_name: str):
-        self.calls.append(display_name)
+        self.calls.append(("called_guest", display_name))
         return {
             "status": "ok",
             "text": f"來賓 {display_name} 請準備demo",
             "audioUrl": "/dashboard/audio/fake.mp3",
+        }
+
+    def announce_new_order(self, *, text: str):
+        self.calls.append(("new_order", text))
+        return {
+            "status": "ok",
+            "text": text,
+            "audioUrl": "/dashboard/audio/new-order.mp3",
         }
 
 
@@ -451,7 +459,7 @@ def test_admin_serve_next_creates_dashboard_announcement_with_display_name(tmp_p
     reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
 
     assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）"
-    assert announcement_service.calls == ["110316888"]
+    assert announcement_service.calls == [("called_guest", "110316888")]
 
 
 def test_admin_serve_specific_creates_dashboard_announcement_with_display_name(tmp_path):
@@ -471,7 +479,54 @@ def test_admin_serve_specific_creates_dashboard_announcement_with_display_name(t
     reply = handler.handle_event(make_event("/admin/serve alice", user_id="admin"))
 
     assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）"
-    assert announcement_service.calls == ["110316888"]
+    assert announcement_service.calls == [("called_guest", "110316888")]
+
+
+def test_join_after_idle_empty_queue_announces_new_order(tmp_path):
+    db = DatabaseManager(str(tmp_path / "idle-new-order.db"))
+    qm = QueueManager(db)
+    announcement_service = FakeAnnouncementService()
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        announcement_service=announcement_service,
+        new_order_idle_seconds=300,
+        new_order_announcement_text="您有新訂單",
+    )
+
+    qm.register_name("alice", "Alice", location="A-1")
+    handler._new_order_last_joined_at = datetime.now() - timedelta(minutes=6)
+
+    reply = handler.handle_event(make_event("/join", user_id="alice"))
+
+    assert "加入隊列成功" in reply[0]["text"]
+    assert announcement_service.calls == [("new_order", "您有新訂單")]
+
+
+
+def test_join_after_admin_clear_announces_new_order_immediately(tmp_path):
+    db = DatabaseManager(str(tmp_path / "clear-new-order.db"))
+    qm = QueueManager(db)
+    announcement_service = FakeAnnouncementService()
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+        announcement_service=announcement_service,
+        new_order_idle_seconds=300,
+        new_order_announcement_text="您有新訂單",
+    )
+
+    qm.register_name("alice", "Alice", location="A-1")
+    qm.join("someone", "regular")
+
+    clear_reply = handler.handle_event(make_event("/admin/clear", user_id="admin"))
+    qm.register_name("alice", "Alice", location="A-1")
+    join_reply = handler.handle_event(make_event("/join", user_id="alice"))
+
+    assert "已清空全部隊列" in clear_reply[0]["text"]
+    assert "加入隊列成功" in join_reply[0]["text"]
+    assert announcement_service.calls == [("new_order", "您有新訂單")]
 
 
 def test_dashboard_announcement_formats_digit_only_id_for_tts(tmp_path):

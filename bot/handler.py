@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Optional
 
 from core.queue_manager import QueueManager
@@ -25,6 +26,8 @@ class LineBotHandler:
         user_rich_menu_id: str = "",
         location_options: dict[str, list[str]] | None = None,
         announcement_service: object | None = None,
+        new_order_idle_seconds: int = 300,
+        new_order_announcement_text: str = "您有新訂單",
     ) -> None:
         self.channel_secret = channel_secret
         self.channel_access_token = channel_access_token
@@ -41,6 +44,10 @@ class LineBotHandler:
         self.user_rich_menu_id = user_rich_menu_id
         self.location_options = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
         self.announcement_service = announcement_service
+        self.new_order_idle_seconds = max(int(new_order_idle_seconds), 0)
+        self.new_order_announcement_text = (new_order_announcement_text or "您有新訂單").strip() or "您有新訂單"
+        self._new_order_last_joined_at = datetime.now()
+        self._announce_new_order_on_next_join = False
         self.pending_actions: dict[str, dict] = {}
 
     def handle_event(self, event) -> list:
@@ -123,6 +130,8 @@ class LineBotHandler:
         result = self.queue_manager.join(target_id, queue_type)
 
         if result["status"] == "success":
+            self._maybe_push_new_order_announcement(queue_size_after_join=result.get("total_in_queue", 0))
+            self._new_order_last_joined_at = datetime.now()
             msg = (
                 f"✅ 加入隊列成功！\n"
                 f"   你的號碼：#{result['queue_number']}\n"
@@ -488,6 +497,20 @@ class LineBotHandler:
         except Exception:
             return
 
+    def _maybe_push_new_order_announcement(self, *, queue_size_after_join: int) -> None:
+        if not self.announcement_service or queue_size_after_join != 1:
+            return
+        now = datetime.now()
+        idle_long_enough = now - self._new_order_last_joined_at >= timedelta(seconds=self.new_order_idle_seconds)
+        should_announce = self._announce_new_order_on_next_join or idle_long_enough
+        self._announce_new_order_on_next_join = False
+        if not should_announce:
+            return
+        try:
+            self.announcement_service.announce_new_order(text=self.new_order_announcement_text)
+        except Exception:
+            return
+
     def _admin_serve_next(self, reply_token: str) -> list:
         """Serve next in queue."""
         result = self.queue_manager.serve_next()
@@ -587,6 +610,7 @@ class LineBotHandler:
         """Handle /admin/clear."""
         keep_admin_user_ids = set(self.admin_ids)
         result = self.queue_manager.clear_all_queue(keep_admin_user_ids=keep_admin_user_ids)
+        self._announce_new_order_on_next_join = True
         return self._reply(
             reply_token,
             f"✅ 已清空全部隊列，移除 {result['removed_count']} 筆，並清除 {result['cleared_profiles']} 筆使用者資料、保留 {result['kept_admin_profiles']} 筆 admin 資料"

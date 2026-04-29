@@ -59,15 +59,105 @@ python scripts/upload_rich_menus.py \
 
 圖片需自行準備，建議尺寸 `2500x1686`。
 
-## Running the app
+## Environment and config precedence
 
-Before starting, copy `.env.example` to `.env` and fill in the required values.
+The app loads settings in this order:
 
-```bash
-cp .env.example .env
+1. built-in defaults
+2. environment variables from `.env` / Docker `env_file`
+3. `queue_config.yaml` overrides
+
+That means:
+
+- **secrets and tokens** should usually stay in `.env`
+- **non-sensitive runtime options** should usually go in `queue_config.yaml`
+- if a YAML section is left empty, defaults/env values are now preserved instead of being overwritten with `null`
+
+### Put these in `.env`
+
+Sensitive values and deploy-specific credentials belong in `.env`:
+
+```env
+LINE_CHANNEL_SECRET=xxx
+LINE_CHANNEL_TOKEN=xxx
+LINE_ADMIN_RICH_MENU_ID=xxx
+LINE_ADMIN_RICH_MENU_PAGE2_ID=xxx
+LINE_USER_RICH_MENU_ID=xxx
+WEB_UI_ADMIN_TOKEN=xxx
+WEB_UI_SESSION_SECRET=xxx
+GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/google-service-account.json
 ```
 
-Start the FastAPI server:
+Optional TTS-related environment variables can also stay in `.env` when you want deploy-time control:
+
+```env
+GOOGLE_CLOUD_TTS_ENABLED=false
+GOOGLE_CLOUD_TTS_LANGUAGE_CODE=cmn-TW
+GOOGLE_CLOUD_TTS_VOICE_NAME=cmn-TW-Standard-A
+GOOGLE_CLOUD_TTS_AUDIO_ENCODING=MP3
+GOOGLE_CLOUD_TTS_SPEAKING_RATE=1.0
+GOOGLE_CLOUD_TTS_PITCH=0.0
+DASHBOARD_ANNOUNCEMENT_TEMPLATE=來賓 {display_name} 請準備demo
+NEW_ORDER_IDLE_SECONDS=300
+NEW_ORDER_ANNOUNCEMENT_TEXT=您有新訂單
+```
+
+### Put these in `queue_config.yaml`
+
+Use `queue_config.yaml` for non-secret app behavior, for example:
+
+```yaml
+server:
+  host: 0.0.0.0
+  port: 8000
+
+queue:
+  max_capacity: 50
+  timeout_minutes: 30
+  timeout_action: remove
+
+vip:
+  enabled: true
+  coffee_price: 60
+  coffee_url: https://buymeacoffee.com/yourname
+
+line_bot:
+  admin_ids:
+    - YOUR_ADMIN_USER_ID
+
+registration:
+  location_options:
+    '1': ['1', '2', '3']
+    '2': ['1', '2', '3', '4']
+
+web_ui:
+  protect_read_routes: false
+  allow_query_token: false
+  session_cookie_name: queue_admin_session
+```
+
+### Important YAML note
+
+If you want to override only one nested key, keep the indentation under the parent section:
+
+```yaml
+line_bot:
+  admin_ids:
+    - YOUR_ADMIN_USER_ID
+```
+
+This is correct and keeps other `line_bot` values from `.env` intact.
+
+Do **not** write it like this:
+
+```yaml
+line_bot:
+admin_ids:
+  - YOUR_ADMIN_USER_ID
+```
+
+That second example makes `line_bot` a null section and puts `admin_ids` at the wrong level.
+
 
 ```bash
 python main.py

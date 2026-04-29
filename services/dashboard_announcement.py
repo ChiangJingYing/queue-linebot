@@ -89,12 +89,14 @@ class DashboardAnnouncementService:
         public_base_path: str = "/dashboard/audio",
         tts_service: GoogleCloudTTSService | None = None,
         announcement_template: str = "來賓 {display_name} 請準備demo",
+        new_order_announcement_text: str = "您有新訂單",
     ) -> None:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.public_base_path = public_base_path.rstrip("/")
         self.tts_service = tts_service or GoogleCloudTTSService(enabled=False)
         self.announcement_template = announcement_template
+        self.new_order_announcement_text = new_order_announcement_text
         self.latest_path = self.root / "latest.json"
 
     def _normalize_display_name_for_speech(self, display_name: str) -> str:
@@ -107,6 +109,13 @@ class DashboardAnnouncementService:
         safe_name = (display_name or "").strip() or "來賓"
         speech_name = self._normalize_display_name_for_speech(safe_name)
         text = self.announcement_template.format(display_name=speech_name)
+        return self._write_announcement(text)
+
+    def announce_new_order(self, *, text: str | None = None) -> dict:
+        safe_text = (text or self.new_order_announcement_text or "您有新訂單").strip() or "您有新訂單"
+        return self._write_announcement(safe_text)
+
+    def _write_announcement(self, text: str) -> dict:
         announcement_id = uuid4().hex
         created_at = datetime.now().isoformat()
         payload = {
