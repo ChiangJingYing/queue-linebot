@@ -53,10 +53,6 @@ class QueueManager:
 
         self.db.log_event("join", valid_id, queue_type)
 
-        # Push notification to user
-        if self.notifier:
-            self.notifier.notify_join_success(valid_id, entry.queue_number)
-
         all_queue = self.db.get_all_queue()
         return {
             "status": "success",

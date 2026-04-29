@@ -5,21 +5,21 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>版面設定</title>
         <style>
-          body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }}
-          .wrap {{ display:grid; grid-template-columns: 320px 1fr; gap:20px; }}
-          .panel {{ background:#111827; border:1px solid #334155; border-radius:12px; padding:16px; }}
-          .toolbar {{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:12px; }}
-          .danger-button {{ background:#ef4444; color:white; }}
-          .secondary-button {{ background:#38bdf8; color:#082f49; }}
-          .stage {{ position:relative; width:100%; aspect-ratio: var(--stage-aspect-ratio, 16 / 9); background:#020617; border:1px dashed #475569; border-radius:12px; overflow:hidden; }}
-          .stage-image {{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; background:none; }}
-          .stage-overlay {{ position:absolute; inset:0; }}
-          .marker-editor {{ position:absolute; transform:translate(-50%, -50%); background:#f8fafc; color:#0f172a; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:700; cursor:pointer; user-select:none; box-shadow:0 4px 14px rgba(0,0,0,0.25); }}
-          .selected-marker {{ outline:3px solid #f59e0b; }}
-          input, select, button {{ width:100%; box-sizing:border-box; margin:8px 0; padding:10px 12px; border-radius:10px; border:1px solid #475569; background:#0b1220; color:#e2e8f0; }}
-          button {{ cursor:pointer; background:#2563eb; border:none; font-weight:700; }}
-          ul {{ padding-left:18px; }}
-          #toast {{ position:fixed; right:20px; bottom:20px; background:#111827; border:1px solid #334155; padding:12px 14px; border-radius:10px; display:none; }}
+          body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }
+          .wrap { display:grid; grid-template-columns: 320px 1fr; gap:20px; }
+          .panel { background:#111827; border:1px solid #334155; border-radius:12px; padding:16px; }
+          .toolbar { display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:12px; }
+          .danger-button { background:#ef4444; color:white; }
+          .secondary-button { background:#38bdf8; color:#082f49; }
+          .stage { position:relative; width:100%; aspect-ratio: var(--stage-aspect-ratio, 16 / 9); background:#020617; border:1px dashed #475569; border-radius:12px; overflow:hidden; }
+          .stage-image { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; background:none; }
+          .stage-overlay { position:absolute; inset:0; }
+          .marker-editor { position:absolute; transform:translate(-50%, -50%); background:#f8fafc; color:#0f172a; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:700; cursor:pointer; user-select:none; box-shadow:0 4px 14px rgba(0,0,0,0.25); }
+          .selected-marker { outline:3px solid #f59e0b; }
+          input, select, button { width:100%; box-sizing:border-box; margin:8px 0; padding:10px 12px; border-radius:10px; border:1px solid #475569; background:#0b1220; color:#e2e8f0; }
+          button { cursor:pointer; background:#2563eb; border:none; font-weight:700; }
+          ul { padding-left:18px; }
+          #toast { position:fixed; right:20px; bottom:20px; background:#111827; border:1px solid #334155; padding:12px 14px; border-radius:10px; display:none; }
         </style>
       </head>
       <body>
@@ -74,44 +74,44 @@
           const labelInput = document.getElementById('label-input');
           const toast = document.getElementById('toast');
 
-          for (const location of locations) {{
+          for (const location of locations) {
             const option = document.createElement('option');
             option.value = location;
             option.textContent = location;
             locationSelect.appendChild(option);
-          }}
+          }
 
-          function showToast(message) {{
+          function showToast(message) {
             toast.textContent = message;
             toast.style.display = 'block';
             if (toastTimer) clearTimeout(toastTimer);
-            toastTimer = setTimeout(() => {{ toast.style.display = 'none'; }}, 1800);
-          }}
+            toastTimer = setTimeout(() => { toast.style.display = 'none'; }, 1800);
+          }
 
-          function setDirty(next) {{ dirty = next; }}
+          function setDirty(next) { dirty = next; }
 
-          function setLayout(nextLayout) {{
-            layout = {{
+          function setLayout(nextLayout) {
+            layout = {
               imageUrl: nextLayout.imageUrl || '',
               markers: Array.isArray(nextLayout.markers) ? nextLayout.markers : [],
-            }};
-          }}
+            };
+          }
 
-          function syncStageImage() {{
+          function syncStageImage() {
             const nextSrc = layout.imageUrl || '';
-            if (stageImage.getAttribute('src') !== nextSrc) {{
+            if (stageImage.getAttribute('src') !== nextSrc) {
               stageImage.setAttribute('src', nextSrc);
-            }}
+            }
             stageImage.style.display = nextSrc ? 'block' : 'none';
-          }}
+          }
 
-          function updateStageAspectRatio() {{
-            if (stageImage.naturalWidth && stageImage.naturalHeight) {{
-              stage.style.setProperty('--stage-aspect-ratio', `${{stageImage.naturalWidth}} / ${{stageImage.naturalHeight}}`);
-            }}
-          }}
+          function updateStageAspectRatio() {
+            if (stageImage.naturalWidth && stageImage.naturalHeight) {
+              stage.style.setProperty('--stage-aspect-ratio', `${stageImage.naturalWidth} / ${stageImage.naturalHeight}`);
+            }
+          }
 
-          function getImagePlacementRect() {{
+          function getImagePlacementRect() {
             const rect = stage.getBoundingClientRect();
             const naturalWidth = stageImage.naturalWidth || rect.width || 1;
             const naturalHeight = stageImage.naturalHeight || rect.height || 1;
@@ -121,37 +121,37 @@
             let height = rect.height;
             let left = 0;
             let top = 0;
-            if (imageRatio > containerRatio) {{
+            if (imageRatio > containerRatio) {
               height = rect.width / imageRatio;
               top = (rect.height - height) / 2;
-            }} else {{
+            } else {
               width = rect.height * imageRatio;
               left = (rect.width - width) / 2;
-            }}
-            return {{ left, top, width, height }};
-          }}
+            }
+            return { left, top, width, height };
+          }
 
-          function refreshPlacementQueue() {{
+          function refreshPlacementQueue() {
             const placed = new Set((layout.markers || []).map((m) => m.location));
             return locations.filter((location) => !placed.has(location));
-          }}
+          }
 
-          function selectLocation(location, label = '', keepSelection = false) {{
+          function selectLocation(location, label = '', keepSelection = false) {
             selectedLocation = location;
             if (!keepSelection) selectedLocations = location ? new Set([location]) : new Set();
             else if (location) selectedLocations.add(location);
             locationSelect.value = location;
             labelInput.value = label;
-          }}
+          }
 
-          function toggleSelectedLocation(location) {{
+          function toggleSelectedLocation(location) {
             if (selectedLocations.has(location)) selectedLocations.delete(location);
             else selectedLocations.add(location);
             selectedLocation = location;
             locationSelect.value = location;
-          }}
+          }
 
-          function renderEditor() {{
+          function renderEditor() {
             syncStageImage();
             if (layout.imageUrl && !(stageImage.complete || (stageImage.naturalWidth && stageImage.naturalHeight))) return;
             updateStageAspectRatio();
@@ -159,78 +159,78 @@
             markerList.innerHTML = '';
             unplacedList.innerHTML = '';
             const placementQueue = refreshPlacementQueue();
-            for (const location of placementQueue) {{
+            for (const location of placementQueue) {
               const item = document.createElement('li');
               item.textContent = location;
               unplacedList.appendChild(item);
-            }}
+            }
             const imageRect = getImagePlacementRect();
-            for (const marker of layout.markers || []) {{
+            for (const marker of layout.markers || []) {
               const el = document.createElement('div');
               el.className = 'marker-editor';
               if (selectedLocations.has(marker.location)) el.classList.add('selected-marker');
               el.dataset.location = marker.location;
               const markerLeft = imageRect.left + (marker.x / 100) * imageRect.width;
               const markerTop = imageRect.top + (marker.y / 100) * imageRect.height;
-              el.style.left = `${{markerLeft}}px`;
-              el.style.top = `${{markerTop}}px`;
+              el.style.left = `${markerLeft}px`;
+              el.style.top = `${markerTop}px`;
               el.textContent = marker.label || marker.location;
-              el.addEventListener('click', (event) => {{
+              el.addEventListener('click', (event) => {
                 event.stopPropagation();
                 if (event.shiftKey || event.metaKey || event.ctrlKey) toggleSelectedLocation(marker.location);
                 else selectLocation(marker.location, marker.label || '');
                 renderEditor();
-              }});
+              });
               el.draggable = true;
-              el.addEventListener('dragstart', (event) => {{
+              el.addEventListener('dragstart', (event) => {
                 event.dataTransfer.setData('text/plain', marker.location);
                 el.style.opacity = '0.5';
-              }});
-              el.addEventListener('dragend', (event) => {{
+              });
+              el.addEventListener('dragend', (event) => {
                 el.style.opacity = '1';
-              }});
+              });
               stageOverlay.appendChild(el);
               const item = document.createElement('li');
-              item.textContent = `${{marker.location}} @ (${{marker.x.toFixed(1)}}%, ${{marker.y.toFixed(1)}}%) ${{marker.label || ''}}`;
+              item.textContent = `${marker.location} @ (${marker.x.toFixed(1)}%, ${marker.y.toFixed(1)}%) ${marker.label || ''}`;
               markerList.appendChild(item);
-            }}
-          }}
+            }
+          }
 
-          function updateMarkerPosition(location, x, y) {{
-            layout.markers = (layout.markers || []).map((marker) => marker.location === location ? {{ ...marker, x, y }} : marker);
+          function updateMarkerPosition(location, x, y) {
+            layout.markers = (layout.markers || []).map((marker) => marker.location === location ? { ...marker, x, y } : marker);
             setDirty(true);
-          }}
+          }
 
-          function eventToNormalizedPosition(event) {{
+          function eventToNormalizedPosition(event) {
             const stageRect = stage.getBoundingClientRect();
             const imageRect = getImagePlacementRect();
             const x = ((event.clientX - stageRect.left - imageRect.left) / imageRect.width) * 100;
             const y = ((event.clientY - stageRect.top - imageRect.top) / imageRect.height) * 100;
-            return {{ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) }};
-          }}
+            return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
+          }
 
-          stage.addEventListener('dragover', (event) => {{ event.preventDefault(); }});
+          stage.addEventListener('dragover', (event) => { event.preventDefault(); });
 
-          stage.addEventListener('drop', (event) => {{
+          stage.addEventListener('drop', (event) => {
             event.preventDefault();
             const location = event.dataTransfer.getData('text/plain');
             if (!location) return;
             const pos = eventToNormalizedPosition(event);
             const marker = (layout.markers || []).find((m) => m.location === location);
-            if (marker) {{
+            if (marker) {
               marker.x = pos.x;
               marker.y = pos.y;
               setDirty(true);
-            }} else {{
+            } else {
               const label = labelInput.value.trim() || location;
-              layout.markers = [...(layout.markers || []), {{ location, x: pos.x, y: pos.y, label }}];
+              layout.markers = [...(layout.markers || []), { location, x: pos.x, y: pos.y, label }];
               selectLocation(location, label);
               setDirty(true);
-            }}
+            }
             renderEditor();
-          }});
+          });
 
-          stage.addEventListener('click', (event) => {{
+          stage.addEventListener('click', (event) => {
             if (event.target !== stage && event.target !== stageOverlay && event.target !== stageImage) return;
             if (layout.imageUrl && !(stageImage.complete || (stageImage.naturalWidth && stageImage.naturalHeight))) return;
             const pos = eventToNormalizedPosition(event);
@@ -238,97 +238,97 @@
             if (!nextLocation) return;
             const label = labelInput.value.trim();
             const existing = (layout.markers || []).filter((item) => item.location !== nextLocation);
-            layout.markers = [...existing, {{ location: nextLocation, x: pos.x, y: pos.y, label }}];
+            layout.markers = [...existing, { location: nextLocation, x: pos.x, y: pos.y, label }];
             selectLocation(nextLocation, label);
             setDirty(true);
             renderEditor();
-          }});
+          });
 
-          document.getElementById('delete-marker').addEventListener('click', () => {{
+          document.getElementById('delete-marker').addEventListener('click', () => {
             const targets = selectedLocations.size ? Array.from(selectedLocations) : [locationSelect.value].filter(Boolean);
             layout.markers = (layout.markers || []).filter((item) => !targets.includes(item.location));
             selectedLocations = new Set();
             setDirty(true);
             renderEditor();
-          }});
+          });
 
-          document.getElementById('reset-layout').addEventListener('click', async () => {{
+          document.getElementById('reset-layout').addEventListener('click', async () => {
             const proceed = window.confirm('這會清除目前已放置的位置標記，確定要繼續嗎？');
             if (!proceed) return;
-            const response = await fetch(withAuthUrl('/dashboard/layout/reset'), withAuthHeaders({{ method: 'POST' }}));
+            const response = await fetch(withAuthUrl('/dashboard/layout/reset'), withAuthHeaders({ method: 'POST' }));
             const payload = await response.json();
             setLayout(payload);
             selectedLocations = new Set();
             setDirty(false);
             renderEditor();
             showToast('已清除位置標記');
-          }});
+          });
 
-          function alignSelected(axis) {{
+          function alignSelected(axis) {
             const targets = (layout.markers || []).filter((item) => selectedLocations.has(item.location));
-            if (targets.length < 2) {{
+            if (targets.length < 2) {
               showToast('請至少選兩個位置再對齊');
               return;
-            }}
+            }
             const avg = targets.reduce((sum, item) => sum + (axis === 'x' ? item.x : item.y), 0) / targets.length;
-            for (const marker of targets) {{
+            for (const marker of targets) {
               if (axis === 'x') marker.x = avg;
               else marker.y = avg;
-            }}
+            }
             setDirty(true);
             renderEditor();
-          }}
+          }
 
           document.getElementById('align-horizontal').addEventListener('click', () => alignSelected('y'));
           document.getElementById('align-vertical').addEventListener('click', () => alignSelected('x'));
 
-          document.getElementById('save-layout').addEventListener('click', async () => {{
-            const response = await fetch(withAuthUrl('/dashboard/layout'), withAuthHeaders({{
+          document.getElementById('save-layout').addEventListener('click', async () => {
+            const response = await fetch(withAuthUrl('/dashboard/layout'), withAuthHeaders({
               method: 'POST',
-              headers: {{ 'Content-Type': 'application/json' }},
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(layout),
-            }}));
+            }));
             const payload = await response.json();
             setLayout(payload);
             setDirty(false);
             renderEditor();
             showToast('儲存成功');
-          }});
+          });
 
-          document.getElementById('image-form').addEventListener('submit', async (event) => {{
+          document.getElementById('image-form').addEventListener('submit', async (event) => {
             event.preventDefault();
             const fileInput = document.getElementById('image-file');
             const file = fileInput.files[0];
             if (!file) return;
             const formData = new FormData();
             formData.append('file', file);
-            const response = await fetch(withAuthUrl('/dashboard/layout/image'), withAuthHeaders({{ method: 'POST', body: formData }}));
+            const response = await fetch(withAuthUrl('/dashboard/layout/image'), withAuthHeaders({ method: 'POST', body: formData }));
             const payload = await response.json();
-            setLayout({{ ...layout, imageUrl: payload.imageUrl, markers: [] }});
+            setLayout({ ...layout, imageUrl: payload.imageUrl, markers: [] });
             selectedLocations = new Set();
             selectedLocation = '';
             syncStageImage();
             setDirty(true);
             renderEditor();
             showToast('圖片上傳成功');
-          }});
+          });
 
-          locationSelect.addEventListener('change', () => {{
+          locationSelect.addEventListener('change', () => {
             selectLocation(locationSelect.value, labelInput.value);
             renderEditor();
-          }});
+          });
 
-          stageImage.addEventListener('load', () => {{
+          stageImage.addEventListener('load', () => {
             updateStageAspectRatio();
             renderEditor();
-          }});
+          });
 
           window.addEventListener('resize', () => renderEditor());
-          window.addEventListener('beforeunload', (event) => {{
+          window.addEventListener('beforeunload', (event) => {
             if (!dirty) return;
             event.preventDefault();
             event.returnValue = '';
-          }});
+          });
 
           syncStageImage();
           renderEditor();

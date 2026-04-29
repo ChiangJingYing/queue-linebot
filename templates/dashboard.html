@@ -1,56 +1,56 @@
 
     <html>
       <head>
-        <meta charset=\"utf-8\" />
-        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>位置看板</title>
 <style>
-          * {{ box-sizing:border-box; }}
-          html, body {{ height:100%; margin:0; }}
-          body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#020617; color:#e2e8f0; padding:16px; overflow:hidden; display:flex; flex-direction:column; }}
-          .page {{ flex:1; min-height:0; display:flex; flex-direction:column; gap:10px; }}
-          .stats-panel {{ display:grid; grid-template-columns: repeat(3, minmax(100px, 1fr)); gap:10px; flex-shrink:0; }}
-          .stat-card {{ background:#0f172a; border:1px solid #334155; border-radius:14px; padding:10px 14px; position:relative; }}
-          .served-card:hover .served-tooltip {{ opacity:1; pointer-events:auto; transform:translateY(0); }}
-          .served-tooltip {{ position:absolute; left:50%; top:calc(100% + 10px); transform:translateX(-50%) translateY(-4px); width:min(320px, 70vw); background:rgba(2,6,23,.96); border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:10px 12px; box-shadow:0 16px 40px rgba(0,0,0,.35); opacity:0; pointer-events:none; transition:opacity .16s ease, transform .16s ease; z-index:20; }}
-          .served-tooltip-title {{ font-size:12px; color:#94a3b8; margin-bottom:6px; }}
-          .served-tooltip-list {{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }}
-          .served-tooltip-item {{ font-size:13px; color:#e2e8f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-          .served-tooltip-empty {{ font-size:13px; color:#94a3b8; }}
-          .stat-label {{ font-size:12px; color:#94a3b8; margin-bottom:4px; }}
-          .stat-value {{ font-size:24px; font-weight:800; color:#f8fafc; }}
-          .legend {{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:nowrap; flex-shrink:0; }}
-          .legend-items {{ display:flex; align-items:center; gap:16px; flex-wrap:nowrap; min-width:0; }}
-          .legend-items span {{ display:flex; align-items:center; gap:8px; white-space:nowrap; }}
-          .legend-actions {{ display:flex; align-items:center; gap:10px; flex-shrink:0; margin-left:auto; }}
-          .toggle-switch {{ display:inline-flex; align-items:center; gap:10px; cursor:pointer; user-select:none; white-space:nowrap; }}
-          .toggle-switch input {{ position:absolute; opacity:0; width:1px; height:1px; pointer-events:none; }}
-          .toggle-track {{ position:relative; width:44px; height:24px; border-radius:999px; background:#334155; border:1px solid #475569; transition:all .18s ease; flex-shrink:0; }}
-          .toggle-track::after {{ content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:999px; background:#f8fafc; box-shadow:0 1px 3px rgba(15,23,42,.35); transition:transform .18s ease; }}
-          .toggle-switch input:checked + .toggle-track {{ background:#2563eb; border-color:#3b82f6; }}
-          .toggle-switch input:checked + .toggle-track::after {{ transform:translateX(20px); }}
-          .toggle-label {{ font-size:13px; color:#e2e8f0; font-weight:600; line-height:1.2; }}
-          .toggle-hint {{ font-size:12px; color:#94a3b8; line-height:1.2; }}
-          .layout {{ flex:1; min-height:0; display:grid; grid-template-columns:minmax(300px, 360px) 1fr; gap:12px; }}
-          .queue-panel {{ background:#0f172a; border:1px solid #334155; border-radius:16px; padding:12px; overflow:auto; }}
-          .queue-panel h3 {{ margin:0 0 10px; font-size:16px; }}
-          .queue-table {{ width:100%; border-collapse:collapse; font-size:13px; }}
-          .queue-table th, .queue-table td {{ padding:8px 6px; border-bottom:1px solid #1e293b; text-align:left; }}
-          .queue-table th {{ color:#94a3b8; font-weight:600; position:sticky; top:0; background:#0f172a; }}
-          .queue-type-badge {{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:700; }}
-          .queue-type-regular {{ background:#1d4ed8; color:#dbeafe; }}
-          .queue-type-vip {{ background:#7c3aed; color:#ede9fe; }}
-          .board-wrapper {{ flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }}
-          .board {{ position:relative; background:#0f172a; border:1px solid #334155; border-radius:16px; overflow:hidden; }}
-          .marker {{ position:absolute; transform:translate(-50%, -50%); text-align:center; }}
-          .board-image {{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }}
-          .board-overlay {{ position:absolute; inset:0; }}
-          .dot {{ width:18px; height:18px; border-radius:999px; margin:0 auto 6px; box-shadow:0 0 14px currentColor; display:inline-block; }}
-          .lamp {{ width:18px; height:18px; border-radius:999px; display:inline-block; box-shadow:0 0 14px currentColor; }}
-          .dot.empty, .lamp.empty {{ background:#64748b; color:#64748b; }} .dot.registered, .lamp.blue {{ background:#38bdf8; color:#38bdf8; }} .dot.queued, .lamp.yellow {{ background:#facc15; color:#facc15; }} .dot.served, .lamp.green {{ background:#22c55e; color:#22c55e; }}
-          .blink {{ animation: blink-green 1.2s ease-in-out infinite; }}
-          @keyframes blink-green {{ 0%, 100% {{ box-shadow:0 0 14px #22c55e; opacity:1; }} 50% {{ box-shadow:0 0 4px #22c55e; opacity:.35; }} }}
-          .tag {{ background:rgba(15,23,42,.8); padding:6px 8px; border-radius:10px; font-size:12px; min-width:72px; }}
+          * { box-sizing:border-box; }
+          html, body { height:100%; margin:0; }
+          body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#020617; color:#e2e8f0; padding:16px; overflow:hidden; display:flex; flex-direction:column; }
+          .page { flex:1; min-height:0; display:flex; flex-direction:column; gap:10px; }
+          .stats-panel { display:grid; grid-template-columns: repeat(3, minmax(100px, 1fr)); gap:10px; flex-shrink:0; }
+          .stat-card { background:#0f172a; border:1px solid #334155; border-radius:14px; padding:10px 14px; position:relative; }
+          .served-card:hover .served-tooltip { opacity:1; pointer-events:auto; transform:translateY(0); }
+          .served-tooltip { position:absolute; left:50%; top:calc(100% + 10px); transform:translateX(-50%) translateY(-4px); width:min(320px, 70vw); background:rgba(2,6,23,.96); border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:10px 12px; box-shadow:0 16px 40px rgba(0,0,0,.35); opacity:0; pointer-events:none; transition:opacity .16s ease, transform .16s ease; z-index:20; }
+          .served-tooltip-title { font-size:12px; color:#94a3b8; margin-bottom:6px; }
+          .served-tooltip-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+          .served-tooltip-item { font-size:13px; color:#e2e8f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .served-tooltip-empty { font-size:13px; color:#94a3b8; }
+          .stat-label { font-size:12px; color:#94a3b8; margin-bottom:4px; }
+          .stat-value { font-size:24px; font-weight:800; color:#f8fafc; }
+          .legend { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:nowrap; flex-shrink:0; }
+          .legend-items { display:flex; align-items:center; gap:16px; flex-wrap:nowrap; min-width:0; }
+          .legend-items span { display:flex; align-items:center; gap:8px; white-space:nowrap; }
+          .legend-actions { display:flex; align-items:center; gap:10px; flex-shrink:0; margin-left:auto; }
+          .toggle-switch { display:inline-flex; align-items:center; gap:10px; cursor:pointer; user-select:none; white-space:nowrap; }
+          .toggle-switch input { position:absolute; opacity:0; width:1px; height:1px; pointer-events:none; }
+          .toggle-track { position:relative; width:44px; height:24px; border-radius:999px; background:#334155; border:1px solid #475569; transition:all .18s ease; flex-shrink:0; }
+          .toggle-track::after { content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:999px; background:#f8fafc; box-shadow:0 1px 3px rgba(15,23,42,.35); transition:transform .18s ease; }
+          .toggle-switch input:checked + .toggle-track { background:#2563eb; border-color:#3b82f6; }
+          .toggle-switch input:checked + .toggle-track::after { transform:translateX(20px); }
+          .toggle-label { font-size:13px; color:#e2e8f0; font-weight:600; line-height:1.2; }
+          .toggle-hint { font-size:12px; color:#94a3b8; line-height:1.2; }
+          .layout { flex:1; min-height:0; display:grid; grid-template-columns:minmax(300px, 360px) 1fr; gap:12px; }
+          .queue-panel { background:#0f172a; border:1px solid #334155; border-radius:16px; padding:12px; overflow:auto; }
+          .queue-panel h3 { margin:0 0 10px; font-size:16px; }
+          .queue-table { width:100%; border-collapse:collapse; font-size:13px; }
+          .queue-table th, .queue-table td { padding:8px 6px; border-bottom:1px solid #1e293b; text-align:left; }
+          .queue-table th { color:#94a3b8; font-weight:600; position:sticky; top:0; background:#0f172a; }
+          .queue-type-badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:700; }
+          .queue-type-regular { background:#1d4ed8; color:#dbeafe; }
+          .queue-type-vip { background:#7c3aed; color:#ede9fe; }
+          .board-wrapper { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+          .board { position:relative; background:#0f172a; border:1px solid #334155; border-radius:16px; overflow:hidden; }
+          .marker { position:absolute; transform:translate(-50%, -50%); text-align:center; }
+          .board-image { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+          .board-overlay { position:absolute; inset:0; }
+          .dot { width:18px; height:18px; border-radius:999px; margin:0 auto 6px; box-shadow:0 0 14px currentColor; display:inline-block; }
+          .lamp { width:18px; height:18px; border-radius:999px; display:inline-block; box-shadow:0 0 14px currentColor; }
+          .dot.empty, .lamp.empty { background:#64748b; color:#64748b; } .dot.registered, .lamp.blue { background:#38bdf8; color:#38bdf8; } .dot.queued, .lamp.yellow { background:#facc15; color:#facc15; } .dot.served, .lamp.green { background:#22c55e; color:#22c55e; }
+          .blink { animation: blink-green 1.2s ease-in-out infinite; }
+          @keyframes blink-green { 0%, 100% { box-shadow:0 0 14px #22c55e; opacity:1; } 50% { box-shadow:0 0 4px #22c55e; opacity:.35; } }
+          .tag { background:rgba(15,23,42,.8); padding:6px 8px; border-radius:10px; font-size:12px; min-width:72px; }
         </style>      </head>
       <body>
         <div class="page">
@@ -59,29 +59,29 @@
           <div class="stat-card"><div class="stat-label">Queue</div><div class="stat-value" id="stat-queue">{payload['stats']['queue']}</div></div>
           <div class="stat-card served-card"><div class="stat-label">Served</div><div class="stat-value" id="stat-served">{payload['stats']['served']}</div><div class="served-tooltip" id="served-tooltip"><div class="served-tooltip-title">最近已叫號（最新在上）</div><div id="served-tooltip-body"></div></div></div>
         </div>
-        <div class=\"legend\">
-          <div class=\"legend-items\">
-            <span><i class=\"lamp empty\"></i> 空位</span>
-            <span><i class=\"lamp blue\"></i> 已註冊</span>
-            <span><i class=\"lamp yellow\"></i> 排隊中</span>
-            <span><i class=\"lamp green\"></i> 已叫號</span>
+        <div class="legend">
+          <div class="legend-items">
+            <span><i class="lamp empty"></i> 空位</span>
+            <span><i class="lamp blue"></i> 已註冊</span>
+            <span><i class="lamp yellow"></i> 排隊中</span>
+            <span><i class="lamp green"></i> 已叫號</span>
           </div>
-          <div class=\"legend-actions\">
-            <label class=\"toggle-switch\" for=\"announcement-audio-toggle\">
-              <input id=\"announcement-audio-toggle\" type=\"checkbox\" />
-              <span class=\"toggle-track\" aria-hidden=\"true\"></span>
+          <div class="legend-actions">
+            <label class="toggle-switch" for="announcement-audio-toggle">
+              <input id="announcement-audio-toggle" type="checkbox" />
+              <span class="toggle-track" aria-hidden="true"></span>
               <span>
-                <span class=\"toggle-label\">語音播報</span><br />
-                <span id=\"announcement-audio-status\" class=\"toggle-hint\">未啟用</span>
+                <span class="toggle-label">語音播報</span><br />
+                <span id="announcement-audio-status" class="toggle-hint">未啟用</span>
               </span>
             </label>
-            <audio id=\"announcement-audio\" preload=\"auto\"></audio>
+            <audio id="announcement-audio" preload="auto"></audio>
           </div>
         </div>
-        <div class=\"layout\">
-          <aside class=\"queue-panel\">
+        <div class="layout">
+          <aside class="queue-panel">
             <h3>目前隊列名單</h3>
-            <table class=\"queue-table\">
+            <table class="queue-table">
               <thead>
                 <tr>
                   <th>順位</th>
@@ -90,19 +90,19 @@
                   <th>座位</th>
                 </tr>
               </thead>
-              <tbody id=\"queue-table-body\"></tbody>
+              <tbody id="queue-table-body"></tbody>
             </table>
           </aside>
-          <div class=\"board-wrapper\">
-            <div id=\"board\" class=\"board\">
-              <img id=\"board-image\" class=\"board-image\" src=\"{layout.get("imageUrl") or ""}\" alt=\"layout\" />
-              <div id=\"board-overlay\" class=\"board-overlay\">{''.join(markers_html)}</div>
+          <div class="board-wrapper">
+            <div id="board" class="board">
+              <img id="board-image" class="board-image" src="{layout.get("imageUrl") or ""}" alt="layout" />
+              <div id="board-overlay" class="board-overlay">{''.join(markers_html)}</div>
             </div>
           </div>
         </div>
         <script>
 {auth_bootstrap}
-          let previousGrid = {{}};
+          let previousGrid = {};
           let currentVersion = null;
           let lastAnnouncementId = null;
           let audioEnabled = false;
@@ -113,92 +113,92 @@
           const audioToggle = document.getElementById('announcement-audio-toggle');
           const audioStatus = document.getElementById('announcement-audio-status');
 
-          function setAudioEnabled(nextEnabled) {{
+          function setAudioEnabled(nextEnabled) {
             audioEnabled = !!nextEnabled;
             if (audioToggle) audioToggle.checked = audioEnabled;
             if (audioStatus) audioStatus.textContent = audioEnabled ? '已啟用' : '未啟用';
-          }}
+          }
 
-          function getImagePlacementRect() {{
+          function getImagePlacementRect() {
             const rect = board.getBoundingClientRect();
             const naturalWidth = boardImage.naturalWidth || rect.width || 1;
             const naturalHeight = boardImage.naturalHeight || rect.height || 1;
             const containerRatio = rect.width / rect.height;
             const imageRatio = naturalWidth / naturalHeight;
             let width = rect.width, height = rect.height, left = 0, top = 0;
-            if (imageRatio > containerRatio) {{
+            if (imageRatio > containerRatio) {
               height = rect.width / imageRatio;
               top = (rect.height - height) / 2;
-            }} else {{
+            } else {
               width = rect.height * imageRatio;
               left = (rect.width - width) / 2;
-            }}
-            return {{ left, top, width, height }};
-          }}
+            }
+            return { left, top, width, height };
+          }
 
-          function resizeBoard() {{
+          function resizeBoard() {
             if (!boardImage.naturalWidth || !boardImage.naturalHeight) return;
             const wrapper = board.parentElement;
             const wrapW = wrapper.clientWidth;
             const wrapH = wrapper.clientHeight;
             const aspectRatio = boardImage.naturalWidth / boardImage.naturalHeight;
-            if (wrapW / wrapH > aspectRatio) {{
+            if (wrapW / wrapH > aspectRatio) {
               board.style.height = wrapH + 'px';
               board.style.width = (wrapH * aspectRatio) + 'px';
-            }} else {{
+            } else {
               board.style.width = wrapW + 'px';
               board.style.height = (wrapW / aspectRatio) + 'px';
-            }}
-          }}
+            }
+          }
 
-          function renderServedTooltip(items) {{
+          function renderServedTooltip(items) {
             const body = document.getElementById('served-tooltip-body');
             if (!body) return;
             const rows = Array.isArray(items) ? items.slice(0, 5) : [];
-            if (!rows.length) {{
+            if (!rows.length) {
               body.innerHTML = '<div class="served-tooltip-empty">目前沒有已叫號紀錄</div>';
               return;
-            }}
-            const html = rows.map((item) => {{
+            }
+            const html = rows.map((item) => {
               const servedAt = item.served_time ? new Date(item.served_time) : null;
               const timeText = servedAt && !Number.isNaN(servedAt.getTime())
-                ? servedAt.toLocaleTimeString([], {{ hour: '2-digit', minute: '2-digit' }})
+                ? servedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 : '--:--';
               const location = item.location || '-';
               const name = item.display_name || item.user_id || 'Unknown';
-              return `<li class="served-tooltip-item">${{timeText}}　${{location}}　${{name}}</li>`;
-            }}).join('');
-            body.innerHTML = `<ul class="served-tooltip-list">${{html}}</ul>`;
-          }}
+              return `<li class="served-tooltip-item">${timeText}　${location}　${name}</li>`;
+            }).join('');
+            body.innerHTML = `<ul class="served-tooltip-list">${html}</ul>`;
+          }
 
-          function renderQueueTable(items) {{
+          function renderQueueTable(items) {
             const body = document.getElementById('queue-table-body');
             if (!body) return;
             const rows = Array.isArray(items) ? items : [];
-            if (!rows.length) {{
+            if (!rows.length) {
               body.innerHTML = '<tr><td colspan="4" style="color:#94a3b8;">目前沒有排隊中的名單</td></tr>';
               return;
-            }}
+            }
             body.innerHTML = rows.map((item, index) => `
               <tr>
-                <td>#${{index + 1}}</td>
-                <td><span class="queue-type-badge queue-type-${{item.queue_type}}">${{item.queue_type.toUpperCase()}}</span></td>
-                <td>${{item.display_name || item.user_id || '-'}}</td>
-                <td>${{item.location || '-'}}</td>
+                <td>#${index + 1}</td>
+                <td><span class="queue-type-badge queue-type-${item.queue_type}">${item.queue_type.toUpperCase()}</span></td>
+                <td>${item.display_name || item.user_id || '-'}</td>
+                <td>${item.location || '-'}</td>
               </tr>
             `).join('');
-          }}
+          }
 
-          function playAnnouncementIfNeeded(payload) {{
+          function playAnnouncementIfNeeded(payload) {
             const announcement = payload.announcement;
             if (!announcement || !announcement.id || announcement.id === lastAnnouncementId) return;
             lastAnnouncementId = announcement.id;
             if (!audioEnabled || !announcement.audioUrl || !announcementAudio) return;
             announcementAudio.src = withAuthUrl(announcement.audioUrl);
-            announcementAudio.play().catch(() => {{}});
-          }}
+            announcementAudio.play().catch(() => {});
+          }
 
-          function renderMarkers(payload) {{
+          function renderMarkers(payload) {
             previousGrid = payload.grid; currentVersion = payload.version;
             document.getElementById('stat-registered').textContent = payload.stats.registered;
             document.getElementById('stat-queue').textContent = payload.stats.queue;
@@ -207,7 +207,7 @@
             renderQueueTable(payload.active_queue);
             playAnnouncementIfNeeded(payload);
             const imageRect = getImagePlacementRect();
-            document.querySelectorAll('.marker').forEach((marker) => {{
+            document.querySelectorAll('.marker').forEach((marker) => {
               const x = parseFloat(marker.dataset.x);
               const y = parseFloat(marker.dataset.y);
               marker.style.left = (imageRect.left + (x / 100) * imageRect.width) + 'px';
@@ -218,33 +218,33 @@
               const cell = payload.grid?.[row]?.[col];
               if (!cell) return;
               const dot = marker.querySelector('.dot');
-              dot.className = `dot ${{cell.status}}${{cell.recently_served ? ' blink' : ''}}`;
-              marker.querySelector('.tag').innerHTML = `${{location}}<br>${{cell.name || cell.statusLabel}}`;
-            }});
-          }}
+              dot.className = `dot ${cell.status}${cell.recently_served ? ' blink' : ''}`;
+              marker.querySelector('.tag').innerHTML = `${location}<br>${cell.name || cell.statusLabel}`;
+            });
+          }
 
-          async function pollDashboard() {{
-            const response = await fetch(withAuthUrl('/dashboard/data'), withAuthHeaders({{ cache: 'no-store' }}));
+          async function pollDashboard() {
+            const response = await fetch(withAuthUrl('/dashboard/data'), withAuthHeaders({ cache: 'no-store' }));
             const payload = await response.json();
             if (payload.version !== currentVersion) renderMarkers(payload);
             else playAnnouncementIfNeeded(payload);
-          }}
+          }
 
-          if (audioToggle) {{
-            audioToggle.addEventListener('change', () => {{
+          if (audioToggle) {
+            audioToggle.addEventListener('change', () => {
               setAudioEnabled(audioToggle.checked);
               if (audioEnabled) playAnnouncementIfNeeded(initialPayload);
-            }});
-          }}
+            });
+          }
 
-          if (boardImage) boardImage.addEventListener('load', () => {{
+          if (boardImage) boardImage.addEventListener('load', () => {
             resizeBoard();
             renderMarkers(initialPayload);
-          }});
-          window.addEventListener('resize', () => {{
+          });
+          window.addEventListener('resize', () => {
             resizeBoard();
             renderMarkers(initialPayload);
-          }});
+          });
           resizeBoard();
           renderMarkers(initialPayload);
           setInterval(pollDashboard, 3000);

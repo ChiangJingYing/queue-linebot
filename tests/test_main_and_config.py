@@ -212,6 +212,9 @@ def test_dashboard_renders_all_configured_cells_and_statuses(tmp_path):
     assert "排隊中" in response.text
     assert "已叫號" in response.text
     assert "previousGrid" in response.text
+    assert '\\"' not in response.text
+    assert "* { box-sizing:border-box; }" in response.text
+    assert '.legend {' in response.text
 
 
 def test_dashboard_data_cleared_and_reregistered_user_is_not_served(tmp_path):
