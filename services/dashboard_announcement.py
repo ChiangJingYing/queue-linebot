@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import re
 from datetime import datetime
 from pathlib import Path
@@ -108,14 +109,24 @@ class DashboardAnnouncementService:
     def announce_called_guest(self, *, display_name: str) -> dict:
         safe_name = (display_name or "").strip() or "來賓"
         speech_name = self._normalize_display_name_for_speech(safe_name)
+        if self._uses_static_audio_template():
+            text = f"來賓 {speech_name} 請準備demo"
+            return self._write_announcement(text, audio_source=Path(self.announcement_template))
         text = self.announcement_template.format(display_name=speech_name)
         return self._write_announcement(text)
 
     def announce_new_order(self, *, text: str | None = None) -> dict:
-        safe_text = (text or self.new_order_announcement_text or "您有新訂單").strip() or "您有新訂單"
+        raw_text = (text or self.new_order_announcement_text or "您有新訂單").strip()
+        safe_text = raw_text or "您有新訂單"
+        if safe_text.lower().endswith(".mp3"):
+            return self._write_announcement("您有新訂單", audio_source=Path(safe_text))
         return self._write_announcement(safe_text)
 
-    def _write_announcement(self, text: str) -> dict:
+    def _uses_static_audio_template(self) -> bool:
+        template = (self.announcement_template or "").strip()
+        return template.lower().endswith(".mp3")
+
+    def _write_announcement(self, text: str, audio_source: Path | None = None) -> dict:
         announcement_id = uuid4().hex
         created_at = datetime.now().isoformat()
         payload = {
@@ -125,11 +136,18 @@ class DashboardAnnouncementService:
             "createdAt": created_at,
         }
 
-        audio_bytes = self.tts_service.synthesize(text)
-        if audio_bytes:
-            audio_name = f"{announcement_id}.mp3"
-            (self.root / audio_name).write_bytes(audio_bytes)
-            payload["audioUrl"] = f"{self.public_base_path}/{audio_name}"
+        if audio_source is not None and audio_source.exists():
+            target_name = audio_source.name
+            target_path = self.root / target_name
+            if target_path.resolve() != audio_source.resolve():
+                target_path.write_bytes(audio_source.read_bytes())
+            payload["audioUrl"] = f"{self.public_base_path}/{target_name}"
+        else:
+            audio_bytes = self.tts_service.synthesize(text)
+            if audio_bytes:
+                audio_name = f"{announcement_id}.mp3"
+                (self.root / audio_name).write_bytes(audio_bytes)
+                payload["audioUrl"] = f"{self.public_base_path}/{audio_name}"
 
         self.latest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return payload

@@ -10,9 +10,6 @@ vip:
   enabled: true
   coffee_price: 60
   coffee_url: https://buymeacoffee.com/yourname
-line_bot:
-  admin_ids:
-    - YOUR_ADMIN_USER_ID
 registration:
   location_options:
     '1':

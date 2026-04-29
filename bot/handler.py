@@ -9,6 +9,7 @@ from core.queue_manager import QueueManager
 from services.vip_service import VipService
 from services.notifier import Notifier
 from core.validators import validate_command
+from core.time_utils import format_display_time
 
 
 class LineBotHandler:
@@ -80,6 +81,8 @@ class LineBotHandler:
                 return self._capture_register_location_group(user_id, text.strip(), reply_token)
             if pending_action.get("type") == "register_location_item":
                 return self._capture_register_location_item(user_id, text.strip(), reply_token)
+            if pending_action.get("type") == "cancel_when_closed":
+                return self._handle_cancel_confirmation(user_id, text.strip(), reply_token)
 
         admin_history_mode = False
         if command == "/history" and args and self._is_admin(user_id):
@@ -145,6 +148,48 @@ class LineBotHandler:
 
     def _handle_cancel(self, user_id: str, reply_token: str) -> list:
         """Handle /cancel command."""
+        if not self.queue_manager.get_queue_enabled() and self.queue_manager.get_user_position(user_id) is not None:
+            self.pending_actions[user_id] = {"type": "cancel_when_closed", "step": 1}
+            return self._reply(
+                reply_token,
+                "當前隊列已關閉，確定要放棄嗎？\n若放棄無法再加入到隊列中！",
+                quick_options=self._cancel_confirmation_quick_options(),
+            )
+
+        return self._perform_cancel(user_id, reply_token)
+
+    def _handle_cancel_confirmation(self, user_id: str, text: str, reply_token: str) -> list:
+        """Handle double-confirm flow for cancelling after queue closure."""
+        state = self.pending_actions.get(user_id, {})
+        normalized = text.strip()
+
+        if normalized == "取消放棄":
+            self.pending_actions.pop(user_id, None)
+            return self._reply(reply_token, "好的，已取消放棄")
+
+        if normalized != "確認放棄":
+            return self._reply(
+                reply_token,
+                "請點選 quick reply 進行操作。",
+                quick_options=self._cancel_confirmation_quick_options(),
+            )
+
+        if self.queue_manager.get_user_position(user_id) is None:
+            self.pending_actions.pop(user_id, None)
+            return self._reply(reply_token, "❌ 錯誤：你目前不在隊列中。")
+
+        if state.get("step") == 1:
+            self.pending_actions[user_id] = {"type": "cancel_when_closed", "step": 2}
+            return self._reply(
+                reply_token,
+                "您確定要放棄嗎？",
+                quick_options=self._cancel_confirmation_quick_options(),
+            )
+
+        self.pending_actions.pop(user_id, None)
+        return self._perform_cancel(user_id, reply_token)
+
+    def _perform_cancel(self, user_id: str, reply_token: str) -> list:
         result = self.queue_manager.cancel(user_id)
 
         if result["status"] == "cancelled":
@@ -157,6 +202,12 @@ class LineBotHandler:
             msg = f"❌ 錯誤：{result['message']}"
 
         return self._reply(reply_token, msg)
+
+    def _cancel_confirmation_quick_options(self) -> list[dict]:
+        return [
+            {"label": "確認放棄", "text": "確認放棄"},
+            {"label": "我在努力看看", "text": "取消放棄"},
+        ]
 
     def _handle_status(self, user_id: str, reply_token: str) -> list:
         """Handle /status command."""
@@ -543,7 +594,7 @@ class LineBotHandler:
         regular_idx = 0
         vip_idx = 0
         for entry in entries:
-            joined = str(entry.join_time).split("T")[1][:5] if entry.join_time and "T" in str(entry.join_time) else str(entry.join_time)
+            joined = format_display_time(entry.join_time, include_date=False)
             name = self.queue_manager.db.get_display_name(entry.user_id)
             verified = self.queue_manager.db.get_user_profile(entry.user_id)
             badge = "✅" if verified and verified.verified else "🕓"
@@ -637,7 +688,7 @@ class LineBotHandler:
         lines = [f"🧾 {user_id} 歷史紀錄"]
         for item in history[:10]:
             lines.append(
-                f"- {item['created_at']}: {item['event_type']} ({item['queue_type'] or '-'})"
+                f"- {format_display_time(item['created_at'])}: {item['event_type']} ({item['queue_type'] or '-'})"
             )
         return self._reply(reply_token, "\n".join(lines))
 

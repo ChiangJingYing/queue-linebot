@@ -89,6 +89,70 @@ def test_handle_history_returns_user_history(tmp_path):
     assert "cancelled" in text
 
 
+def test_cancel_requires_double_confirmation_when_queue_closed(tmp_path):
+    db = DatabaseManager(str(tmp_path / "cancel-closed.db"))
+    qm = QueueManager(db)
+    qm.register_name("alice", "Alice", location="A-1")
+    qm.join("alice", "regular")
+    qm.set_queue_enabled(False)
+    handler = LineBotHandler(queue_manager=qm)
+
+    first = handler.handle_event(make_event("/cancel", user_id="alice", reply_token="r1"))
+
+    assert "當前隊列已關閉，確定要放棄嗎" in first[0]["text"]
+    first_qr = first[0].get("quickReply", {}).get("items", [])
+    assert len(first_qr) == 2
+    assert first_qr[0]["action"]["label"] == "確認放棄"
+    assert first_qr[0]["action"]["text"] == "確認放棄"
+    assert first_qr[1]["action"]["label"] == "我在努力看看"
+    assert first_qr[1]["action"]["text"] == "取消放棄"
+    assert qm.get_user_position("alice") == 1
+
+    second = handler.handle_event(make_event("確認放棄", user_id="alice", reply_token="r2"))
+
+    assert second[0]["text"] == "您確定要放棄嗎？"
+    second_qr = second[0].get("quickReply", {}).get("items", [])
+    assert len(second_qr) == 2
+    assert second_qr[0]["action"]["label"] == "確認放棄"
+    assert second_qr[0]["action"]["text"] == "確認放棄"
+    assert second_qr[1]["action"]["label"] == "我在努力看看"
+    assert second_qr[1]["action"]["text"] == "取消放棄"
+    assert qm.get_user_position("alice") == 1
+
+    final = handler.handle_event(make_event("確認放棄", user_id="alice", reply_token="r3"))
+
+    assert "已取消排隊" in final[0]["text"]
+    assert qm.get_user_position("alice") is None
+
+
+def test_cancel_closed_queue_can_be_aborted_without_leaving_queue(tmp_path):
+    db = DatabaseManager(str(tmp_path / "cancel-abort.db"))
+    qm = QueueManager(db)
+    qm.register_name("alice", "Alice", location="A-1")
+    qm.join("alice", "regular")
+    qm.set_queue_enabled(False)
+    handler = LineBotHandler(queue_manager=qm)
+
+    handler.handle_event(make_event("/cancel", user_id="alice", reply_token="r1"))
+    abort_reply = handler.handle_event(make_event("取消放棄", user_id="alice", reply_token="r2"))
+
+    assert abort_reply[0]["text"] == "好的，已取消放棄"
+    assert qm.get_user_position("alice") == 1
+
+
+def test_cancel_when_queue_open_still_cancels_immediately(tmp_path):
+    db = DatabaseManager(str(tmp_path / "cancel-open.db"))
+    qm = QueueManager(db)
+    qm.register_name("alice", "Alice", location="A-1")
+    qm.join("alice", "regular")
+    handler = LineBotHandler(queue_manager=qm)
+
+    result = handler.handle_event(make_event("/cancel", user_id="alice"))
+
+    assert "已取消排隊" in result[0]["text"]
+    assert qm.get_user_position("alice") is None
+
+
 
 def test_handle_history_returns_empty_message_when_no_history(tmp_path):
     db = DatabaseManager(str(tmp_path / "handler.db"))
@@ -547,6 +611,60 @@ def test_dashboard_announcement_formats_digit_only_id_for_tts(tmp_path):
 
     assert payload["text"] == "來賓 一一四二零五 請準備demo"
     assert tts.calls == ["來賓 一一四二零五 請準備demo"]
+
+
+def test_dashboard_announcement_template_can_use_mp3_path(tmp_path):
+    from services.dashboard_announcement import DashboardAnnouncementService
+
+    class CapturingTTS:
+        def __init__(self):
+            self.calls = []
+
+        def synthesize(self, text: str) -> bytes:
+            self.calls.append(text)
+            return b"generated-audio"
+
+    mp3_path = tmp_path / "custom-audio.mp3"
+    mp3_path.write_bytes(b"custom-mp3")
+    tts = CapturingTTS()
+    service = DashboardAnnouncementService(
+        root=tmp_path / "announcements",
+        tts_service=tts,
+        announcement_template=str(mp3_path),
+    )
+
+    payload = service.announce_called_guest(display_name="114205")
+
+    assert payload["text"] == "來賓 一一四二零五 請準備demo"
+    assert payload["audioUrl"].endswith("/custom-audio.mp3")
+    assert tts.calls == []
+
+
+def test_new_order_announcement_can_use_mp3_path(tmp_path):
+    from services.dashboard_announcement import DashboardAnnouncementService
+
+    class CapturingTTS:
+        def __init__(self):
+            self.calls = []
+
+        def synthesize(self, text: str) -> bytes:
+            self.calls.append(text)
+            return b"generated-audio"
+
+    mp3_path = tmp_path / "new-order.mp3"
+    mp3_path.write_bytes(b"new-order-mp3")
+    tts = CapturingTTS()
+    service = DashboardAnnouncementService(
+        root=tmp_path / "announcements",
+        tts_service=tts,
+        new_order_announcement_text=str(mp3_path),
+    )
+
+    payload = service.announce_new_order()
+
+    assert payload["text"] == "您有新訂單"
+    assert payload["audioUrl"].endswith("/new-order.mp3")
+    assert tts.calls == []
 
 
 def test_admin_ping_next_user(tmp_path):

@@ -91,6 +91,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/google-service-account.json
 Optional TTS-related environment variables can also stay in `.env` when you want deploy-time control:
 
 ```env
+LINE_ADMIN_IDS=YOUR_ADMIN_USER_ID[,ANOTHER_ADMIN_USER_ID]
 GOOGLE_CLOUD_TTS_ENABLED=false
 GOOGLE_CLOUD_TTS_LANGUAGE_CODE=cmn-TW
 GOOGLE_CLOUD_TTS_VOICE_NAME=cmn-TW-Standard-A
@@ -100,7 +101,24 @@ GOOGLE_CLOUD_TTS_PITCH=0.0
 DASHBOARD_ANNOUNCEMENT_TEMPLATE=來賓 {display_name} 請準備demo
 NEW_ORDER_IDLE_SECONDS=300
 NEW_ORDER_ANNOUNCEMENT_TEXT=您有新訂單
+# or NEW_ORDER_ANNOUNCEMENT_TEXT=/app/audio/new-order.mp3
 ```
+
+`LINE_ADMIN_IDS` uses comma-separated values.
+
+`DASHBOARD_ANNOUNCEMENT_TEMPLATE` now supports two modes:
+
+- text template mode: `來賓 {display_name} 請準備demo`
+- static audio mode: absolute or mounted `.mp3` path such as `/app/audio/called-guest.mp3`
+
+When you provide an `.mp3` path, the called-guest dashboard announcement will reuse that file as the playback audio instead of generating TTS audio for that event.
+
+`NEW_ORDER_ANNOUNCEMENT_TEXT` also supports two modes:
+
+- text mode: `您有新訂單`
+- static audio mode: absolute or mounted `.mp3` path such as `/app/audio/new-order.mp3`
+
+When `NEW_ORDER_ANNOUNCEMENT_TEXT` is an `.mp3` path, the dashboard new-order announcement will reuse that file as the playback audio instead of generating TTS audio.
 
 ### Put these in `queue_config.yaml`
 
@@ -120,10 +138,6 @@ vip:
   enabled: true
   coffee_price: 60
   coffee_url: https://buymeacoffee.com/yourname
-
-line_bot:
-  admin_ids:
-    - YOUR_ADMIN_USER_ID
 
 registration:
   location_options:
@@ -175,6 +189,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 - `LINE_CHANNEL_SECRET`
 - `LINE_CHANNEL_TOKEN`
+- `LINE_ADMIN_IDS` (comma-separated if multiple admins)
 
 ### Recommended for dashboard login
 
@@ -190,6 +205,9 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 - `GOOGLE_CLOUD_TTS_SPEAKING_RATE=1.0`
 - `GOOGLE_CLOUD_TTS_PITCH=0.0`
 - `DASHBOARD_ANNOUNCEMENT_TEMPLATE=來賓 {display_name} 請準備demo`
+- or `DASHBOARD_ANNOUNCEMENT_TEMPLATE=/absolute/or/mounted/path/to/custom-audio.mp3`
+- `NEW_ORDER_ANNOUNCEMENT_TEXT=您有新訂單`
+- or `NEW_ORDER_ANNOUNCEMENT_TEXT=/absolute/or/mounted/path/to/new-order.mp3`
 - `GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/google-service-account.json`
 
 ### Recommended Traditional Chinese voice preset
@@ -214,7 +232,7 @@ The system now:
 1. serves the queue entry normally,
 2. builds an announcement text from `display_name`,
 3. stores the latest dashboard announcement payload,
-4. generates audio through Google Cloud TTS when enabled,
+4. either generates audio through Google Cloud TTS when enabled, or reuses a configured static `.mp3` file path for called-guest/new-order announcements,
 5. exposes the audio through `/dashboard/audio/{filename}`,
 6. lets the dashboard page poll and play the latest announcement after audio is enabled in the browser.
 

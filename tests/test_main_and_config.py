@@ -74,6 +74,22 @@ def test_load_config_merges_partial_yaml_with_defaults(tmp_path):
     assert "channel_secret" in config["line_bot"]
 
 
+def test_load_config_reads_admin_ids_from_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("LINE_ADMIN_IDS", "admin_1, admin_2 ,admin_3")
+
+    config = load_config(str(tmp_path / "missing.yaml"))
+
+    assert config["line_bot"]["admin_ids"] == ["admin_1", "admin_2", "admin_3"]
+
+
+def test_load_config_reads_new_order_announcement_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("NEW_ORDER_ANNOUNCEMENT_TEXT", "/app/audio/new-order.mp3")
+
+    config = load_config(str(tmp_path / "missing.yaml"))
+
+    assert config["tts"]["new_order_announcement_text"] == "/app/audio/new-order.mp3"
+
+
 def test_load_config_ignores_empty_section_and_keeps_env_defaults(monkeypatch, tmp_path):
     monkeypatch.setenv("LINE_CHANNEL_SECRET", "env-secret")
     monkeypatch.setenv("LINE_CHANNEL_TOKEN", "env-token")

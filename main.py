@@ -22,6 +22,7 @@ from bot.handler import LineBotHandler
 from config import load_config
 from core.database import DatabaseManager
 from core.queue_manager import QueueManager
+from core.time_utils import format_display_time, parse_timestamp
 from services.notifier import Notifier
 from services.vip_service import VipService
 from services.dashboard_announcement import DashboardAnnouncementService, GoogleCloudTTSService
@@ -288,15 +289,7 @@ def health():
 
 
 def _parse_timestamp(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        try:
-            return datetime.fromisoformat(value.replace(" ", "T"))
-        except ValueError:
-            return None
+    return parse_timestamp(value)
 
 
 def _build_dashboard_payload() -> dict:
@@ -376,7 +369,7 @@ def _build_dashboard_payload() -> dict:
             "user_id": item.get("user_id") or "",
             "display_name": item.get("display_name") or item.get("user_id") or "",
             "location": item.get("location") or "",
-            "served_time": item.get("served_time") or "",
+            "served_time": format_display_time(item.get("served_time")),
             "queue_type": item.get("queue_type") or "",
         }
         for item in served_recent
@@ -390,7 +383,7 @@ def _build_dashboard_payload() -> dict:
             "location": (profile_map.get(entry.user_id).location if profile_map.get(entry.user_id) else ""),
             "queue_type": entry.queue_type,
             "queue_number": entry.queue_number,
-            "join_time": entry.join_time,
+            "join_time": format_display_time(entry.join_time),
         }
         for entry in active_queue_entries
     ]
