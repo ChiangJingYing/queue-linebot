@@ -145,24 +145,58 @@ class HandlerAdminMixin:
         except Exception:
             return False
 
+    def _admin_serve_guard_message(self) -> str | None:
+        now = self._admin_serve_cooldown_clock()
+        cooldown_seconds = self._admin_serve_cooldown_seconds
+        if cooldown_seconds > 0 and self._last_admin_serve_at:
+            if now - self._last_admin_serve_at < cooldown_seconds:
+                label = self._last_admin_serve_label or "上一位使用者"
+                return f"⚠️ 剛剛已叫號：{label}，請稍候再試，避免重複叫號。"
+        return None
+
+    def _record_admin_serve_success(self, display_name: str) -> None:
+        self._last_admin_serve_at = self._admin_serve_cooldown_clock()
+        self._last_admin_serve_label = display_name
+
     def _admin_serve_next(self, reply_token: str) -> list:
-        result = self.queue_manager.serve_next()
-        if result["status"] == "served":
-            self._push_dashboard_announcement(result["id"])
-            display_name = self.queue_manager.db.get_display_name(result["id"])
-            msg = f"✅ 已叫號：{display_name}"
-        else:
-            msg = f"❌ 錯誤：{result['message']}"
-        return self._reply(reply_token, msg)
+        if not self._admin_serve_lock.acquire(blocking=False):
+            return self._reply(reply_token, "⚠️ 叫號進行中，請勿重複操作。")
+        try:
+            guard_message = self._admin_serve_guard_message()
+            if guard_message:
+                return self._reply(reply_token, guard_message)
+
+            result = self.queue_manager.serve_next()
+            if result["status"] == "served":
+                self._push_dashboard_announcement(result["id"])
+                display_name = self.queue_manager.db.get_display_name(result["id"])
+                self._record_admin_serve_success(display_name)
+                msg = f"✅ 已叫號：{display_name}"
+            else:
+                msg = f"❌ 錯誤：{result['message']}"
+            return self._reply(reply_token, msg)
+        finally:
+            self._admin_serve_lock.release()
 
     def _admin_serve(self, user_id: str, target_id: str, reply_token: str) -> list:
-        result = self.queue_manager.serve_specific(target_id)
-        if result["status"] == "served":
-            self._push_dashboard_announcement(target_id)
-            msg = f"✅ 已叫號：{self.queue_manager.db.get_display_name(target_id)}"
-        else:
-            msg = f"❌ 錯誤：{result['message']}"
-        return self._reply(reply_token, msg)
+        if not self._admin_serve_lock.acquire(blocking=False):
+            return self._reply(reply_token, "⚠️ 叫號進行中，請勿重複操作。")
+        try:
+            guard_message = self._admin_serve_guard_message()
+            if guard_message:
+                return self._reply(reply_token, guard_message)
+
+            result = self.queue_manager.serve_specific(target_id)
+            if result["status"] == "served":
+                self._push_dashboard_announcement(target_id)
+                display_name = self.queue_manager.db.get_display_name(target_id)
+                self._record_admin_serve_success(display_name)
+                msg = f"✅ 已叫號：{display_name}"
+            else:
+                msg = f"❌ 錯誤：{result['message']}"
+            return self._reply(reply_token, msg)
+        finally:
+            self._admin_serve_lock.release()
 
     def _admin_status(self, reply_token: str) -> list:
         status = self.queue_manager.get_status()

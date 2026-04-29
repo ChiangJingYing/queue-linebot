@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -37,6 +39,7 @@ class LineBotHandler(
         announcement_service: object | None = None,
         new_order_idle_seconds: int = 300,
         new_order_announcement_text: str = "您有新訂單",
+        admin_serve_cooldown_seconds: int = 3,
     ) -> None:
         self.channel_secret = channel_secret
         self.channel_access_token = channel_access_token
@@ -58,6 +61,11 @@ class LineBotHandler(
         self._new_order_last_joined_at = datetime.now()
         self._announce_new_order_on_next_join = False
         self.pending_actions: dict[str, dict] = {}
+        self._admin_serve_lock = threading.Lock()
+        self._admin_serve_cooldown_seconds = max(int(admin_serve_cooldown_seconds), 0)
+        self._admin_serve_cooldown_clock = time.monotonic
+        self._last_admin_serve_at = 0.0
+        self._last_admin_serve_label = ""
 
     def handle_event(self, event) -> list:
         user_id = getattr(getattr(event, "source", None), "userId", "")

@@ -472,6 +472,158 @@ def test_admin_serve_next_uses_display_name_and_location(tmp_path):
     assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
 
 
+
+def test_admin_serve_next_is_blocked_during_cooldown(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-next-cooldown.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"], admin_serve_cooldown_seconds=3)
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.register_name("bob", "B23456789", location="A-2")
+    qm.join("alice", "regular")
+    qm.join("bob", "regular")
+
+    handler._admin_serve_cooldown_clock = lambda: 100.0
+
+    first = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+    handler._admin_serve_cooldown_clock = lambda: 101.0
+    second = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert second[0]["text"] == "⚠️ 剛剛已叫號：B12345678（A-1），請稍候再試，避免重複叫號。"
+    assert [entry.user_id for entry in qm.get_queue()] == ["bob"]
+
+
+
+def test_admin_serve_specific_shares_same_cooldown_guard(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-specific-cooldown.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"], admin_serve_cooldown_seconds=3)
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.register_name("bob", "B23456789", location="A-2")
+    qm.join("alice", "regular")
+    qm.join("bob", "regular")
+
+    handler._admin_serve_cooldown_clock = lambda: 200.0
+
+    first = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+    handler._admin_serve_cooldown_clock = lambda: 201.0
+    second = handler.handle_event(make_event("/admin/serve bob", user_id="admin"))
+
+    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert second[0]["text"] == "⚠️ 剛剛已叫號：B12345678（A-1），請稍候再試，避免重複叫號。"
+    assert [entry.user_id for entry in qm.get_queue()] == ["bob"]
+
+
+
+def test_admin_serve_is_blocked_while_another_serve_is_in_progress(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-lock.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.join("alice", "regular")
+
+    handler._admin_serve_lock.acquire()
+    try:
+        reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+    finally:
+        handler._admin_serve_lock.release()
+
+    assert reply[0]["text"] == "⚠️ 叫號進行中，請勿重複操作。"
+    assert [entry.user_id for entry in qm.get_queue()] == ["alice"]
+
+
+
+def test_admin_serve_cooldown_expires_and_next_serve_succeeds(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-cooldown-expire.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"], admin_serve_cooldown_seconds=3)
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.register_name("bob", "B23456789", location="A-2")
+    qm.join("alice", "regular")
+    qm.join("bob", "regular")
+
+    handler._admin_serve_cooldown_clock = lambda: 300.0
+    first = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    handler._admin_serve_cooldown_clock = lambda: 304.0
+    second = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert second[0]["text"] == "✅ 已叫號：B23456789（A-2）"
+    assert qm.get_queue() == []
+
+
+
+def test_admin_serve_failure_does_not_start_cooldown(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-failure-no-cooldown.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"], admin_serve_cooldown_seconds=3)
+
+    handler._admin_serve_cooldown_clock = lambda: 400.0
+    first = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.join("alice", "regular")
+
+    handler._admin_serve_cooldown_clock = lambda: 401.0
+    second = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert first[0]["text"] == "❌ 錯誤：目前隊列是空的。"
+    assert second[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+
+
+
+class BlockingQueueManager(QueueManager):
+    def __init__(self, db, gate):
+        super().__init__(db)
+        self.gate = gate
+
+    def serve_next(self) -> dict:
+        self.gate.wait(timeout=2)
+        return super().serve_next()
+
+
+
+def test_admin_serve_concurrent_requests_only_serve_one_user(tmp_path):
+    import threading
+
+    db = DatabaseManager(str(tmp_path / "serve-concurrent.db"))
+    gate = threading.Event()
+    qm = BlockingQueueManager(db, gate)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"], admin_serve_cooldown_seconds=0)
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.register_name("bob", "B23456789", location="A-2")
+    qm.join("alice", "regular")
+    qm.join("bob", "regular")
+
+    replies = []
+
+    def run_first():
+        replies.append(("first", handler.handle_event(make_event("/admin/serve", user_id="admin", reply_token="r1"))))
+
+    t1 = threading.Thread(target=run_first)
+    t1.start()
+
+    # Let the first request enter serve_next() and hold the lock.
+    import time
+    time.sleep(0.05)
+
+    second = handler.handle_event(make_event("/admin/serve", user_id="admin", reply_token="r2"))
+    gate.set()
+    t1.join(timeout=2)
+
+    first_reply = dict(replies)["first"]
+    assert first_reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert second[0]["text"] == "⚠️ 叫號進行中，請勿重複操作。"
+    assert [entry.user_id for entry in qm.get_queue()] == ["bob"]
+
+
+
 def test_admin_serve_specific_uses_display_name_and_location(tmp_path):
     db = DatabaseManager(str(tmp_path / "serve-specific.db"))
     qm = QueueManager(db)
