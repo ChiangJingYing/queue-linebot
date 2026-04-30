@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -12,6 +13,7 @@ from config import load_config
 from core.database import DatabaseManager
 from core.queue_manager import QueueManager
 from services.notifier import Notifier
+from services.telegram_commands import TelegramCommandService
 from services.vip_service import VipService
 from bot.handler import LineBotHandler
 
@@ -36,8 +38,11 @@ def _setup_runtime(tmp_path, location_options=None):
     main.vip_service = vip
     main.notifier = notifier
     main.line_handler = handler
+    main.telegram_command_service = TelegramCommandService(db=db, telegram_sender=lambda user_id, text: None)
     main.CHANNEL_SECRET = ""
     main.CHANNEL_ACCESS_TOKEN = ""
+    main.TELEGRAM_BOT_TOKEN = ""
+    main.TELEGRAM_WEBHOOK_SECRET = ""
     main.LOCATION_OPTIONS = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
     main.dashboard_layout_store = main.DashboardLayoutStore(tmp_path / "dashboard_layout")
     main.config["web_ui"] = {
@@ -49,6 +54,14 @@ def _setup_runtime(tmp_path, location_options=None):
     }
 
     return qm
+
+
+def test_docker_runtime_timezone_is_asia_taipei():
+    compose_text = Path("docker-compose.yml").read_text(encoding="utf-8")
+    dockerfile_text = Path("Dockerfile").read_text(encoding="utf-8")
+
+    assert "TZ=Asia/Taipei" in compose_text or "TZ=Asia/Taipei" in dockerfile_text
+    assert "Asia/Taipei" in compose_text or "Asia/Taipei" in dockerfile_text
 
 
 def test_load_config_returns_defaults_when_missing_file(tmp_path):
@@ -107,6 +120,16 @@ def test_load_config_ignores_empty_section_and_keeps_env_defaults(monkeypatch, t
     assert config["line_bot"]["channel_access_token"] == "env-token"
     assert config["web_ui"]["admin_token"] == "env-admin-token"
     assert config["web_ui"]["session_cookie_name"] == "queue_admin_session"
+
+
+def test_load_config_reads_telegram_settings_from_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "bot-123")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "secret-xyz")
+
+    config = load_config(str(tmp_path / "missing.yaml"))
+
+    assert config["telegram_bot"]["bot_token"] == "bot-123"
+    assert config["telegram_bot"]["webhook_secret"] == "secret-xyz"
 
 
 def test_webhook_processes_join_event_and_returns_counts(tmp_path):
@@ -230,6 +253,178 @@ def test_dashboard_data_cleared_and_reregistered_user_is_not_served(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["grid"]["1"]["1"]["status"] == "registered"
+
+
+def test_telegram_webhook_processes_text_command_and_sends_reply(tmp_path, monkeypatch):
+    qm = _setup_runtime(tmp_path)
+    qm.register_name("5524536015", "B12345678", location="A-1")
+    sent = []
+
+    def fake_sender(chat_id: str, text: str, reply_markup=None) -> bool:
+        sent.append((chat_id, text, reply_markup))
+        return True
+
+    monkeypatch.setattr(main, "_send_telegram_text", fake_sender)
+    client = TestClient(main.app)
+
+    response = client.post(
+        "/api/telegram/webhook",
+        json={
+            "message": {
+                "message_id": 1,
+                "text": "/join",
+                "chat": {"id": -5186025491, "type": "group"},
+                "from": {"id": 5524536015, "is_bot": False, "first_name": "Alice"},
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["processed_updates"] == 1
+    assert response.json()["replies_sent"] == 1
+    assert [entry.user_id for entry in qm.get_queue()] == ["5524536015"]
+    assert sent == [("-5186025491", sent[0][1], sent[0][2])]
+    assert "已加入隊列" in sent[0][1]
+
+
+def test_telegram_webhook_sends_reply_keyboard_markup(tmp_path, monkeypatch):
+    _setup_runtime(tmp_path)
+    sent = []
+
+    def fake_sender(chat_id: str, text: str, reply_markup=None) -> bool:
+        sent.append((chat_id, text, reply_markup))
+        return True
+
+    monkeypatch.setattr(main, "_send_telegram_text", fake_sender)
+    client = TestClient(main.app)
+
+    response = client.post(
+        "/api/telegram/webhook",
+        json={
+            "message": {
+                "message_id": 1,
+                "text": "/menu",
+                "chat": {"id": 12345, "type": "private"},
+                "from": {"id": 45678, "is_bot": False, "first_name": "Alice"},
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["processed_updates"] == 1
+    assert response.json()["replies_sent"] == 1
+    assert sent[0][0] == "12345"
+    assert sent[0][2]["keyboard"][0][0]["text"] == "舉手"
+    assert sent[0][2]["is_persistent"] is True
+
+
+def test_telegram_webhook_sends_inline_keyboard_markup(tmp_path, monkeypatch):
+    _setup_runtime(tmp_path)
+    sent = []
+
+    def fake_sender(chat_id: str, text: str, reply_markup=None) -> bool:
+        sent.append((chat_id, text, reply_markup))
+        return True
+
+    monkeypatch.setattr(main, "_send_telegram_text", fake_sender)
+    client = TestClient(main.app)
+
+    response = client.post(
+        "/api/telegram/webhook",
+        json={
+            "message": {
+                "message_id": 1,
+                "text": "/join",
+                "chat": {"id": 12345, "type": "private"},
+                "from": {"id": 45678, "is_bot": False, "first_name": "Alice"},
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["processed_updates"] == 1
+    assert response.json()["replies_sent"] == 1
+    assert sent[0][2]["inline_keyboard"] == [
+        [{"text": "設定基本資料", "callback_data": "/register"}]
+    ]
+
+
+def test_telegram_webhook_processes_callback_query_registration_flow(tmp_path, monkeypatch):
+    _setup_runtime(tmp_path, location_options={"A": ["1", "2"], "B": ["1"]})
+    sent = []
+
+    def fake_sender(chat_id: str, text: str, reply_markup=None) -> bool:
+        sent.append((chat_id, text, reply_markup))
+        return True
+
+    monkeypatch.setattr(main, "_send_telegram_text", fake_sender)
+    client = TestClient(main.app)
+
+    response1 = client.post(
+        "/api/telegram/webhook",
+        json={
+            "callback_query": {
+                "id": "cb-1",
+                "data": "/register",
+                "from": {"id": 45678, "is_bot": False, "first_name": "Alice"},
+                "message": {
+                    "message_id": 10,
+                    "chat": {"id": 12345, "type": "private"},
+                },
+            }
+        },
+    )
+
+    response2 = client.post(
+        "/api/telegram/webhook",
+        json={
+            "message": {
+                "message_id": 11,
+                "text": "B12345678",
+                "chat": {"id": 12345, "type": "private"},
+                "from": {"id": 45678, "is_bot": False, "first_name": "Alice"},
+            }
+        },
+    )
+
+    response3 = client.post(
+        "/api/telegram/webhook",
+        json={
+            "callback_query": {
+                "id": "cb-2",
+                "data": "A",
+                "from": {"id": 45678, "is_bot": False, "first_name": "Alice"},
+                "message": {
+                    "message_id": 12,
+                    "chat": {"id": 12345, "type": "private"},
+                },
+            }
+        },
+    )
+
+    response4 = client.post(
+        "/api/telegram/webhook",
+        json={
+            "callback_query": {
+                "id": "cb-3",
+                "data": "1",
+                "from": {"id": 45678, "is_bot": False, "first_name": "Alice"},
+                "message": {
+                    "message_id": 13,
+                    "chat": {"id": 12345, "type": "private"},
+                },
+            }
+        },
+    )
+
+    assert response1.status_code == 200
+    assert response2.status_code == 200
+    assert response3.status_code == 200
+    assert response4.status_code == 200
+    assert sent[0][1] == "請輸入你的學號。"
+    assert sent[1][2]["inline_keyboard"] == [[{"text": "A", "callback_data": "A"}, {"text": "B", "callback_data": "B"}]]
+    assert sent[2][2]["inline_keyboard"] == [[{"text": "1", "callback_data": "1"}, {"text": "2", "callback_data": "2"}]]
+    assert sent[3][1] == "✅ 已更新學號：B12345678\n位置：A-1"
 
 
 class FakeDashboardAnnouncementService:

@@ -8,6 +8,8 @@ import hmac
 import json
 import logging
 import mimetypes
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -22,8 +24,9 @@ from bot.handler import LineBotHandler
 from config import load_config
 from core.database import DatabaseManager
 from core.queue_manager import QueueManager
-from core.time_utils import format_display_time, parse_timestamp
+from core.time_utils import TAIPEI_TZ, format_display_time, parse_timestamp
 from services.notifier import Notifier
+from services.telegram_commands import TelegramCommandService
 from services.vip_service import VipService
 from services.dashboard_announcement import DashboardAnnouncementService, GoogleCloudTTSService
 
@@ -32,9 +35,12 @@ logger = logging.getLogger(__name__)
 
 config = load_config()
 line_bot_config = config.get("line_bot", {})
+telegram_bot_config = config.get("telegram_bot", {})
 
 CHANNEL_SECRET = line_bot_config.get("channel_secret", "")
 CHANNEL_ACCESS_TOKEN = line_bot_config.get("channel_access_token", "")
+TELEGRAM_BOT_TOKEN = telegram_bot_config.get("bot_token", "")
+TELEGRAM_WEBHOOK_SECRET = telegram_bot_config.get("webhook_secret", "")
 ADMIN_IDS: list[str] = line_bot_config.get("admin_ids", ["admin_xxxxx", "another_admin"])
 ADMIN_RICH_MENU_ID = line_bot_config.get("admin_rich_menu_id", "")
 ADMIN_RICH_MENU_PAGE2_ID = line_bot_config.get("admin_rich_menu_page2_id", "")
@@ -206,6 +212,7 @@ queue_manager: QueueManager | None = None
 vip_service: VipService | None = None
 notifier: Notifier | None = None
 line_handler: LineBotHandler | None = None
+telegram_command_service: TelegramCommandService | None = None
 dashboard_announcement_service: DashboardAnnouncementService | None = None
 
 
@@ -262,7 +269,7 @@ dashboard_layout_store = DashboardLayoutStore()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Initialize DB and services on startup."""
-    global db_manager, queue_manager, vip_service, notifier, line_handler, scheduler, dashboard_announcement_service
+    global db_manager, queue_manager, vip_service, notifier, line_handler, telegram_command_service, scheduler, dashboard_announcement_service
     from apscheduler.schedulers.background import BackgroundScheduler
 
     db_manager = DatabaseManager()
@@ -298,6 +305,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         new_order_idle_seconds=int(tts_config.get("new_order_idle_seconds", 300)),
         new_order_announcement_text=str(tts_config.get("new_order_announcement_text", "您有新訂單")),
     )
+    telegram_command_service = TelegramCommandService(
+        db=db_manager,
+        telegram_sender=_send_telegram_text,
+        location_options=LOCATION_OPTIONS,
+    )
 
     scheduler = BackgroundScheduler()
     scheduler.start()
@@ -326,7 +338,12 @@ def health():
 
 
 def _parse_timestamp(value: str | None) -> datetime | None:
-    return parse_timestamp(value)
+    dt = parse_timestamp(value)
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=TAIPEI_TZ)
+    return dt.astimezone(TAIPEI_TZ)
 
 
 def _build_dashboard_payload() -> dict:
@@ -360,7 +377,7 @@ def _build_dashboard_payload() -> dict:
     profiles = db_manager.get_all_user_profiles()
 
     blink_window = 90  # seconds after serve until blink stops
-    now = datetime.now()
+    now = datetime.now(TAIPEI_TZ)
 
     for profile in profiles:
         if not profile.location or "-" not in profile.location:
@@ -692,6 +709,47 @@ async def callback(request: Request):
     return {"status": "verified", **result}
 
 
+@app.post("/api/telegram/webhook")
+async def telegram_webhook(request: Request):
+    if telegram_command_service is None:
+        raise HTTPException(status_code=503, detail="Telegram 處理器尚未初始化")
+
+    secret_token = request.headers.get("x-telegram-bot-api-secret-token", "")
+    if TELEGRAM_WEBHOOK_SECRET and secret_token != TELEGRAM_WEBHOOK_SECRET:
+        raise HTTPException(status_code=403, detail="Telegram secret token 驗證失敗")
+
+    body_bytes = await request.body()
+    body = body_bytes.decode("utf-8")
+    logger.info("Received telegram webhook: %s", body[:200])
+
+    try:
+        payload = json.loads(body or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="JSON 格式錯誤") from exc
+
+    message = _normalize_telegram_update(payload)
+    if message is None:
+        return {
+            "status": "received",
+            "processed_updates": 0,
+            "replies_sent": 0,
+        }
+
+    result = telegram_command_service.handle_text(user_id=message["user_id"], text=message["text"])
+    reply_message = result.get("message")
+    reply_markup = result.get("reply_markup")
+    replies_sent = 0
+    if reply_message:
+        if _send_telegram_text(message["chat_id"], str(reply_message), reply_markup=reply_markup):
+            replies_sent = 1
+
+    return {
+        "status": "received",
+        "processed_updates": 1,
+        "replies_sent": replies_sent,
+    }
+
+
 def _verify_line_signature(signature: str, body: str, channel_secret: str) -> bool:
     if not signature:
         return False
@@ -748,6 +806,72 @@ def _normalize_event(event: dict):
             self.replyToken = reply_token
 
     return _Event(message.get("text", ""), user_id, reply_token)
+
+
+def _normalize_telegram_update(payload: dict) -> dict | None:
+    callback_query = payload.get("callback_query") or {}
+    if isinstance(callback_query, dict) and callback_query:
+        data = str(callback_query.get("data") or "").strip()
+        message = callback_query.get("message") or {}
+        sender = callback_query.get("from") or {}
+        chat = message.get("chat") or {}
+        chat_id = chat.get("id")
+        user_id = sender.get("id")
+        if data and chat_id is not None and user_id is not None:
+            return {
+                "chat_id": str(chat_id),
+                "user_id": str(user_id),
+                "text": data,
+            }
+
+    message = payload.get("message") or payload.get("edited_message") or {}
+    if not isinstance(message, dict):
+        return None
+
+    text = str(message.get("text") or "").strip()
+    if not text:
+        return None
+
+    chat = message.get("chat") or {}
+    sender = message.get("from") or {}
+    chat_id = chat.get("id")
+    user_id = sender.get("id")
+    if chat_id is None or user_id is None:
+        return None
+
+    return {
+        "chat_id": str(chat_id),
+        "user_id": str(user_id),
+        "text": text,
+    }
+
+
+def _send_telegram_text(chat_id: str, text: str, reply_markup: dict | None = None) -> bool:
+    if not TELEGRAM_BOT_TOKEN:
+        logger.info("Telegram bot token 缺失；已產生回覆但未送出")
+        return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    request_payload = {"chat_id": chat_id, "text": text}
+    if reply_markup is not None:
+        request_payload["reply_markup"] = reply_markup
+    payload = json.dumps(request_payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            status = getattr(response, "status", 200)
+            return int(status) < 400
+    except urllib.error.HTTPError as exc:
+        logger.warning("Telegram sendMessage failed: %s", exc)
+        return False
+    except Exception as exc:
+        logger.warning("Telegram sendMessage error: %s", exc)
+        return False
 
 
 def _send_replies(reply_actions: list) -> int:
