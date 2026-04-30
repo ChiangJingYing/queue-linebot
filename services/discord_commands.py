@@ -274,6 +274,12 @@ class DiscordCommandService:
 
     def _handle_cancel_confirmation(self, *, user_id: str, action: str) -> dict:
         state = self._get_pending_cancel_state(user_id)
+        if state.get("type") != "cancel_when_closed" or state.get("step") not in {1, 2}:
+            return {
+                "status": "error",
+                "message": "❌ 放棄確認流程已失效，請重新按一次放棄。",
+                "components": self._button_rows(self.USER_ACTION_ROWS),
+            }
 
         if action == "cancel:abort":
             self._clear_pending_cancel_state(user_id)

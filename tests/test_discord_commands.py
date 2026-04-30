@@ -134,6 +134,23 @@ class TestDiscordCommandService:
         assert result["message"] == "好的，已取消放棄"
         assert service.queue_manager.get_user_position("alice") == 1
 
+
+    def test_cancel_abort_invalidates_stale_confirm_button(self, db_manager):
+        db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+        service = DiscordCommandService(db=db_manager)
+        service.handle_interaction(user_id="alice", input_value="/join")
+        db_manager.set_config("queue_enabled", "false")
+
+        service.handle_interaction(user_id="alice", input_value="/cancel")
+        abort_result = service.handle_interaction(user_id="alice", input_value="cancel:abort")
+        stale_confirm = service.handle_interaction(user_id="alice", input_value="cancel:confirm")
+
+        assert abort_result["status"] == "success"
+        assert abort_result["message"] == "好的，已取消放棄"
+        assert stale_confirm["status"] == "error"
+        assert "確認流程已失效" in stale_confirm["message"]
+        assert service.queue_manager.get_user_position("alice") == 1
+
     def test_history_returns_recent_user_events(self, db_manager):
         db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
         service = DiscordCommandService(db=db_manager)
