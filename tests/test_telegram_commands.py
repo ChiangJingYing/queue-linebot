@@ -336,6 +336,31 @@ class TestTelegramCommandService:
         assert "B12345678（A-1）" in sent[0][1]
         assert "時間：2026-04-30 03:30:00" in sent[0][1]
 
+    def test_admin_serve_next_sends_discord_dm_to_called_user(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("discord_user_1", "B12345678", location="A-1", verified=True, role="user")
+        db_manager.set_config("discord_user:discord_user_1", "1")
+
+        sent = []
+
+        def discord_sender(user_id: str, text: str) -> None:
+            sent.append((user_id, text))
+
+        from services.notifier import Notifier
+
+        service = TelegramCommandService(db=db_manager)
+        service.queue_manager.notifier = Notifier(discord_sender=discord_sender, db=db_manager)
+        service.queue_manager.join("discord_user_1", "regular")
+
+        result = service.handle_text(user_id="admin_a", text="/admin/serve")
+
+        assert result["status"] == "success"
+        assert result["message"] == "✅ 已叫號：B12345678（A-1）"
+        assert sent == [("discord_user_1", sent[0][1])]
+        assert "輪到你了" in sent[0][1]
+        assert "#1" in sent[0][1]
+        assert "服務區" in sent[0][1]
+
     def test_admin_serve_specific_broadcasts_called_user(self, db_manager):
         db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
         db_manager.upsert_user_profile("admin_b", "管理員乙", verified=True, role="admin")

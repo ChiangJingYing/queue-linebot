@@ -658,6 +658,32 @@ class FakeAnnouncementService:
         }
 
 
+def test_admin_serve_next_sends_discord_dm_to_called_user(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-next-discord.dm.db"))
+    qm = QueueManager(db)
+    sent = []
+
+    class SpyNotifier:
+        def notify_served(self, user_id: str, queue_number: int):
+            sent.append((user_id, queue_number))
+            return "ok"
+
+    qm.notifier = SpyNotifier()
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+    )
+
+    qm.register_name("discord_user_1", "110316888", location="A-1")
+    qm.join("discord_user_1", "regular")
+
+    reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）"
+    assert sent == [("discord_user_1", 1)]
+
+
 def test_admin_serve_next_creates_dashboard_announcement_with_display_name(tmp_path):
     db = DatabaseManager(str(tmp_path / "serve-next-announcement.db"))
     qm = QueueManager(db)

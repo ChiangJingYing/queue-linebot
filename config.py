@@ -1,7 +1,14 @@
 """Configuration for queue system."""
 
+from pathlib import Path
 import os
 import yaml
+
+
+DEFAULT_CONFIG_PATHS = (
+    Path("config/queue_config.yaml"),
+    Path("queue_config.yaml"),
+)
 
 
 def _parse_admin_ids(value: str | None) -> list[str]:
@@ -12,15 +19,25 @@ def _parse_admin_ids(value: str | None) -> list[str]:
     return parsed or ["admin_xxxxx"]
 
 
-def load_config(path: str = "queue_config.yaml") -> dict:
+def _resolve_config_path(path: str | None = None) -> Path:
+    if path:
+        return Path(path)
+    for candidate in DEFAULT_CONFIG_PATHS:
+        if candidate.exists():
+            return candidate
+    return DEFAULT_CONFIG_PATHS[0]
+
+
+def load_config(path: str | None = None) -> dict:
     """Load configuration from YAML file."""
     defaults = get_defaults()
+    config_path = _resolve_config_path(path)
 
-    if not os.path.exists(path):
+    if not config_path.exists():
         return defaults
 
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with config_path.open("r", encoding="utf-8") as f:
             loaded = yaml.safe_load(f) or {}
     except (FileNotFoundError, OSError, yaml.YAMLError):
         return defaults
@@ -80,6 +97,11 @@ def get_defaults() -> dict:
         "telegram_bot": {
             "bot_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
             "webhook_secret": os.getenv("TELEGRAM_WEBHOOK_SECRET", ""),
+        },
+        "discord_bot": {
+            "bot_token": os.getenv("DISCORD_BOT_TOKEN", ""),
+            "application_id": os.getenv("DISCORD_APPLICATION_ID", ""),
+            "public_key": os.getenv("DISCORD_PUBLIC_KEY", ""),
         },
         "registration": {
             "location_options": {

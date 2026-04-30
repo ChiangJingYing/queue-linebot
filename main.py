@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 import hashlib
 import hmac
 import json
@@ -27,6 +29,7 @@ from core.queue_manager import QueueManager
 from core.time_utils import TAIPEI_TZ, format_display_time, parse_timestamp
 from services.notifier import Notifier
 from services.telegram_commands import TelegramCommandService
+from services.discord_commands import DiscordCommandService
 from services.vip_service import VipService
 from services.dashboard_announcement import DashboardAnnouncementService, GoogleCloudTTSService
 
@@ -36,11 +39,15 @@ logger = logging.getLogger(__name__)
 config = load_config()
 line_bot_config = config.get("line_bot", {})
 telegram_bot_config = config.get("telegram_bot", {})
+discord_bot_config = config.get("discord_bot", {})
 
 CHANNEL_SECRET = line_bot_config.get("channel_secret", "")
 CHANNEL_ACCESS_TOKEN = line_bot_config.get("channel_access_token", "")
 TELEGRAM_BOT_TOKEN = telegram_bot_config.get("bot_token", "")
 TELEGRAM_WEBHOOK_SECRET = telegram_bot_config.get("webhook_secret", "")
+DISCORD_BOT_TOKEN = discord_bot_config.get("bot_token", "")
+DISCORD_APPLICATION_ID = discord_bot_config.get("application_id", "")
+DISCORD_PUBLIC_KEY = discord_bot_config.get("public_key", "")
 ADMIN_IDS: list[str] = line_bot_config.get("admin_ids", ["admin_xxxxx", "another_admin"])
 ADMIN_RICH_MENU_ID = line_bot_config.get("admin_rich_menu_id", "")
 ADMIN_RICH_MENU_PAGE2_ID = line_bot_config.get("admin_rich_menu_page2_id", "")
@@ -213,6 +220,7 @@ vip_service: VipService | None = None
 notifier: Notifier | None = None
 line_handler: LineBotHandler | None = None
 telegram_command_service: TelegramCommandService | None = None
+discord_command_service: DiscordCommandService | None = None
 dashboard_announcement_service: DashboardAnnouncementService | None = None
 
 
@@ -269,11 +277,11 @@ dashboard_layout_store = DashboardLayoutStore()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Initialize DB and services on startup."""
-    global db_manager, queue_manager, vip_service, notifier, line_handler, telegram_command_service, scheduler, dashboard_announcement_service
+    global db_manager, queue_manager, vip_service, notifier, line_handler, telegram_command_service, discord_command_service, scheduler, dashboard_announcement_service
     from apscheduler.schedulers.background import BackgroundScheduler
 
     db_manager = DatabaseManager()
-    notifier = Notifier(CHANNEL_SECRET, CHANNEL_ACCESS_TOKEN, ADMIN_RICH_MENU_PAGE2_ID)
+    notifier = Notifier(CHANNEL_SECRET, CHANNEL_ACCESS_TOKEN, ADMIN_RICH_MENU_PAGE2_ID, discord_sender=_send_discord_text, db=db_manager)
     queue_manager = QueueManager(db_manager, notifier)
     vip_service = VipService(db_manager)
     tts_config = config.get("tts", {}) if isinstance(config.get("tts"), dict) else {}
@@ -307,7 +315,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     )
     telegram_command_service = TelegramCommandService(
         db=db_manager,
+        queue_manager=queue_manager,
         telegram_sender=_send_telegram_text,
+        location_options=LOCATION_OPTIONS,
+    )
+    discord_command_service = DiscordCommandService(
+        db=db_manager,
         location_options=LOCATION_OPTIONS,
     )
 
@@ -335,6 +348,60 @@ def health_check():
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+
+
+def _send_discord_text(user_id: str, text: str) -> bool:
+    if not DISCORD_BOT_TOKEN:
+        logger.info("DISCORD_BOT_TOKEN 缺失，無法實際推送給 %s", user_id)
+        return False
+
+    discord_headers = {
+        "Authorization": f"Bot {DISCORD_BOT_TOKEN}",
+        "Content-Type": "application/json",
+        "User-Agent": "DiscordBot (https://example.com, 1.0)",
+    }
+    dm_url = "https://discord.com/api/v10/users/@me/channels"
+    message_url = None
+    try:
+        payload = json.dumps({"recipient_id": user_id}).encode("utf-8")
+        request = urllib.request.Request(
+            dm_url,
+            data=payload,
+            headers=discord_headers,
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        channel_id = str(body.get("id") or "").strip()
+        if not channel_id:
+            logger.error("Discord 建立 DM 成功但未返回 channel id user_id=%s body=%s", user_id, json.dumps(body, ensure_ascii=False))
+            return False
+        message_url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+        message_payload = json.dumps({"content": text}).encode("utf-8")
+        message_request = urllib.request.Request(
+            message_url,
+            data=message_payload,
+            headers=discord_headers,
+            method="POST",
+        )
+        with urllib.request.urlopen(message_request, timeout=10):
+            return True
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="ignore")
+        logger.error(
+            "Discord 推播 HTTPError user_id=%s url=%s status=%s body=%s",
+            user_id,
+            message_url or dm_url,
+            exc.code,
+            detail,
+        )
+        logger.exception("Discord 推播失敗 user_id=%s url=%s", user_id, message_url or dm_url)
+        return False
+    except Exception:
+        logger.exception("Discord 推播失敗 user_id=%s url=%s", user_id, message_url or dm_url)
+        return False
 
 
 def _parse_timestamp(value: str | None) -> datetime | None:
@@ -709,6 +776,47 @@ async def callback(request: Request):
     return {"status": "verified", **result}
 
 
+@app.post("/api/discord/interactions")
+async def discord_interactions(request: Request):
+    if discord_command_service is None:
+        raise HTTPException(status_code=503, detail="Discord 處理器尚未初始化")
+    if not DISCORD_PUBLIC_KEY:
+        raise HTTPException(status_code=503, detail="Discord public key 尚未設定")
+
+    signature = request.headers.get("x-signature-ed25519", "")
+    timestamp = request.headers.get("x-signature-timestamp", "")
+    body_bytes = await request.body()
+
+    if not _verify_discord_signature(signature, timestamp, body_bytes, DISCORD_PUBLIC_KEY):
+        raise HTTPException(status_code=401, detail="Discord signature 驗證失敗")
+
+    try:
+        payload = json.loads(body_bytes.decode("utf-8") or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="JSON 格式錯誤") from exc
+
+    logger.info("Discord interaction payload type=%s data=%s", payload.get("type"), json.dumps(payload.get("data") or {}, ensure_ascii=False)[:1000])
+
+    if payload.get("type") == 1:
+        return {"type": 1}
+
+    extracted = _extract_discord_input(payload)
+    if extracted is None:
+        return {"type": 4, "data": {"content": "目前尚未支援此 Discord interaction。", "flags": 64}}
+
+    user_id, input_value = extracted
+    channel_id = str(payload.get("channel_id") or "").strip()
+    if db_manager is not None and user_id:
+        db_manager.set_config(f"discord_user:{user_id}", "1")
+        if channel_id:
+            db_manager.set_config(f"discord_channel:{user_id}", channel_id)
+
+    result = discord_command_service.handle_interaction(user_id=user_id, input_value=input_value)
+    response_payload = _discord_response_message(result)
+    logger.info("Discord interaction user_id=%s input=%s result=%s response=%s", user_id, input_value, json.dumps(result, ensure_ascii=False)[:1000], json.dumps(response_payload, ensure_ascii=False)[:1000])
+    return response_payload
+
+
 @app.post("/api/telegram/webhook")
 async def telegram_webhook(request: Request):
     if telegram_command_service is None:
@@ -748,6 +856,133 @@ async def telegram_webhook(request: Request):
         "processed_updates": 1,
         "replies_sent": replies_sent,
     }
+
+
+def _verify_discord_signature(signature: str, timestamp: str, body: bytes, public_key: str) -> bool:
+    if not signature or not timestamp or not public_key:
+        return False
+    try:
+        verifier = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key))
+        verifier.verify(bytes.fromhex(signature), timestamp.encode("utf-8") + body)
+        return True
+    except (ValueError, InvalidSignature, TypeError):
+        return False
+
+
+def _discord_response_message(result: dict, *, ephemeral: bool = False) -> dict:
+    if result.get("status") == "modal":
+        modal = result.get("modal") or {}
+        components = []
+        for row in modal.get("components", []):
+            row_components = row.get("components", []) if isinstance(row, dict) else row
+            components.append(
+                {
+                    "type": 1,
+                    "components": [
+                        {
+                            "type": 4,
+                            "custom_id": item["custom_id"],
+                            "label": item["label"],
+                            "style": 1 if item.get("style") == "paragraph" else 1,
+                            "min_length": item.get("min_length", 1),
+                            "max_length": item.get("max_length", 100),
+                            "required": bool(item.get("required", True)),
+                            **({"placeholder": item["placeholder"]} if item.get("placeholder") else {}),
+                        }
+                        for item in row_components
+                    ],
+                }
+            )
+        return {
+            "type": 9,
+            "data": {
+                "custom_id": str(modal.get("custom_id") or ""),
+                "title": str(modal.get("title") or "設定資料"),
+                "components": components,
+            },
+        }
+
+    data = {
+        "content": str(result.get("message") or ""),
+    }
+    components = result.get("components")
+    if components:
+        data["components"] = components
+    if ephemeral:
+        data["flags"] = 64
+    return {"type": 4, "data": data}
+
+
+def _extract_discord_input(payload: dict) -> tuple[str, str] | None:
+    interaction_type = payload.get("type")
+    if interaction_type == 2:
+        member = payload.get("member") or {}
+        user = member.get("user") or payload.get("user") or {}
+        user_id = str(user.get("id") or "").strip()
+        data = payload.get("data") or {}
+        command_name = str(data.get("name") or "").strip()
+        if user_id and command_name:
+            return user_id, f"/{command_name}"
+        return None
+
+    if interaction_type == 3:
+        member = payload.get("member") or {}
+        user = member.get("user") or payload.get("user") or {}
+        user_id = str(user.get("id") or "").strip()
+        data = payload.get("data") or {}
+        custom_id = str(data.get("custom_id") or "").strip()
+        if user_id and custom_id:
+            return user_id, custom_id
+        return None
+
+    if interaction_type == 5:
+        member = payload.get("member") or {}
+        user = member.get("user") or payload.get("user") or {}
+        user_id = str(user.get("id") or "").strip()
+        data = payload.get("data") or {}
+        custom_id = str(data.get("custom_id") or "").strip()
+        if custom_id != "register:submit" or not user_id:
+            return None
+        for row in data.get("components", []):
+            for item in row.get("components", []):
+                if str(item.get("custom_id") or "") == "student_id":
+                    value = str(item.get("value") or "").strip()
+                    return user_id, f"register:submit:{value}"
+        return user_id, "register:submit:"
+
+    return None
+
+
+    if event.get("type") != "message":
+        return None
+
+    message = event.get("message") or {}
+    if message.get("type") != "text":
+        return None
+
+    source = event.get("source") or {}
+    user_id = source.get("userId")
+    reply_token = event.get("replyToken", "")
+    if not user_id or not reply_token:
+        return None
+
+    class _Message:
+        def __init__(self, text: str) -> None:
+            self.type = "text"
+            self.text = text
+
+    class _Source:
+        def __init__(self, user_id: str) -> None:
+            self.userId = user_id
+
+    class _Event:
+        def __init__(self, text: str, user_id: str, reply_token: str) -> None:
+            self.message = _Message(text)
+            self.source = _Source(user_id)
+            self.reply_token = reply_token
+            self.replyToken = reply_token
+
+    return _Event(message.get("text", ""), user_id, reply_token)
 
 
 def _verify_line_signature(signature: str, body: str, channel_secret: str) -> bool:

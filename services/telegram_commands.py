@@ -52,9 +52,16 @@ class TelegramCommandService:
         "返回主選單": "switch_page1",
     }
 
-    def __init__(self, *, db, telegram_sender=None, location_options: dict[str, list[str]] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        db,
+        queue_manager: QueueManager | None = None,
+        telegram_sender=None,
+        location_options: dict[str, list[str]] | None = None,
+    ) -> None:
         self.db = db
-        self.queue_manager = QueueManager(db) if isinstance(db, DatabaseManager) else None
+        self.queue_manager = queue_manager or (QueueManager(db) if isinstance(db, DatabaseManager) else None)
         self.vip_service = VipService(db) if isinstance(db, DatabaseManager) else None
         self.location_options = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
         self.notification_service = None

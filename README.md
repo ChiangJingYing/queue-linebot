@@ -33,7 +33,42 @@ pip install -r requirements.txt
 This project supports dashboard voice announcements via Google Cloud Text-to-Speech.
 The Python SDK is included in `requirements.txt` and `pyproject.toml`.
 
-## Rich Menu 上傳
+## Discord DM setup
+
+This repo now includes a Discord DM user flow built on the same queue logic as LINE/Telegram.
+
+Current Discord interaction flow:
+
+- slash commands are the main entry points
+- `/register` opens a **modal** for student ID input
+- after modal submit, the flow stays **multi-step** and continues with buttons for row/seat selection
+- Discord interactions are handled by `POST /api/discord/interactions`
+
+### Register Discord slash commands
+
+After setting `DISCORD_APPLICATION_ID` and `DISCORD_BOT_TOKEN` in `.env`, register the command set with:
+
+```bash
+python scripts/register_discord_commands.py
+```
+
+This performs a bulk overwrite against the application command API for these DM-facing commands:
+
+- `/menu`
+- `/register`
+- `/join`
+- `/cancel`
+- `/status`
+- `/history`
+- `/help`
+
+### Discord deploy notes
+
+- `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID`, and `DISCORD_PUBLIC_KEY` should stay in `.env`
+- non-sensitive queue/runtime behavior still belongs in `config/queue_config.yaml`
+- if you expose Discord interactions publicly, point Discord's interaction URL to:
+  - `/api/discord/interactions`
+
 
 已提供兩套 6 格 Rich Menu 定義：
 
@@ -53,7 +88,7 @@ python scripts/upload_rich_menus.py \
 - 建立 admin / user rich menu
 - 上傳對應圖片
 - 輸出 rich menu id
-- 若加上 `--write-config`，會回寫 `queue_config.yaml` 的：
+- 若加上 `--write-config`，會回寫 `config/queue_config.yaml` 的：
   - `line_bot.admin_rich_menu_id`
   - `line_bot.user_rich_menu_id`
 
@@ -65,12 +100,12 @@ The app loads settings in this order:
 
 1. built-in defaults
 2. environment variables from `.env` / Docker `env_file`
-3. `queue_config.yaml` overrides
+3. `config/queue_config.yaml` overrides
 
 That means:
 
 - **secrets and tokens** should usually stay in `.env`
-- **non-sensitive runtime options** should usually go in `queue_config.yaml`
+- **non-sensitive runtime options** should usually go in `config/queue_config.yaml`
 - if a YAML section is left empty, defaults/env values are now preserved instead of being overwritten with `null`
 
 ### Put these in `.env`
@@ -85,10 +120,17 @@ LINE_ADMIN_RICH_MENU_PAGE2_ID=xxx
 LINE_USER_RICH_MENU_ID=xxx
 TELEGRAM_BOT_TOKEN=1234567890:your_bot_token
 TELEGRAM_WEBHOOK_SECRET=your-telegram-webhook-secret
+DISCORD_BOT_TOKEN=your-discord-bot-token
+DISCORD_APPLICATION_ID=your-discord-application-id
+DISCORD_PUBLIC_KEY=your-discord-public-key
 WEB_UI_ADMIN_TOKEN=xxx
 WEB_UI_SESSION_SECRET=xxx
 GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/google-service-account.json
 ```
+
+For local/deploy setup parity, you can copy the example file from:
+
+- `config/.env.example`
 
 Optional TTS-related environment variables can also stay in `.env` when you want deploy-time control:
 
@@ -122,9 +164,9 @@ When you provide an `.mp3` path, the called-guest dashboard announcement will re
 
 When `NEW_ORDER_ANNOUNCEMENT_TEXT` is an `.mp3` path, the dashboard new-order announcement will reuse that file as the playback audio instead of generating TTS audio.
 
-### Put these in `queue_config.yaml`
+### Put these in `config/queue_config.yaml`
 
-Use `queue_config.yaml` for non-secret app behavior, for example:
+Use `config/queue_config.yaml` for non-secret app behavior, for example:
 
 ```yaml
 server:
@@ -200,6 +242,12 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ### Recommended for Telegram webhook protection
 
 - `TELEGRAM_WEBHOOK_SECRET`
+
+### Optional for Discord bot
+
+- `DISCORD_BOT_TOKEN`
+- `DISCORD_APPLICATION_ID`
+- `DISCORD_PUBLIC_KEY`
 
 ### Recommended for dashboard login
 
@@ -336,7 +384,7 @@ queue-linebot/
 ├── tests/              # Unit/integration tests
 ├── main.py             # FastAPI entry point
 ├── requirements.txt    # Python dependencies
-└── queue_config.yaml   # Runtime config sample
+└── config/queue_config.yaml   # Runtime config sample
 ```
 
 ## Command interface

@@ -5,12 +5,13 @@ services:
     restart: unless-stopped
     environment:
       - TZ=Asia/Taipei
+      # Secrets/tokens stay in .env (LINE / Telegram / Discord / dashboard)
     env_file: .env
     ports:
       - "8000:8000"
     volumes:
       - ./queue.db:/app/queue.db
-      - ./queue_config.yaml:/app/queue_config.yaml
+      - ./config/queue_config.yaml:/app/config/queue_config.yaml
       - ./logs:/app/logs
       - ./rich_menus:/app/rich_menus
       - ./dashboard_layout:/app/dashboard_layout

@@ -97,6 +97,9 @@ class QueueManager:
 
         self.db.log_event("serve", head.user_id, head.queue_type)
 
+        if self.notifier:
+            self.notifier.notify_served(head.user_id, served.queue_number)
+
         return {"status": "served", "id": head.user_id, "queue_number": served.queue_number}
 
     def serve_specific(self, user_id: str) -> dict:
@@ -110,6 +113,9 @@ class QueueManager:
             return {"status": "error", "message": "該使用者目前不在隊列中。"}
 
         self.db.log_event("serve", valid_id, served.queue_type)
+
+        if self.notifier:
+            self.notifier.notify_served(valid_id, served.queue_number)
 
         return {"status": "served", "id": valid_id, "queue_number": served.queue_number}
 
