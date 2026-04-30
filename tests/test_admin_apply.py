@@ -38,6 +38,16 @@ class TestAdminApplicationsDB:
         result = db_manager.approve_admin_application("Uuser123", "Uadmin001")
         assert result["status"] == "success"
 
+    def test_approved_admin_reregister_keeps_admin_role(self, db_manager):
+        db_manager.add_admin_application("Uuser123", "John")
+        db_manager.approve_admin_application("Uuser123", "Uadmin001")
+
+        profile = db_manager.upsert_user_profile("Uuser123", "B12345678", location="A-1")
+
+        assert profile.role == "admin"
+        assert profile.display_name == "B12345678"
+        assert profile.location == "A-1"
+
     def test_approve_nonexistent(self, db_manager):
         """Approving non-existent application should fail."""
         result = db_manager.approve_admin_application("Unonexistent", "Uadmin001")
