@@ -10,7 +10,8 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Iterable, List, Optional
 
-from .models import QueueEntry, VipPurchase, QueueEvent, UserProfile
+from .models import QueueEntry, VipPurchase, QueueEvent, UserProfile, AdminNotificationPreference
+from .time_utils import now_in_taipei
 
 
 class DatabaseManager:
@@ -100,6 +101,7 @@ class DatabaseManager:
         self._migrate_queues_remove_user_unique()
         self._migrate_user_profiles_add_location()
         self._migrate_admin_applications()
+        self._migrate_admin_notification_preferences()
 
     def _migrate_queues_remove_user_unique(self) -> None:
         """Remove legacy UNIQUE constraint on queues.user_id so users can rejoin later."""
@@ -166,6 +168,30 @@ class DatabaseManager:
             """)
             conn.commit()
 
+    def _migrate_admin_notification_preferences(self) -> None:
+        """Ensure per-admin Telegram notification preference table exists."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'admin_notification_preferences'"
+            ).fetchone()
+            if row is not None:
+                return
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS admin_notification_preferences (
+                    user_id TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, category)
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_admin_notify_category_enabled
+                ON admin_notification_preferences(category, enabled)
+            """)
+            conn.commit()
+
     def get_config(self, key: str) -> Optional[str]:
         """Get a config value by key."""
         with self._connection() as conn:
@@ -224,7 +250,7 @@ class DatabaseManager:
                 (queue_type,),
             ).fetchone()
             queue_number = row["next_num"]
-            join_time = datetime.now().isoformat()
+            join_time = now_in_taipei().isoformat()
             try:
                 conn.execute(
                     "INSERT INTO queues (user_id, queue_type, queue_number, join_time) "
@@ -268,7 +294,7 @@ class DatabaseManager:
             ).fetchone()
             if row is None:
                 return None
-            cancel_time = datetime.now().isoformat()
+            cancel_time = now_in_taipei().isoformat()
             conn.execute(
                 "UPDATE queues SET cancel_time = ?, served = 1 WHERE user_id = ?",
                 (cancel_time, user_id),
@@ -292,7 +318,7 @@ class DatabaseManager:
             ).fetchone()
             if row is None:
                 return None
-            served_time = datetime.now().isoformat()
+            served_time = now_in_taipei().isoformat()
             conn.execute(
                 "UPDATE queues SET served = 1, served_time = ? WHERE user_id = ?",
                 (served_time, user_id),
@@ -384,7 +410,10 @@ class DatabaseManager:
                 "display_name = excluded.display_name, "
                 "location = CASE WHEN excluded.location != '' THEN excluded.location ELSE user_profiles.location END, "
                 "verified = CASE WHEN excluded.verified = 1 THEN 1 ELSE user_profiles.verified END, "
-                "role = CASE WHEN excluded.role != '' THEN excluded.role ELSE user_profiles.role END, "
+                "role = CASE "
+                "WHEN user_profiles.role = 'admin' THEN 'admin' "
+                "WHEN excluded.role != '' THEN excluded.role "
+                "ELSE user_profiles.role END, "
                 "updated_at = excluded.updated_at",
                 (user_id, display_name, location, 1 if verified else 0, role, now, now),
             )
@@ -561,7 +590,7 @@ class DatabaseManager:
             ).fetchone()
             if row is None:
                 return {"status": "error", "message": "Application not found or already processed."}
-            now = datetime.now().isoformat()
+            now = now_in_taipei().isoformat()
             conn.execute(
                 "UPDATE admin_applications SET status = 'approved', reviewed_by = ?, reviewed_at = ? WHERE user_id = ?",
                 (reviewed_by, now, user_id),
@@ -580,7 +609,7 @@ class DatabaseManager:
             ).fetchone()
             if row is None:
                 return {"status": "error", "message": "Application not found or already processed."}
-            now = datetime.now().isoformat()
+            now = now_in_taipei().isoformat()
             conn.execute(
                 "UPDATE admin_applications SET status = 'rejected', reviewed_by = ?, reviewed_at = ? WHERE user_id = ?",
                 (reviewed_by, now, user_id),
@@ -601,6 +630,63 @@ class DatabaseManager:
             for p in profiles
             if getattr(p, "role", "") == "admin"
         ]
+
+    def get_admin_notification_preferences(self, user_id: str) -> dict[str, bool]:
+        """Get all Telegram notification preferences for one admin.
+
+        Missing categories default to False.
+        """
+        from services.telegram_admin_notifications import TELEGRAM_NOTIFICATION_CATEGORIES
+
+        prefs = {category: False for category in TELEGRAM_NOTIFICATION_CATEGORIES}
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT category, enabled FROM admin_notification_preferences WHERE user_id = ?",
+                (user_id,),
+            ).fetchall()
+        for row in rows:
+            category = row["category"]
+            if category in prefs:
+                prefs[category] = bool(row["enabled"])
+        return prefs
+
+    def set_admin_notification_preference(self, user_id: str, category: str, enabled: bool) -> AdminNotificationPreference:
+        """Upsert one Telegram notification preference for an admin."""
+        from services.telegram_admin_notifications import TELEGRAM_NOTIFICATION_CATEGORIES
+
+        if category not in TELEGRAM_NOTIFICATION_CATEGORIES:
+            raise ValueError(f"Unknown notification category: {category}")
+        now = datetime.now().isoformat(timespec="microseconds")
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO admin_notification_preferences (user_id, category, enabled, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(user_id, category) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at",
+                (user_id, category, 1 if enabled else 0, now, now),
+            )
+            conn.commit()
+        return AdminNotificationPreference(user_id=user_id, category=category, enabled=enabled, created_at=now, updated_at=now)
+
+    def set_all_admin_notification_preferences(self, user_id: str, enabled: bool) -> dict[str, bool]:
+        """Set every Telegram notification category for one admin."""
+        from services.telegram_admin_notifications import TELEGRAM_NOTIFICATION_CATEGORIES
+
+        for category in TELEGRAM_NOTIFICATION_CATEGORIES:
+            self.set_admin_notification_preference(user_id, category, enabled)
+        return self.get_admin_notification_preferences(user_id)
+
+    def get_admins_to_notify(self, category: str) -> list[str]:
+        """Return admin user_ids that enabled the given Telegram notification category."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT p.user_id "
+                "FROM admin_notification_preferences p "
+                "JOIN user_profiles u ON u.user_id = p.user_id "
+                "WHERE p.category = ? AND p.enabled = 1 AND u.role = 'admin' "
+                "ORDER BY p.user_id ASC",
+                (category,),
+            ).fetchall()
+        return [row["user_id"] for row in rows]
 
     def get_event_history(self, user_id: str, limit: int = 20) -> list[QueueEvent]:
         """Get queue event history for a user, newest first."""
