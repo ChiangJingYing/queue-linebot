@@ -735,7 +735,7 @@ python scripts/upload_rich_menus.py \
 | `/history` 查看個人排隊歷史 | ✅ | ✅ | ✅ |
 | `/help` 查看說明 | ✅ | ✅ | ✅ |
 | `/menu` 顯示常用功能選單 | ❌ | ✅ | ✅ |
-| 可收到「輪到你了」叫號推播 | ✅ | ✅ | ✅ |
+| 可收到「輪到你了」叫號推播 | ✅（因爲付費功能暫不啟用 | ✅ | ✅ |
 | 註冊流程互動方式 | 文字輸入 + quick reply | 文字輸入 + inline keyboard / reply keyboard | modal + buttons |
 | 取消排隊二次確認 | quick reply | inline keyboard | buttons |
 
