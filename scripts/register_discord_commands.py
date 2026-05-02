@@ -12,26 +12,65 @@ DISCORD_API_BASE = "https://discord.com/api/v10"
 
 
 def build_discord_command_payloads() -> list[dict]:
-    commands = [
-        ("menu", "顯示常用功能按鈕選單"),
-        ("register", "開始設定學號與座位資料"),
-        ("join", "加入一般排隊隊列"),
-        ("cancel", "取消目前排隊"),
-        ("status", "查看目前排隊狀態"),
-        ("history", "查看個人排隊歷史"),
-        ("help", "顯示 Discord 隊列指令說明"),
-    ]
-    return [
+    payloads = [
         {
-            "name": name,
+            "name": "menu",
             "type": 1,
-            "description": description,
+            "description": "顯示常用功能按鈕選單",
             "dm_permission": True,
             "contexts": [1, 2],
             "integration_types": [1],
-        }
-        for name, description in commands
+        },
+        {
+            "name": "register",
+            "type": 1,
+            "description": "開始設定學號與座位資料",
+            "dm_permission": True,
+            "contexts": [1, 2],
+            "integration_types": [1],
+        },
+        {
+            "name": "join",
+            "type": 1,
+            "description": "加入一般排隊隊列",
+            "dm_permission": True,
+            "contexts": [1, 2],
+            "integration_types": [1],
+        },
+        {
+            "name": "cancel",
+            "type": 1,
+            "description": "取消目前排隊",
+            "dm_permission": True,
+            "contexts": [1, 2],
+            "integration_types": [1],
+        },
+        {
+            "name": "status",
+            "type": 1,
+            "description": "查看目前排隊狀態",
+            "dm_permission": True,
+            "contexts": [1, 2],
+            "integration_types": [1],
+        },
+        {
+            "name": "history",
+            "type": 1,
+            "description": "查看個人排隊歷史",
+            "dm_permission": True,
+            "contexts": [1, 2],
+            "integration_types": [1],
+        },
+        {
+            "name": "help",
+            "type": 1,
+            "description": "顯示 Discord 隊列指令說明",
+            "dm_permission": True,
+            "contexts": [1, 2],
+            "integration_types": [1],
+        },
     ]
+    return payloads
 
 
 def register_discord_commands(*, application_id: str, bot_token: str) -> dict:

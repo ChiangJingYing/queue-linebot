@@ -331,6 +331,40 @@ def test_discord_interactions_handles_application_command(tmp_path):
     assert response.json()["data"]["flags"] == 64
 
 
+def test_discord_interactions_handles_application_command_options(tmp_path):
+    qm = _setup_runtime(tmp_path)
+    qm.register_name("45678", "B12345678", location="A-1")
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ).hex()
+    main.DISCORD_PUBLIC_KEY = public_key
+    client = TestClient(main.app)
+    payload = {
+        "type": 2,
+        "data": {
+            "name": "join",
+            "options": [
+                {"name": "queue_type", "type": 3, "value": "vip"},
+            ],
+        },
+        "member": {"user": {"id": "45678"}},
+    }
+    body = json.dumps(payload).encode("utf-8")
+
+    response = client.post(
+        "/api/discord/interactions",
+        content=body,
+        headers=_sign_discord_payload(private_key, body),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["type"] == 4
+    assert "尚未找到 VIP 購買紀錄" in response.json()["data"]["content"]
+    assert response.json()["data"]["flags"] == 64
+
+
 def test_discord_interactions_returns_register_modal_for_command(tmp_path):
     _setup_runtime(tmp_path)
     private_key = Ed25519PrivateKey.generate()

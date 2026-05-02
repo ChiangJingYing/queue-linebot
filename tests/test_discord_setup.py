@@ -26,6 +26,9 @@ def test_build_discord_command_payloads_contains_expected_user_commands():
     assert all(item["dm_permission"] is True for item in payloads)
     assert all(item["contexts"] == [1, 2] for item in payloads)
 
+    join_payload = next(item for item in payloads if item["name"] == "join")
+    assert "options" not in join_payload
+
 
 
 def test_register_discord_commands_sends_bulk_overwrite_request(monkeypatch):

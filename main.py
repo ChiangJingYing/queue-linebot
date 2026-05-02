@@ -913,6 +913,22 @@ def _discord_response_message(result: dict, *, ephemeral: bool = False) -> dict:
     return {"type": 4, "data": data}
 
 
+def _flatten_discord_command_options(options: list[dict] | None) -> list[str]:
+    flattened: list[str] = []
+    for option in options or []:
+        if not isinstance(option, dict):
+            continue
+        value = option.get("value")
+        if value is not None:
+            text = str(value).strip()
+            if text:
+                flattened.append(text)
+        nested = option.get("options")
+        if isinstance(nested, list):
+            flattened.extend(_flatten_discord_command_options(nested))
+    return flattened
+
+
 def _extract_discord_input(payload: dict) -> tuple[str, str] | None:
     interaction_type = payload.get("type")
     if interaction_type == 2:
@@ -921,8 +937,10 @@ def _extract_discord_input(payload: dict) -> tuple[str, str] | None:
         user_id = str(user.get("id") or "").strip()
         data = payload.get("data") or {}
         command_name = str(data.get("name") or "").strip()
+        options = _flatten_discord_command_options(data.get("options"))
         if user_id and command_name:
-            return user_id, f"/{command_name}"
+            suffix = f" {' '.join(options)}" if options else ""
+            return user_id, f"/{command_name}{suffix}"
         return None
 
     if interaction_type == 3:
