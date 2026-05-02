@@ -89,6 +89,70 @@ def test_handle_history_returns_user_history(tmp_path):
     assert "cancelled" in text
 
 
+def test_cancel_requires_double_confirmation_when_queue_closed(tmp_path):
+    db = DatabaseManager(str(tmp_path / "cancel-closed.db"))
+    qm = QueueManager(db)
+    qm.register_name("alice", "Alice", location="A-1")
+    qm.join("alice", "regular")
+    qm.set_queue_enabled(False)
+    handler = LineBotHandler(queue_manager=qm)
+
+    first = handler.handle_event(make_event("/cancel", user_id="alice", reply_token="r1"))
+
+    assert "當前隊列已關閉，確定要放棄嗎" in first[0]["text"]
+    first_qr = first[0].get("quickReply", {}).get("items", [])
+    assert len(first_qr) == 2
+    assert first_qr[0]["action"]["label"] == "確認放棄"
+    assert first_qr[0]["action"]["text"] == "確認放棄"
+    assert first_qr[1]["action"]["label"] == "我在努力看看"
+    assert first_qr[1]["action"]["text"] == "取消放棄"
+    assert qm.get_user_position("alice") == 1
+
+    second = handler.handle_event(make_event("確認放棄", user_id="alice", reply_token="r2"))
+
+    assert second[0]["text"] == "您確定要放棄嗎？"
+    second_qr = second[0].get("quickReply", {}).get("items", [])
+    assert len(second_qr) == 2
+    assert second_qr[0]["action"]["label"] == "確認放棄"
+    assert second_qr[0]["action"]["text"] == "確認放棄"
+    assert second_qr[1]["action"]["label"] == "我在努力看看"
+    assert second_qr[1]["action"]["text"] == "取消放棄"
+    assert qm.get_user_position("alice") == 1
+
+    final = handler.handle_event(make_event("確認放棄", user_id="alice", reply_token="r3"))
+
+    assert "已取消排隊" in final[0]["text"]
+    assert qm.get_user_position("alice") is None
+
+
+def test_cancel_closed_queue_can_be_aborted_without_leaving_queue(tmp_path):
+    db = DatabaseManager(str(tmp_path / "cancel-abort.db"))
+    qm = QueueManager(db)
+    qm.register_name("alice", "Alice", location="A-1")
+    qm.join("alice", "regular")
+    qm.set_queue_enabled(False)
+    handler = LineBotHandler(queue_manager=qm)
+
+    handler.handle_event(make_event("/cancel", user_id="alice", reply_token="r1"))
+    abort_reply = handler.handle_event(make_event("取消放棄", user_id="alice", reply_token="r2"))
+
+    assert abort_reply[0]["text"] == "好的，已取消放棄"
+    assert qm.get_user_position("alice") == 1
+
+
+def test_cancel_when_queue_open_still_cancels_immediately(tmp_path):
+    db = DatabaseManager(str(tmp_path / "cancel-open.db"))
+    qm = QueueManager(db)
+    qm.register_name("alice", "Alice", location="A-1")
+    qm.join("alice", "regular")
+    handler = LineBotHandler(queue_manager=qm)
+
+    result = handler.handle_event(make_event("/cancel", user_id="alice"))
+
+    assert "已取消排隊" in result[0]["text"]
+    assert qm.get_user_position("alice") is None
+
+
 
 def test_handle_history_returns_empty_message_when_no_history(tmp_path):
     db = DatabaseManager(str(tmp_path / "handler.db"))
@@ -408,6 +472,158 @@ def test_admin_serve_next_uses_display_name_and_location(tmp_path):
     assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
 
 
+
+def test_admin_serve_next_is_blocked_during_cooldown(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-next-cooldown.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"], admin_serve_cooldown_seconds=3)
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.register_name("bob", "B23456789", location="A-2")
+    qm.join("alice", "regular")
+    qm.join("bob", "regular")
+
+    handler._admin_serve_cooldown_clock = lambda: 100.0
+
+    first = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+    handler._admin_serve_cooldown_clock = lambda: 101.0
+    second = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert second[0]["text"] == "⚠️ 剛剛已叫號：B12345678（A-1），請稍候再試，避免重複叫號。"
+    assert [entry.user_id for entry in qm.get_queue()] == ["bob"]
+
+
+
+def test_admin_serve_specific_shares_same_cooldown_guard(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-specific-cooldown.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"], admin_serve_cooldown_seconds=3)
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.register_name("bob", "B23456789", location="A-2")
+    qm.join("alice", "regular")
+    qm.join("bob", "regular")
+
+    handler._admin_serve_cooldown_clock = lambda: 200.0
+
+    first = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+    handler._admin_serve_cooldown_clock = lambda: 201.0
+    second = handler.handle_event(make_event("/admin/serve bob", user_id="admin"))
+
+    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert second[0]["text"] == "⚠️ 剛剛已叫號：B12345678（A-1），請稍候再試，避免重複叫號。"
+    assert [entry.user_id for entry in qm.get_queue()] == ["bob"]
+
+
+
+def test_admin_serve_is_blocked_while_another_serve_is_in_progress(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-lock.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.join("alice", "regular")
+
+    handler._admin_serve_lock.acquire()
+    try:
+        reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+    finally:
+        handler._admin_serve_lock.release()
+
+    assert reply[0]["text"] == "⚠️ 叫號進行中，請勿重複操作。"
+    assert [entry.user_id for entry in qm.get_queue()] == ["alice"]
+
+
+
+def test_admin_serve_cooldown_expires_and_next_serve_succeeds(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-cooldown-expire.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"], admin_serve_cooldown_seconds=3)
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.register_name("bob", "B23456789", location="A-2")
+    qm.join("alice", "regular")
+    qm.join("bob", "regular")
+
+    handler._admin_serve_cooldown_clock = lambda: 300.0
+    first = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    handler._admin_serve_cooldown_clock = lambda: 304.0
+    second = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert second[0]["text"] == "✅ 已叫號：B23456789（A-2）"
+    assert qm.get_queue() == []
+
+
+
+def test_admin_serve_failure_does_not_start_cooldown(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-failure-no-cooldown.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"], admin_serve_cooldown_seconds=3)
+
+    handler._admin_serve_cooldown_clock = lambda: 400.0
+    first = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.join("alice", "regular")
+
+    handler._admin_serve_cooldown_clock = lambda: 401.0
+    second = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert first[0]["text"] == "❌ 錯誤：目前隊列是空的。"
+    assert second[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+
+
+
+class BlockingQueueManager(QueueManager):
+    def __init__(self, db, gate):
+        super().__init__(db)
+        self.gate = gate
+
+    def serve_next(self) -> dict:
+        self.gate.wait(timeout=2)
+        return super().serve_next()
+
+
+
+def test_admin_serve_concurrent_requests_only_serve_one_user(tmp_path):
+    import threading
+
+    db = DatabaseManager(str(tmp_path / "serve-concurrent.db"))
+    gate = threading.Event()
+    qm = BlockingQueueManager(db, gate)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"], admin_serve_cooldown_seconds=0)
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.register_name("bob", "B23456789", location="A-2")
+    qm.join("alice", "regular")
+    qm.join("bob", "regular")
+
+    replies = []
+
+    def run_first():
+        replies.append(("first", handler.handle_event(make_event("/admin/serve", user_id="admin", reply_token="r1"))))
+
+    t1 = threading.Thread(target=run_first)
+    t1.start()
+
+    # Let the first request enter serve_next() and hold the lock.
+    import time
+    time.sleep(0.05)
+
+    second = handler.handle_event(make_event("/admin/serve", user_id="admin", reply_token="r2"))
+    gate.set()
+    t1.join(timeout=2)
+
+    first_reply = dict(replies)["first"]
+    assert first_reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert second[0]["text"] == "⚠️ 叫號進行中，請勿重複操作。"
+    assert [entry.user_id for entry in qm.get_queue()] == ["bob"]
+
+
+
 def test_admin_serve_specific_uses_display_name_and_location(tmp_path):
     db = DatabaseManager(str(tmp_path / "serve-specific.db"))
     qm = QueueManager(db)
@@ -419,6 +635,214 @@ def test_admin_serve_specific_uses_display_name_and_location(tmp_path):
     reply = handler.handle_event(make_event("/admin/serve alice", user_id="admin"))
 
     assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+
+
+class FakeAnnouncementService:
+    def __init__(self):
+        self.calls = []
+
+    def announce_called_guest(self, *, display_name: str):
+        self.calls.append(("called_guest", display_name))
+        return {
+            "status": "ok",
+            "text": f"來賓 {display_name} 請準備demo",
+            "audioUrl": "/dashboard/audio/fake.mp3",
+        }
+
+    def announce_new_order(self, *, text: str):
+        self.calls.append(("new_order", text))
+        return {
+            "status": "ok",
+            "text": text,
+            "audioUrl": "/dashboard/audio/new-order.mp3",
+        }
+
+
+def test_admin_serve_next_sends_discord_dm_to_called_user(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-next-discord.dm.db"))
+    qm = QueueManager(db)
+    sent = []
+
+    class SpyNotifier:
+        def notify_served(self, user_id: str, queue_number: int):
+            sent.append((user_id, queue_number))
+            return "ok"
+
+    qm.notifier = SpyNotifier()
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+    )
+
+    qm.register_name("discord_user_1", "110316888", location="A-1")
+    qm.join("discord_user_1", "regular")
+
+    reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）"
+    assert sent == [("discord_user_1", 1)]
+
+
+def test_admin_serve_next_creates_dashboard_announcement_with_display_name(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-next-announcement.db"))
+    qm = QueueManager(db)
+    announcement_service = FakeAnnouncementService()
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+        announcement_service=announcement_service,
+    )
+
+    qm.register_name("alice", "110316888", location="A-1")
+    qm.join("alice", "regular")
+
+    reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）"
+    assert announcement_service.calls == [("called_guest", "110316888")]
+
+
+def test_admin_serve_specific_creates_dashboard_announcement_with_display_name(tmp_path):
+    db = DatabaseManager(str(tmp_path / "serve-specific-announcement.db"))
+    qm = QueueManager(db)
+    announcement_service = FakeAnnouncementService()
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+        announcement_service=announcement_service,
+    )
+
+    qm.register_name("alice", "110316888", location="A-1")
+    qm.join("alice", "regular")
+
+    reply = handler.handle_event(make_event("/admin/serve alice", user_id="admin"))
+
+    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）"
+    assert announcement_service.calls == [("called_guest", "110316888")]
+
+
+def test_join_after_idle_empty_queue_announces_new_order(tmp_path):
+    db = DatabaseManager(str(tmp_path / "idle-new-order.db"))
+    qm = QueueManager(db)
+    announcement_service = FakeAnnouncementService()
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        announcement_service=announcement_service,
+        new_order_idle_seconds=300,
+        new_order_announcement_text="您有新訂單",
+    )
+
+    qm.register_name("alice", "Alice", location="A-1")
+    handler._new_order_last_joined_at = datetime.now() - timedelta(minutes=6)
+
+    reply = handler.handle_event(make_event("/join", user_id="alice"))
+
+    assert "加入隊列成功" in reply[0]["text"]
+    assert announcement_service.calls == [("new_order", "您有新訂單")]
+
+
+
+def test_join_after_admin_clear_announces_new_order_immediately(tmp_path):
+    db = DatabaseManager(str(tmp_path / "clear-new-order.db"))
+    qm = QueueManager(db)
+    announcement_service = FakeAnnouncementService()
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+        announcement_service=announcement_service,
+        new_order_idle_seconds=300,
+        new_order_announcement_text="您有新訂單",
+    )
+
+    qm.register_name("alice", "Alice", location="A-1")
+    qm.join("someone", "regular")
+
+    clear_reply = handler.handle_event(make_event("/admin/clear", user_id="admin"))
+    qm.register_name("alice", "Alice", location="A-1")
+    join_reply = handler.handle_event(make_event("/join", user_id="alice"))
+
+    assert "已清空全部隊列" in clear_reply[0]["text"]
+    assert "加入隊列成功" in join_reply[0]["text"]
+    assert announcement_service.calls == [("new_order", "您有新訂單")]
+
+
+def test_dashboard_announcement_formats_digit_only_id_for_tts(tmp_path):
+    from services.dashboard_announcement import DashboardAnnouncementService
+
+    class CapturingTTS:
+        def __init__(self):
+            self.calls = []
+
+        def synthesize(self, text: str) -> bytes:
+            self.calls.append(text)
+            return b""
+
+    tts = CapturingTTS()
+    service = DashboardAnnouncementService(root=tmp_path / "announcements", tts_service=tts)
+
+    payload = service.announce_called_guest(display_name="114205")
+
+    assert payload["text"] == "來賓 一一四二零五 請準備demo"
+    assert tts.calls == ["來賓 一一四二零五 請準備demo"]
+
+
+def test_dashboard_announcement_template_can_use_mp3_path(tmp_path):
+    from services.dashboard_announcement import DashboardAnnouncementService
+
+    class CapturingTTS:
+        def __init__(self):
+            self.calls = []
+
+        def synthesize(self, text: str) -> bytes:
+            self.calls.append(text)
+            return b"generated-audio"
+
+    mp3_path = tmp_path / "custom-audio.mp3"
+    mp3_path.write_bytes(b"custom-mp3")
+    tts = CapturingTTS()
+    service = DashboardAnnouncementService(
+        root=tmp_path / "announcements",
+        tts_service=tts,
+        announcement_template=str(mp3_path),
+    )
+
+    payload = service.announce_called_guest(display_name="114205")
+
+    assert payload["text"] == "來賓 一一四二零五 請準備demo"
+    assert payload["audioUrl"].endswith("/custom-audio.mp3")
+    assert tts.calls == []
+
+
+def test_new_order_announcement_can_use_mp3_path(tmp_path):
+    from services.dashboard_announcement import DashboardAnnouncementService
+
+    class CapturingTTS:
+        def __init__(self):
+            self.calls = []
+
+        def synthesize(self, text: str) -> bytes:
+            self.calls.append(text)
+            return b"generated-audio"
+
+    mp3_path = tmp_path / "new-order.mp3"
+    mp3_path.write_bytes(b"new-order-mp3")
+    tts = CapturingTTS()
+    service = DashboardAnnouncementService(
+        root=tmp_path / "announcements",
+        tts_service=tts,
+        new_order_announcement_text=str(mp3_path),
+    )
+
+    payload = service.announce_new_order()
+
+    assert payload["text"] == "您有新訂單"
+    assert payload["audioUrl"].endswith("/new-order.mp3")
+    assert tts.calls == []
 
 
 def test_admin_ping_next_user(tmp_path):

@@ -61,3 +61,20 @@ def test_dashboard_data_includes_active_queue_list(client, db_manager):
     assert active_queue[0]["location"] == ALICE_LOCATION
     assert active_queue[1]["user_id"] == "bob"
     assert active_queue[1]["queue_type"] == "vip"
+
+
+def test_dashboard_data_formats_times_in_utc_plus_8(client, db_manager):
+    db_manager.upsert_user_profile("alice", "B12345678", location=ALICE_LOCATION, role="user")
+    entry = db_manager.join_queue("alice", "regular")
+    with db_manager._connection() as conn:
+        conn.execute(
+            "UPDATE queues SET join_time = ? WHERE id = ?",
+            ("2026-04-29T06:30:00+00:00", entry.id or 1),
+        )
+        conn.commit()
+
+    response = client.get("/dashboard/data")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["active_queue"][0]["join_time"] == "2026-04-29 14:30"

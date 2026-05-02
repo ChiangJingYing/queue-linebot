@@ -202,7 +202,26 @@ class TestQueueManagerAdditional:
 
         assert result["removed_count"] == 1
         assert result["cleared_profiles_user"] == 1
-        assert db.get_user_profile("alice") is None    
+        assert db.get_user_profile("alice") is None
+
+    def test_clear_all_queue_keeps_admin_role_profiles(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "clear-all-admins.db"))
+        queue_manager = QueueManager(db)
+        db.upsert_user_profile("admin_a", "管理員甲", location="A-9", verified=True, role="admin")
+        db.upsert_user_profile("user_a", "使用者甲", location="A-1", verified=True, role="user")
+        queue_manager.join("user_a", "regular")
+
+        result = queue_manager.clear_all_queue()
+
+        assert result["removed_count"] == 1
+        assert result["cleared_profiles_user"] == 1
+        assert result["kept_admin_profiles"] == 1
+        admin_profile = db.get_user_profile("admin_a")
+        assert admin_profile is not None
+        assert admin_profile.role == "admin"
+        assert admin_profile.display_name == ""
+        assert admin_profile.location == ""
+        assert admin_profile.verified == 0
 
     def test_ping_user_targets_queue_head_when_missing_id(self, tmp_path):
         db = DatabaseManager(str(tmp_path / "ping-user.db"))

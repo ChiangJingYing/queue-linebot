@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +16,14 @@ class Notifier:
         channel_secret: str = "",
         channel_access_token: str = "",
         admin_rich_menu_page2_id: str = "",
+        discord_sender: Callable[[str, str], None] | None = None,
+        db: object | None = None,
     ) -> None:
         self.channel_secret = channel_secret
         self.channel_access_token = channel_access_token
         self.admin_rich_menu_page2_id = admin_rich_menu_page2_id
+        self.discord_sender = discord_sender
+        self.db = db
 
     def push(self, user_id: str, message: str) -> str:
         """Send a LINE push message."""
@@ -71,8 +76,23 @@ class Notifier:
 
         return f"已為 {user_id} 指定 Rich Menu：{rich_menu_id}"
 
+    def _is_discord_user(self, user_id: str) -> bool:
+        if self.db is None:
+            return False
+        try:
+            return (self.db.get_config(f"discord_user:{user_id}") or "").strip().lower() in {"1", "true", "yes", "discord"}
+        except Exception:
+            return False
+
     def notify_user(self, user_id: str, message: str) -> str:
         """Send push notification to user."""
+        if self.discord_sender is not None and self._is_discord_user(user_id):
+            try:
+                self.discord_sender(user_id, message)
+                return f"已推送給 {user_id}：{message}"
+            except Exception as exc:
+                logger.exception("Discord 推播失敗 user_id=%s", user_id)
+                return f"推播失敗給 {user_id}：{exc}"
         return self.push(user_id, message)
 
     def notify_served(self, user_id: str, queue_number: int) -> str:

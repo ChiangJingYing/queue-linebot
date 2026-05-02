@@ -28,7 +28,47 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Rich Menu 上傳
+### Google Cloud TTS dependency
+
+This project supports dashboard voice announcements via Google Cloud Text-to-Speech.
+The Python SDK is included in `requirements.txt` and `pyproject.toml`.
+
+## Discord DM setup
+
+This repo now includes a Discord DM user flow built on the same queue logic as LINE/Telegram.
+
+Current Discord interaction flow:
+
+- slash commands are the main entry points
+- `/register` opens a **modal** for student ID input
+- after modal submit, the flow stays **multi-step** and continues with buttons for row/seat selection
+- Discord interactions are handled by `POST /api/discord/interactions`
+
+### Register Discord slash commands
+
+After setting `DISCORD_APPLICATION_ID` and `DISCORD_BOT_TOKEN` in `.env`, register the command set with:
+
+```bash
+python scripts/register_discord_commands.py
+```
+
+This performs a bulk overwrite against the application command API for these DM-facing commands:
+
+- `/menu`
+- `/register`
+- `/join`
+- `/cancel`
+- `/status`
+- `/history`
+- `/help`
+
+### Discord deploy notes
+
+- `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID`, and `DISCORD_PUBLIC_KEY` should stay in `.env`
+- non-sensitive queue/runtime behavior still belongs in `config/queue_config.yaml`
+- if you expose Discord interactions publicly, point Discord's interaction URL to:
+  - `/api/discord/interactions`
+
 
 已提供兩套 6 格 Rich Menu 定義：
 
@@ -48,15 +88,134 @@ python scripts/upload_rich_menus.py \
 - 建立 admin / user rich menu
 - 上傳對應圖片
 - 輸出 rich menu id
-- 若加上 `--write-config`，會回寫 `queue_config.yaml` 的：
+- 若加上 `--write-config`，會回寫 `config/queue_config.yaml` 的：
   - `line_bot.admin_rich_menu_id`
   - `line_bot.user_rich_menu_id`
 
 圖片需自行準備，建議尺寸 `2500x1686`。
 
-## Running the app
+## Environment and config precedence
 
-Start the FastAPI server:
+The app loads settings in this order:
+
+1. built-in defaults
+2. environment variables from `.env` / Docker `env_file`
+3. `config/queue_config.yaml` overrides
+
+That means:
+
+- **secrets and tokens** should usually stay in `.env`
+- **non-sensitive runtime options** should usually go in `config/queue_config.yaml`
+- if a YAML section is left empty, defaults/env values are now preserved instead of being overwritten with `null`
+
+### Put these in `.env`
+
+Sensitive values and deploy-specific credentials belong in `.env`:
+
+```env
+LINE_CHANNEL_SECRET=xxx
+LINE_CHANNEL_TOKEN=xxx
+LINE_ADMIN_RICH_MENU_ID=xxx
+LINE_ADMIN_RICH_MENU_PAGE2_ID=xxx
+LINE_USER_RICH_MENU_ID=xxx
+TELEGRAM_BOT_TOKEN=1234567890:your_bot_token
+TELEGRAM_WEBHOOK_SECRET=your-telegram-webhook-secret
+DISCORD_BOT_TOKEN=your-discord-bot-token
+DISCORD_APPLICATION_ID=your-discord-application-id
+DISCORD_PUBLIC_KEY=your-discord-public-key
+WEB_UI_ADMIN_TOKEN=xxx
+WEB_UI_SESSION_SECRET=xxx
+GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/google-service-account.json
+```
+
+For local/deploy setup parity, you can copy the example file from:
+
+- `config/.env.example`
+
+Optional TTS-related environment variables can also stay in `.env` when you want deploy-time control:
+
+```env
+LINE_ADMIN_IDS=YOUR_ADMIN_USER_ID[,ANOTHER_ADMIN_USER_ID]
+GOOGLE_CLOUD_TTS_ENABLED=false
+GOOGLE_CLOUD_TTS_LANGUAGE_CODE=cmn-TW
+GOOGLE_CLOUD_TTS_VOICE_NAME=cmn-TW-Standard-A
+GOOGLE_CLOUD_TTS_AUDIO_ENCODING=MP3
+GOOGLE_CLOUD_TTS_SPEAKING_RATE=1.0
+GOOGLE_CLOUD_TTS_PITCH=0.0
+DASHBOARD_ANNOUNCEMENT_TEMPLATE=來賓 {display_name} 請準備demo
+NEW_ORDER_IDLE_SECONDS=300
+NEW_ORDER_ANNOUNCEMENT_TEXT=您有新訂單
+# or NEW_ORDER_ANNOUNCEMENT_TEXT=/app/audio/new-order.mp3
+```
+
+`LINE_ADMIN_IDS` uses comma-separated values.
+
+`DASHBOARD_ANNOUNCEMENT_TEMPLATE` now supports two modes:
+
+- text template mode: `來賓 {display_name} 請準備demo`
+- static audio mode: absolute or mounted `.mp3` path such as `/app/audio/called-guest.mp3`
+
+When you provide an `.mp3` path, the called-guest dashboard announcement will reuse that file as the playback audio instead of generating TTS audio for that event.
+
+`NEW_ORDER_ANNOUNCEMENT_TEXT` also supports two modes:
+
+- text mode: `您有新訂單`
+- static audio mode: absolute or mounted `.mp3` path such as `/app/audio/new-order.mp3`
+
+When `NEW_ORDER_ANNOUNCEMENT_TEXT` is an `.mp3` path, the dashboard new-order announcement will reuse that file as the playback audio instead of generating TTS audio.
+
+### Put these in `config/queue_config.yaml`
+
+Use `config/queue_config.yaml` for non-secret app behavior, for example:
+
+```yaml
+server:
+  host: 0.0.0.0
+  port: 8000
+
+queue:
+  max_capacity: 50
+  timeout_minutes: 30
+  timeout_action: remove
+
+vip:
+  enabled: true
+  coffee_price: 60
+  coffee_url: https://buymeacoffee.com/yourname
+
+registration:
+  location_options:
+    '1': ['1', '2', '3']
+    '2': ['1', '2', '3', '4']
+
+web_ui:
+  protect_read_routes: false
+  allow_query_token: false
+  session_cookie_name: queue_admin_session
+```
+
+### Important YAML note
+
+If you want to override only one nested key, keep the indentation under the parent section:
+
+```yaml
+line_bot:
+  admin_ids:
+    - YOUR_ADMIN_USER_ID
+```
+
+This is correct and keeps other `line_bot` values from `.env` intact.
+
+Do **not** write it like this:
+
+```yaml
+line_bot:
+admin_ids:
+  - YOUR_ADMIN_USER_ID
+```
+
+That second example makes `line_bot` a null section and puts `admin_ids` at the wrong level.
+
 
 ```bash
 python main.py
@@ -68,10 +227,137 @@ Or with uvicorn directly:
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
+## Environment variables
+
+### Required for LINE bot
+
+- `LINE_CHANNEL_SECRET`
+- `LINE_CHANNEL_TOKEN`
+- `LINE_ADMIN_IDS` (comma-separated if multiple admins)
+
+### Required for Telegram bot
+
+- `TELEGRAM_BOT_TOKEN`
+
+### Recommended for Telegram webhook protection
+
+- `TELEGRAM_WEBHOOK_SECRET`
+
+### Optional for Discord bot
+
+- `DISCORD_BOT_TOKEN`
+- `DISCORD_APPLICATION_ID`
+- `DISCORD_PUBLIC_KEY`
+
+### Recommended for dashboard login
+
+- `WEB_UI_ADMIN_TOKEN`
+- `WEB_UI_SESSION_SECRET`
+
+### Optional for Google Cloud TTS dashboard announcements
+
+- `GOOGLE_CLOUD_TTS_ENABLED=true`
+- `GOOGLE_CLOUD_TTS_LANGUAGE_CODE=cmn-TW`
+- `GOOGLE_CLOUD_TTS_VOICE_NAME=cmn-TW-Standard-A`
+- `GOOGLE_CLOUD_TTS_AUDIO_ENCODING=MP3`
+- `GOOGLE_CLOUD_TTS_SPEAKING_RATE=1.0`
+- `GOOGLE_CLOUD_TTS_PITCH=0.0`
+- `DASHBOARD_ANNOUNCEMENT_TEMPLATE=來賓 {display_name} 請準備demo`
+- or `DASHBOARD_ANNOUNCEMENT_TEMPLATE=/absolute/or/mounted/path/to/custom-audio.mp3`
+- `NEW_ORDER_ANNOUNCEMENT_TEXT=您有新訂單`
+- or `NEW_ORDER_ANNOUNCEMENT_TEXT=/absolute/or/mounted/path/to/new-order.mp3`
+- `GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/google-service-account.json`
+
+### Recommended Traditional Chinese voice preset
+
+For a stable default, this repo currently recommends:
+
+- language code: `cmn-TW`
+- voice name: `cmn-TW-Standard-A`
+- audio encoding: `MP3`
+- speaking rate: `1.0`
+- pitch: `0.0`
+
+## Dashboard audio announcement flow
+
+When an admin runs:
+
+- `/admin/serve`
+- `/admin/serve [user_id]`
+
+The system now:
+
+1. serves the queue entry normally,
+2. builds an announcement text from `display_name`,
+3. stores the latest dashboard announcement payload,
+4. either generates audio through Google Cloud TTS when enabled, or reuses a configured static `.mp3` file path for called-guest/new-order announcements,
+5. exposes the audio through `/dashboard/audio/{filename}`,
+6. lets the dashboard page poll and play the latest announcement after audio is enabled in the browser.
+
+If Google Cloud credentials or SDK are missing, the queue serve flow still works and only the audio generation is skipped.
+
 Health endpoints:
 
 - `GET /`
 - `GET /health`
+
+## Telegram webhook setup
+
+The app now exposes:
+
+- `POST /api/telegram/webhook`
+
+Expected configuration:
+
+- `TELEGRAM_BOT_TOKEN`: the BotFather token
+- `TELEGRAM_WEBHOOK_SECRET`: optional but recommended; if set, Telegram should send the same value in `X-Telegram-Bot-Api-Secret-Token`
+
+Example webhook registration:
+
+```bash
+curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://YOUR_DOMAIN/api/telegram/webhook",
+    "secret_token": "YOUR_TELEGRAM_WEBHOOK_SECRET"
+  }'
+```
+
+After webhook registration, users can talk to the bot directly in Telegram or add it to a group where it can receive normal text commands.
+
+### First-time Telegram admin onboarding
+
+1. Add your bot in Telegram.
+2. Send `/register 學號 座位` to create/update your profile.
+3. Ask an existing admin to grant your account admin role if not already set in the database.
+4. As an admin, turn on the notifications you want:
+   - `/admin/notify status`
+   - `/admin/notify all on`
+   - or per category, e.g. `/admin/notify join on`
+5. Start operating queue commands normally from Telegram.
+
+### Common Telegram commands
+
+User commands:
+
+- `/register [學號] [座位]`
+- `/join`
+- `/cancel`
+
+Admin commands:
+
+- `/admin/status`
+- `/admin/stats`
+- `/admin/history [ID]`
+- `/admin/export`
+- `/admin/clear`
+- `/admin/serve`
+- `/admin/serve [ID]`
+- `/admin/skip`
+- `/admin/vip status`
+- `/admin/vip toggle on|off`
+- `/admin/vip clear`
+
 
 ## Running tests
 
@@ -87,19 +373,77 @@ Run with coverage:
 python -m pytest tests/ -v --cov=core --cov=services
 ```
 
+Focused cross-platform parity regression:
+
+```bash
+pytest -q --no-cov \
+  tests/test_cross_platform_parity.py \
+  tests/test_handler.py \
+  tests/test_telegram_commands.py \
+  tests/test_discord_commands.py
+```
+
+The parity suite is intended to verify that shared refactors preserve the same user-visible behavior across LINE / Telegram / Discord for shared flows such as registration prerequisites, queue status wording, history empty-state messaging, and closed-queue cancel lifecycle behavior.
+
 ## Project structure
 
 ```text
 queue-linebot/
-├── bot/                # Bot command handling and push helpers
+├── bot/                # LINE-facing command handling + transport-specific reply helpers
 ├── core/               # Database, models, validation, queue manager
 ├── scheduler/          # Timeout/reminder scheduled tasks
-├── services/           # Notifier and VIP service
+├── services/           # Shared flow services, presenters, adapters, notifier, VIP service
 ├── tests/              # Unit/integration tests
 ├── main.py             # FastAPI entry point
 ├── requirements.txt    # Python dependencies
-└── queue_config.yaml   # Runtime config sample
+└── config/queue_config.yaml   # Runtime config sample
 ```
+
+## Shared architecture after the cross-platform refactor
+
+The queue bot now follows a "shared core, platform edge" structure:
+
+- **Shared business logic lives in `services/`**
+  - `services/user_flow.py` for join / cancel / status / history / help outcomes
+  - `services/register_flow.py` for multi-step register state transitions
+  - `services/register_service.py` for registration completion
+  - `services/admin_flow.py` for admin status / stats / history / queue controls / VIP operations
+  - `services/serve_flow.py` for serving queue entries
+  - `services/cancel_flow.py` for closed-queue cancel confirmation behavior
+- **Platform rendering is isolated**
+  - `services/interaction_presenters.py` builds LINE quick replies, Telegram keyboards, and Discord components
+  - `services/action_schema.py` centralizes cross-platform callback/custom-id shapes and normalization helpers
+- **Platform pending state storage is isolated**
+  - `services/pending_state_store.py` provides a shared `get / set / clear` API
+  - LINE uses in-memory `MemoryPendingStateStore`
+  - Telegram / Discord use config-backed `ConfigPendingStateStore`
+- **Platform handlers stay thin**
+  - `bot/handler*.py` handles LINE transport + reply formatting
+  - `services/telegram_commands.py` handles Telegram input normalization + markup output
+  - `services/discord_commands.py` handles Discord input normalization + component/modal output
+
+In practice, shared flows should not know whether the caller is LINE, Telegram, or Discord, and they should not know whether pending multi-step state is stored in memory or config.
+
+## Refactor audit status
+
+The cross-platform refactor tracker focused on removing duplicated queue/business logic while keeping UI differences at the edge.
+
+Completed shared layers:
+
+- shared user flow service
+- shared registration completion service
+- shared admin flow service
+- shared interaction presenter layer
+- shared pending state storage abstraction
+
+Remaining platform-specific code is intentionally limited to:
+
+- command/input normalization
+- transport-specific reply payloads
+- platform-only interaction details (LINE quick replies, Telegram inline/reply keyboards, Discord components/modals)
+- platform-specific side effects such as Telegram notification fan-out and LINE rich menu linking
+
+This means future business-rule fixes should usually land once in shared services, then render through platform adapters.
 
 ## Command interface
 

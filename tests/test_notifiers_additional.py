@@ -30,3 +30,17 @@ class TestNotifierAdditional:
 
         assert "加入隊列" in result
         assert "#4" in result
+
+    def test_notify_served_routes_to_discord_sender_for_marked_user(self, tmp_path):
+        from core.database import DatabaseManager
+
+        db = DatabaseManager(str(tmp_path / "discord-user.db"))
+        db.set_config("discord_user:discord_user_1", "1")
+        sent = []
+
+        notifier = Notifier("secret", "token", discord_sender=lambda user_id, text: sent.append((user_id, text)), db=db)
+        result = notifier.notify_served("discord_user_1", 7)
+
+        assert result == "已推送給 discord_user_1：" + sent[0][1]
+        assert sent == [("discord_user_1", sent[0][1])]
+        assert "#7" in sent[0][1]
