@@ -765,7 +765,7 @@ python scripts/upload_rich_menus.py \
 
 ### 對照表補充說明
 
-- Discord 目前只實作一般使用者 DM 流程，入口集中在 `POST /api/discord/interactions` 與 `services/discord_commands.py`。
+- Discord 目前只實作一般使用者 Discord DM 流程，入口集中在 `POST /api/discord/interactions` 與 `services/discord_commands.py`。
 - Telegram 目前同時支援一般使用者與管理員自助操作，命令與互動集中在 `services/telegram_commands.py`。
 - LINE 目前仍保有最完整的管理員命令覆蓋，主要分布在 `bot/handler_commands.py`、`bot/handler_registration.py`、`bot/handler_admin.py`。
 - `/join vip` 目前在 LINE 與 Telegram 可用；Discord 目前 README 應視為未支援，而不是推定未來一定會支援。

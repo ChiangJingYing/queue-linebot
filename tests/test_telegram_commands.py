@@ -401,6 +401,28 @@ class TestTelegramCommandService:
         assert "服務區" in sent[0][1]
 
 
+    def test_admin_serve_next_sends_telegram_message_to_called_user(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("tg_user_1", "B12345678", location="A-1", verified=True, role="user")
+        db_manager.set_config("telegram_user:tg_user_1", "1")
+
+        sent = []
+
+        def sender(user_id: str, text: str) -> None:
+            sent.append((user_id, text))
+
+        service = TelegramCommandService(db=db_manager, telegram_sender=sender)
+        service.queue_manager.join("tg_user_1", "regular")
+
+        result = service.handle_text(user_id="admin_a", text="/admin/serve")
+
+        assert result["status"] == "success"
+        assert result["message"] == "✅ 已叫號：B12345678（A-1）"
+        assert sent == [("tg_user_1", sent[0][1])]
+        assert "輪到你了" in sent[0][1]
+        assert "#1" in sent[0][1]
+        assert "服務區" in sent[0][1]
+
     def test_admin_serve_next_triggers_dashboard_announcement(self, db_manager):
         class FakeAnnouncementService:
             def __init__(self):
@@ -632,9 +654,12 @@ class TestTelegramCommandService:
 
         assert result["status"] == "success"
         assert "已跳過" in result["message"]
-        assert sent == [("admin_b", sent[0][1])]
-        assert "跳過通知" in sent[0][1]
-        assert "B12345678（A-1）" in sent[0][1]
+        assert len(sent) == 2
+        assert sent[0] == ("alice", sent[0][1])
+        assert "你已被跳過" in sent[0][1]
+        assert sent[1] == ("admin_b", sent[1][1])
+        assert "跳過通知" in sent[1][1]
+        assert "B12345678（A-1）" in sent[1][1]
 
     def test_admin_history_returns_user_events(self, db_manager):
         db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")

@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class Notifier:
-    """Sends notifications via LINE Push API."""
+    """Sends notifications via LINE Push API and platform-specific senders."""
 
     def __init__(
         self,
@@ -17,12 +17,14 @@ class Notifier:
         channel_access_token: str = "",
         admin_rich_menu_page2_id: str = "",
         discord_sender: Callable[[str, str], None] | None = None,
+        telegram_sender: Callable[[str, str], None] | None = None,
         db: object | None = None,
     ) -> None:
         self.channel_secret = channel_secret
         self.channel_access_token = channel_access_token
         self.admin_rich_menu_page2_id = admin_rich_menu_page2_id
         self.discord_sender = discord_sender
+        self.telegram_sender = telegram_sender
         self.db = db
 
     def push(self, user_id: str, message: str) -> str:
@@ -76,13 +78,19 @@ class Notifier:
 
         return f"已為 {user_id} 指定 Rich Menu：{rich_menu_id}"
 
-    def _is_discord_user(self, user_id: str) -> bool:
+    def _has_config_flag(self, key: str) -> bool:
         if self.db is None:
             return False
         try:
-            return (self.db.get_config(f"discord_user:{user_id}") or "").strip().lower() in {"1", "true", "yes", "discord"}
+            return (self.db.get_config(key) or "").strip().lower() in {"1", "true", "yes", "discord", "telegram"}
         except Exception:
             return False
+
+    def _is_discord_user(self, user_id: str) -> bool:
+        return self._has_config_flag(f"discord_user:{user_id}")
+
+    def _is_telegram_user(self, user_id: str) -> bool:
+        return self._has_config_flag(f"telegram_user:{user_id}")
 
     def notify_user(self, user_id: str, message: str) -> str:
         """Send push notification to user."""
@@ -92,6 +100,13 @@ class Notifier:
                 return f"已推送給 {user_id}：{message}"
             except Exception as exc:
                 logger.exception("Discord 推播失敗 user_id=%s", user_id)
+                return f"推播失敗給 {user_id}：{exc}"
+        if self.telegram_sender is not None and self._is_telegram_user(user_id):
+            try:
+                self.telegram_sender(user_id, message)
+                return f"已推送給 {user_id}：{message}"
+            except Exception as exc:
+                logger.exception("Telegram 推播失敗 user_id=%s", user_id)
                 return f"推播失敗給 {user_id}：{exc}"
         return self.push(user_id, message)
 

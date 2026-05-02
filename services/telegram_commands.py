@@ -27,6 +27,7 @@ from services.action_schema import (
     is_telegram_register_choice_action,
     normalize_register_choice_action,
 )
+from services.notifier import Notifier
 from services.telegram_admin_notifications import (
     TELEGRAM_NOTIFICATION_CATEGORIES,
     TelegramAdminNotificationService,
@@ -112,8 +113,11 @@ class TelegramCommandService:
         self.announcement_service = announcement_service
         if telegram_sender is not None:
             self.notification_service = TelegramAdminNotificationService(db=db, sender=telegram_sender)
+            if self.queue_manager is not None and getattr(self.queue_manager, "notifier", None) is None:
+                self.queue_manager.notifier = Notifier(telegram_sender=telegram_sender, db=db)
 
     def handle_text(self, *, user_id: str, text: str) -> dict:
+        self.db.set_config(f"telegram_user:{user_id}", "1")
         raw_text = text.strip()
         normalized_text = self._normalize_text_alias(user_id=user_id, text=raw_text)
 

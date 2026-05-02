@@ -281,7 +281,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     from apscheduler.schedulers.background import BackgroundScheduler
 
     db_manager = DatabaseManager()
-    notifier = Notifier(CHANNEL_SECRET, CHANNEL_ACCESS_TOKEN, ADMIN_RICH_MENU_PAGE2_ID, discord_sender=_send_discord_text, db=db_manager)
+    notifier = Notifier(
+        CHANNEL_SECRET,
+        CHANNEL_ACCESS_TOKEN,
+        ADMIN_RICH_MENU_PAGE2_ID,
+        discord_sender=_send_discord_text,
+        telegram_sender=_send_telegram_text,
+        db=db_manager,
+    )
     queue_manager = QueueManager(db_manager, notifier)
     vip_service = VipService(db_manager)
     tts_config = config.get("tts", {}) if isinstance(config.get("tts"), dict) else {}
@@ -844,6 +851,7 @@ async def telegram_webhook(request: Request):
             "replies_sent": 0,
         }
 
+    db_manager.set_config(f"telegram_user:{message['user_id']}", "1")
     result = telegram_command_service.handle_text(user_id=message["user_id"], text=message["text"])
     reply_message = result.get("message")
     reply_markup = _legacy_telegram_reply_markup(result.get("reply_markup"))

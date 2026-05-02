@@ -25,7 +25,14 @@ def _setup_runtime(tmp_path, location_options=None):
     db = DatabaseManager(str(tmp_path / "webhook.db"))
     qm = QueueManager(db)
     vip = VipService(db)
-    notifier = Notifier("", "", discord_sender=lambda user_id, text: None, db=db)
+
+    def _discord_sender(user_id: str, text: str) -> None:
+        return None
+
+    def _telegram_sender(user_id: str, text: str) -> None:
+        main._send_telegram_text(user_id, text)
+
+    notifier = Notifier("", "", discord_sender=_discord_sender, telegram_sender=_telegram_sender, db=db)
     handler = LineBotHandler(
         channel_secret="",
         channel_access_token="",
@@ -39,9 +46,10 @@ def _setup_runtime(tmp_path, location_options=None):
     main.db_manager = db
     main.queue_manager = qm
     main.vip_service = vip
+    qm.notifier = notifier
     main.notifier = notifier
     main.line_handler = handler
-    main.telegram_command_service = TelegramCommandService(db=db, queue_manager=qm, telegram_sender=lambda user_id, text: None)
+    main.telegram_command_service = TelegramCommandService(db=db, queue_manager=qm, telegram_sender=_telegram_sender)
     main.discord_command_service = DiscordCommandService(db=db, location_options=location_options or {"A": ["1", "2"], "B": ["1", "2"]})
     main.CHANNEL_SECRET = ""
     main.CHANNEL_ACCESS_TOKEN = ""
@@ -800,6 +808,43 @@ def test_telegram_webhook_sends_reply_keyboard_markup(tmp_path, monkeypatch):
     assert sent[0][0] == "12345"
     assert sent[0][2]["keyboard"][0][0]["text"] == "舉手"
     assert sent[0][2]["is_persistent"] is True
+
+
+def test_telegram_webhook_marks_user_and_notifier_sends_called_message_via_telegram(tmp_path, monkeypatch):
+    qm = _setup_runtime(tmp_path)
+    qm.register_name("45678", "B12345678", location="A-1")
+    sent = []
+
+    def fake_sender(chat_id: str, text: str, reply_markup=None) -> bool:
+        sent.append((chat_id, text, reply_markup))
+        return True
+
+    monkeypatch.setattr(main, "_send_telegram_text", fake_sender)
+    client = TestClient(main.app)
+
+    response = client.post(
+        "/api/telegram/webhook",
+        json={
+            "message": {
+                "message_id": 1,
+                "text": "/join",
+                "chat": {"id": 12345, "type": "private"},
+                "from": {"id": 45678, "is_bot": False, "first_name": "Alice"},
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    assert main.db_manager.get_config("telegram_user:45678") == "1"
+
+    sent.clear()
+    serve_result = qm.serve_next()
+
+    assert serve_result["status"] == "served"
+    assert sent == [("45678", sent[0][1], None)]
+    assert "輪到你了" in sent[0][1]
+    assert "#1" in sent[0][1]
+    assert "服務區" in sent[0][1]
 
 
 def test_telegram_webhook_sends_inline_keyboard_markup(tmp_path, monkeypatch):
