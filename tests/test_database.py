@@ -1,6 +1,10 @@
 """Database manager tests."""
 
+from datetime import datetime
+from datetime import timezone
+
 from core.database import DatabaseManager
+from core.time_utils import TAIPEI_TZ, format_display_time
 
 
 class TestDatabaseManager:
@@ -131,3 +135,25 @@ class TestDatabaseManager:
         assert dynamic_profile.verified == 0
 
         assert db_manager.get_user_profile("regular_user") is None
+
+    def test_format_display_time_treats_naive_timestamp_as_taipei_time(self):
+        value = "2026-04-30T10:12:00"
+
+        rendered = format_display_time(value)
+
+        assert rendered == "2026-04-30 10:12"
+
+    def test_join_queue_stores_taipei_timezone_timestamp(self, db_manager):
+        entry = db_manager.join_queue("alice", "regular")
+
+        parsed = datetime.fromisoformat(entry.join_time)
+
+        assert parsed.tzinfo is not None
+        assert parsed.utcoffset() == TAIPEI_TZ.utcoffset(None)
+
+    def test_format_display_time_converts_utc_timestamp_to_taipei_time(self):
+        value = "2026-04-30T02:12:00+00:00"
+
+        rendered = format_display_time(value)
+
+        assert rendered == "2026-04-30 10:12"

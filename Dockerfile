@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+ENV TZ=Asia/Taipei
+
 WORKDIR /app
 
 RUN pip install --no-cache-dir uv

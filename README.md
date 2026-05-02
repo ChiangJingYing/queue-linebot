@@ -83,6 +83,8 @@ LINE_CHANNEL_TOKEN=xxx
 LINE_ADMIN_RICH_MENU_ID=xxx
 LINE_ADMIN_RICH_MENU_PAGE2_ID=xxx
 LINE_USER_RICH_MENU_ID=xxx
+TELEGRAM_BOT_TOKEN=1234567890:your_bot_token
+TELEGRAM_WEBHOOK_SECRET=your-telegram-webhook-secret
 WEB_UI_ADMIN_TOKEN=xxx
 WEB_UI_SESSION_SECRET=xxx
 GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/google-service-account.json
@@ -191,6 +193,14 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 - `LINE_CHANNEL_TOKEN`
 - `LINE_ADMIN_IDS` (comma-separated if multiple admins)
 
+### Required for Telegram bot
+
+- `TELEGRAM_BOT_TOKEN`
+
+### Recommended for Telegram webhook protection
+
+- `TELEGRAM_WEBHOOK_SECRET`
+
 ### Recommended for dashboard login
 
 - `WEB_UI_ADMIN_TOKEN`
@@ -242,6 +252,64 @@ Health endpoints:
 
 - `GET /`
 - `GET /health`
+
+## Telegram webhook setup
+
+The app now exposes:
+
+- `POST /api/telegram/webhook`
+
+Expected configuration:
+
+- `TELEGRAM_BOT_TOKEN`: the BotFather token
+- `TELEGRAM_WEBHOOK_SECRET`: optional but recommended; if set, Telegram should send the same value in `X-Telegram-Bot-Api-Secret-Token`
+
+Example webhook registration:
+
+```bash
+curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://YOUR_DOMAIN/api/telegram/webhook",
+    "secret_token": "YOUR_TELEGRAM_WEBHOOK_SECRET"
+  }'
+```
+
+After webhook registration, users can talk to the bot directly in Telegram or add it to a group where it can receive normal text commands.
+
+### First-time Telegram admin onboarding
+
+1. Add your bot in Telegram.
+2. Send `/register 學號 座位` to create/update your profile.
+3. Ask an existing admin to grant your account admin role if not already set in the database.
+4. As an admin, turn on the notifications you want:
+   - `/admin/notify status`
+   - `/admin/notify all on`
+   - or per category, e.g. `/admin/notify join on`
+5. Start operating queue commands normally from Telegram.
+
+### Common Telegram commands
+
+User commands:
+
+- `/register [學號] [座位]`
+- `/join`
+- `/cancel`
+
+Admin commands:
+
+- `/admin/status`
+- `/admin/stats`
+- `/admin/history [ID]`
+- `/admin/export`
+- `/admin/clear`
+- `/admin/serve`
+- `/admin/serve [ID]`
+- `/admin/skip`
+- `/admin/vip status`
+- `/admin/vip toggle on|off`
+- `/admin/vip clear`
+
 
 ## Running tests
 

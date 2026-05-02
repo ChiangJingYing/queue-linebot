@@ -77,6 +77,10 @@ def get_defaults() -> dict:
             "admin_rich_menu_page2_id": os.getenv("LINE_ADMIN_RICH_MENU_PAGE2_ID", ""),
             "user_rich_menu_id": os.getenv("LINE_USER_RICH_MENU_ID", ""),
         },
+        "telegram_bot": {
+            "bot_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
+            "webhook_secret": os.getenv("TELEGRAM_WEBHOOK_SECRET", ""),
+        },
         "registration": {
             "location_options": {
                 "1": ["1", "2", "3"],

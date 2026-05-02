@@ -3,6 +3,8 @@ services:
     build: .
     container_name: queue-linebot
     restart: unless-stopped
+    environment:
+      - TZ=Asia/Taipei
     env_file: .env
     ports:
       - "8000:8000"

@@ -61,6 +61,17 @@ class QueueStatus:
 
 
 @dataclass
+class AdminNotificationPreference:
+    """Per-admin Telegram notification preference."""
+
+    user_id: str = ""
+    category: str = ""
+    enabled: bool = False
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
 class UserProfile:
     """Registered LINE user profile."""
 
