@@ -431,6 +431,80 @@ def test_discord_interactions_handles_modal_submit_and_followup_buttons(tmp_path
     assert response.json()["type"] == 4
     assert "請選擇您在第幾排座位" in response.json()["data"]["content"]
     assert response.json()["data"]["components"][0]["components"][0]["label"] == "A"
+    assert response.json()["data"]["components"][0]["components"][0]["style"] == 2
+
+
+def test_discord_interactions_menu_response_uses_numeric_button_styles(tmp_path):
+    _setup_runtime(tmp_path)
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ).hex()
+    main.DISCORD_PUBLIC_KEY = public_key
+    client = TestClient(main.app)
+    payload = {
+        "type": 2,
+        "data": {"name": "menu"},
+        "member": {"user": {"id": "45678"}},
+    }
+    body = json.dumps(payload).encode("utf-8")
+
+    response = client.post(
+        "/api/discord/interactions",
+        content=body,
+        headers=_sign_discord_payload(private_key, body),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["type"] == 4
+    buttons = [button for row in response.json()["data"]["components"] for button in row["components"]]
+    assert buttons[0]["label"] == "舉手"
+    assert buttons[0]["style"] == 1
+    assert all(isinstance(button["style"], int) for button in buttons)
+
+
+def test_discord_interactions_modal_submit_splits_location_buttons_into_multiple_rows(tmp_path):
+    _setup_runtime(tmp_path, location_options={str(i): ["1"] for i in range(1, 8)})
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ).hex()
+    main.DISCORD_PUBLIC_KEY = public_key
+    client = TestClient(main.app)
+    payload = {
+        "type": 5,
+        "data": {
+            "custom_id": "register:submit",
+            "components": [
+                {
+                    "components": [
+                        {
+                            "custom_id": "student_id",
+                            "value": "B12345678",
+                        }
+                    ]
+                }
+            ],
+        },
+        "member": {"user": {"id": "45678"}},
+    }
+    body = json.dumps(payload).encode("utf-8")
+
+    response = client.post(
+        "/api/discord/interactions",
+        content=body,
+        headers=_sign_discord_payload(private_key, body),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["type"] == 4
+    rows = response.json()["data"]["components"]
+    assert len(rows) == 2
+    assert [button["label"] for button in rows[0]["components"]] == ["1", "2", "3", "4", "5"]
+    assert [button["label"] for button in rows[1]["components"]] == ["6", "7"]
+    assert all(len(row["components"]) <= 5 for row in rows)
 
 
 def test_discord_interactions_rejects_invalid_signature(tmp_path):

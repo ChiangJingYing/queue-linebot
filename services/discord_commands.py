@@ -350,15 +350,6 @@ class DiscordCommandService:
             for button in build_discord_cancel_confirmation_components()[0]["components"]
         ]
 
-    def _discord_button_style(self, style: str) -> int:
-        mapping = {
-            "primary": 1,
-            "secondary": 2,
-            "success": 3,
-            "danger": 4,
-        }
-        return mapping.get(style, 2)
-
     def _get_pending_register_state(self, user_id: str) -> dict:
         return self.pending_state_store.get(user_id=user_id, flow="register")
 

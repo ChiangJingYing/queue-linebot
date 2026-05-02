@@ -17,6 +17,14 @@ from services.action_schema import (
 )
 
 
+_DISCORD_BUTTON_STYLE_MAP = {
+    "primary": 1,
+    "secondary": 2,
+    "success": 3,
+    "danger": 4,
+}
+
+
 def build_line_cancel_confirmation_quick_options() -> list[dict]:
     return [
         {"label": "確認放棄", "text": "確認放棄"},
@@ -52,8 +60,20 @@ def build_telegram_choice_markup(*, options: list[str], prefix: str) -> dict:
     return {"inline_keyboard": [row]}
 
 
+def _normalize_discord_button(button: dict) -> dict:
+    normalized = dict(button)
+    style = normalized.get("style", "secondary")
+    if isinstance(style, str):
+        normalized["style"] = _DISCORD_BUTTON_STYLE_MAP.get(style, 2)
+    elif isinstance(style, int):
+        normalized["style"] = style
+    else:
+        normalized["style"] = 2
+    return {"type": 2, **normalized}
+
+
 def build_discord_menu_components(rows: list[list[dict]]) -> list[dict]:
-    return [{"type": 1, "components": [{"type": 2, **item} for item in row]} for row in rows]
+    return [{"type": 1, "components": [_normalize_discord_button(item) for item in row]} for row in rows]
 
 
 def build_discord_cancel_confirmation_components() -> list[dict]:
@@ -67,9 +87,11 @@ def build_discord_cancel_confirmation_components() -> list[dict]:
 
 def build_discord_choice_components(*, options: list[str], prefix: str) -> list[dict]:
     if prefix == DISCORD_REGISTER_GROUP_PREFIX:
-        row = [{"label": option, "custom_id": build_discord_register_group_action(option), "style": "secondary"} for option in options]
+        buttons = [{"label": option, "custom_id": build_discord_register_group_action(option), "style": "secondary"} for option in options]
     elif prefix == DISCORD_REGISTER_ITEM_PREFIX:
-        row = [{"label": option, "custom_id": build_discord_register_item_action(option), "style": "secondary"} for option in options]
+        buttons = [{"label": option, "custom_id": build_discord_register_item_action(option), "style": "secondary"} for option in options]
     else:
-        row = [{"label": option, "custom_id": f"{prefix}{option}", "style": "secondary"} for option in options]
-    return build_discord_menu_components([row])
+        buttons = [{"label": option, "custom_id": f"{prefix}{option}", "style": "secondary"} for option in options]
+
+    rows = [buttons[index:index + 5] for index in range(0, len(buttons), 5)]
+    return build_discord_menu_components(rows)

@@ -38,6 +38,7 @@ def test_build_discord_cancel_confirmation_components_match_existing_buttons():
     row = components[0]["components"]
     assert [button["label"] for button in row] == ["確認放棄", "取消放棄"]
     assert [button["custom_id"] for button in row] == ["cancel:confirm", "cancel:abort"]
+    assert [button["style"] for button in row] == [4, 2]
 
 
 def test_build_telegram_choice_markup_uses_action_schema_builders():
@@ -64,8 +65,22 @@ def test_build_discord_choice_components_uses_action_schema_builders():
 
     assert [button["label"] for button in group_components[0]["components"]] == ["A", "B"]
     assert [button["custom_id"] for button in group_components[0]["components"]] == ["register:group:A", "register:group:B"]
+    assert [button["style"] for button in group_components[0]["components"]] == [2, 2]
     assert [button["label"] for button in item_components[0]["components"]] == ["1", "2"]
     assert [button["custom_id"] for button in item_components[0]["components"]] == ["register:item:1", "register:item:2"]
+    assert [button["style"] for button in item_components[0]["components"]] == [2, 2]
+
+
+def test_build_discord_choice_components_splits_rows_at_five_buttons():
+    components = build_discord_choice_components(
+        options=["1", "2", "3", "4", "5", "6", "7"],
+        prefix=DISCORD_REGISTER_GROUP_PREFIX,
+    )
+
+    assert len(components) == 2
+    assert [button["label"] for button in components[0]["components"]] == ["1", "2", "3", "4", "5"]
+    assert [button["label"] for button in components[1]["components"]] == ["6", "7"]
+    assert all(len(row["components"]) <= 5 for row in components)
 
 
 def test_build_telegram_reply_keyboard_markup_keeps_resize_and_persistence_flags():
@@ -91,6 +106,6 @@ def test_build_discord_menu_components_wrap_rows_into_discord_action_rows():
     components = build_discord_menu_components(rows)
 
     assert components == [
-        {"type": 1, "components": [{"type": 2, "label": "舉手", "custom_id": "menu:join", "style": "primary"}]},
-        {"type": 1, "components": [{"type": 2, "label": "放棄", "custom_id": "menu:cancel", "style": "secondary"}]},
+        {"type": 1, "components": [{"type": 2, "label": "舉手", "custom_id": "menu:join", "style": 1}]},
+        {"type": 1, "components": [{"type": 2, "label": "放棄", "custom_id": "menu:cancel", "style": 2}]},
     ]
