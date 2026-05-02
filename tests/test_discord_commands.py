@@ -87,6 +87,36 @@ class TestDiscordCommandService:
         labels = [item["label"] for row in result["components"] for item in row["components"]]
         assert labels == ["放棄", "看狀態", "看紀錄"]
 
+    def test_status_returns_total_count_when_user_not_in_queue(self, db_manager):
+        db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+        service = DiscordCommandService(db=db_manager)
+        service.handle_interaction(user_id="alice", input_value="/join")
+
+        result = service.handle_interaction(user_id="bob", input_value="/status")
+
+        assert result["status"] == "success"
+        assert result["message"] == "📊 目前有 1 人在排隊中"
+        labels = [item["label"] for row in result["components"] for item in row["components"]]
+        assert labels == ["舉手", "設定資料"]
+
+    def test_history_returns_empty_shared_message_when_no_history(self, db_manager):
+        service = DiscordCommandService(db=db_manager)
+
+        result = service.handle_interaction(user_id="alice", input_value="/history")
+
+        assert result["status"] == "success"
+        assert result["message"] == "查無排隊歷史紀錄。"
+
+    def test_help_uses_shared_message_shape(self, db_manager):
+        service = DiscordCommandService(db=db_manager)
+
+        result = service.handle_interaction(user_id="alice", input_value="/help")
+
+        assert result["status"] == "success"
+        assert "/register - 依提示完成學號與座位註冊" in result["message"]
+        assert "/menu - 顯示常用功能按鈕" in result["message"]
+        assert "管理員指令" not in result["message"]
+
     def test_status_returns_position_and_buttons(self, db_manager):
         db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
         db_manager.upsert_user_profile("bob", "B23456789", location="A-2", verified=True, role="user")

@@ -318,6 +318,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         queue_manager=queue_manager,
         telegram_sender=_send_telegram_text,
         location_options=LOCATION_OPTIONS,
+        announcement_service=dashboard_announcement_service,
     )
     discord_command_service = DiscordCommandService(
         db=db_manager,
@@ -812,7 +813,7 @@ async def discord_interactions(request: Request):
             db_manager.set_config(f"discord_channel:{user_id}", channel_id)
 
     result = discord_command_service.handle_interaction(user_id=user_id, input_value=input_value)
-    response_payload = _discord_response_message(result)
+    response_payload = _discord_response_message(result, ephemeral=payload.get("type") == 2)
     logger.info("Discord interaction user_id=%s input=%s result=%s response=%s", user_id, input_value, json.dumps(result, ensure_ascii=False)[:1000], json.dumps(response_payload, ensure_ascii=False)[:1000])
     return response_payload
 
@@ -845,7 +846,7 @@ async def telegram_webhook(request: Request):
 
     result = telegram_command_service.handle_text(user_id=message["user_id"], text=message["text"])
     reply_message = result.get("message")
-    reply_markup = result.get("reply_markup")
+    reply_markup = _legacy_telegram_reply_markup(result.get("reply_markup"))
     replies_sent = 0
     if reply_message:
         if _send_telegram_text(message["chat_id"], str(reply_message), reply_markup=reply_markup):
@@ -1099,7 +1100,43 @@ def _normalize_telegram_update(payload: dict) -> dict | None:
     }
 
 
+def _legacy_telegram_reply_markup(reply_markup: dict | None) -> dict | None:
+    if not isinstance(reply_markup, dict):
+        return reply_markup
+
+    inline_keyboard = reply_markup.get("inline_keyboard")
+    if not isinstance(inline_keyboard, list):
+        return reply_markup
+
+    legacy_rows: list[list[dict]] = []
+    changed = False
+    for row in inline_keyboard:
+        if not isinstance(row, list):
+            legacy_rows.append(row)
+            continue
+        legacy_row: list[dict] = []
+        for button in row:
+            if not isinstance(button, dict):
+                legacy_row.append(button)
+                continue
+            callback_data = button.get("callback_data")
+            if isinstance(callback_data, str):
+                if callback_data.startswith("register:group:"):
+                    callback_data = callback_data.removeprefix("register:group:")
+                    changed = True
+                elif callback_data.startswith("register:item:"):
+                    callback_data = callback_data.removeprefix("register:item:")
+                    changed = True
+            legacy_row.append({**button, **({"callback_data": callback_data} if isinstance(callback_data, str) else {})})
+        legacy_rows.append(legacy_row)
+
+    if not changed:
+        return reply_markup
+    return {**reply_markup, "inline_keyboard": legacy_rows}
+
+
 def _send_telegram_text(chat_id: str, text: str, reply_markup: dict | None = None) -> bool:
+    reply_markup = _legacy_telegram_reply_markup(reply_markup)
     if not TELEGRAM_BOT_TOKEN:
         logger.info("Telegram bot token 缺失；已產生回覆但未送出")
         return False

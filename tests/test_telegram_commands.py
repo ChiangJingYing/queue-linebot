@@ -146,6 +146,45 @@ class TestTelegramCommandService:
         assert "join" in result["message"]
         assert "cancel" in result["message"]
 
+    def test_status_reports_total_count_when_user_not_in_queue(self, db_manager):
+        db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+        service = TelegramCommandService(db=db_manager)
+        service.handle_text(user_id="alice", text="/join")
+
+        result = service.handle_text(user_id="bob", text="/status")
+
+        assert result["status"] == "success"
+        assert result["message"] == "📊 目前有 1 人在排隊中"
+
+    def test_history_returns_empty_shared_message_when_no_history(self, db_manager):
+        service = TelegramCommandService(db=db_manager)
+
+        result = service.handle_text(user_id="alice", text="/history")
+
+        assert result["status"] == "success"
+        assert result["message"] == "查無排隊歷史紀錄。"
+
+    def test_help_is_admin_only(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "Admin A", verified=True, role="admin")
+        service = TelegramCommandService(db=db_manager)
+
+        denied = service.handle_text(user_id="alice", text="/help")
+        allowed = service.handle_text(user_id="admin_a", text="/help")
+
+        assert denied == {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
+        assert allowed["status"] == "success"
+        assert "/admin/serve - 叫下一位" in allowed["message"]
+        assert "/admin/ping - 手動提醒下一位" in allowed["message"]
+        assert "/admin/status - 完整狀態" in allowed["message"]
+
+    def test_help_uses_shared_register_wording(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "Admin A", verified=True, role="admin")
+        service = TelegramCommandService(db=db_manager)
+
+        result = service.handle_text(user_id="admin_a", text="/help")
+
+        assert "/register - 依提示完成學號與座位註冊" in result["message"]
+
     def test_register_enters_interactive_flow_and_completes_with_inline_keyboards(self, db_manager):
         service = TelegramCommandService(db=db_manager, location_options={"A": ["1", "2"], "B": ["1"]})
 
@@ -157,17 +196,17 @@ class TestTelegramCommandService:
         assert step2["status"] == "pending"
         assert "請選擇您在第幾排座位" in step2["message"]
         assert step2["reply_markup"]["inline_keyboard"] == [
-            [{"text": "A", "callback_data": "A"}, {"text": "B", "callback_data": "B"}]
+            [{"text": "A", "callback_data": "register:group:A"}, {"text": "B", "callback_data": "register:group:B"}]
         ]
 
-        step3 = service.handle_text(user_id="tg_user_1", text="A")
+        step3 = service.handle_text(user_id="tg_user_1", text="register:group:A")
         assert step3["status"] == "pending"
         assert "請選擇您的座位（A-?）" in step3["message"]
         assert step3["reply_markup"]["inline_keyboard"] == [
-            [{"text": "1", "callback_data": "1"}, {"text": "2", "callback_data": "2"}]
+            [{"text": "1", "callback_data": "register:item:1"}, {"text": "2", "callback_data": "register:item:2"}]
         ]
 
-        step4 = service.handle_text(user_id="tg_user_1", text="1")
+        step4 = service.handle_text(user_id="tg_user_1", text="register:item:1")
         assert step4["status"] == "success"
         assert step4["message"] == "✅ 已更新學號：B12345678\n位置：A-1"
         profile = db_manager.get_user_profile("tg_user_1")
@@ -360,6 +399,27 @@ class TestTelegramCommandService:
         assert "輪到你了" in sent[0][1]
         assert "#1" in sent[0][1]
         assert "服務區" in sent[0][1]
+
+
+    def test_admin_serve_next_triggers_dashboard_announcement(self, db_manager):
+        class FakeAnnouncementService:
+            def __init__(self):
+                self.calls = []
+
+            def announce_called_guest(self, *, display_name: str):
+                self.calls.append(display_name)
+                return {"ok": True}
+
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+        announcement_service = FakeAnnouncementService()
+        service = TelegramCommandService(db=db_manager, announcement_service=announcement_service)
+        service.queue_manager.join("alice", "regular")
+
+        result = service.handle_text(user_id="admin_a", text="/admin/serve")
+
+        assert result["status"] == "success"
+        assert announcement_service.calls == ["B12345678"]
 
     def test_admin_serve_specific_broadcasts_called_user(self, db_manager):
         db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")

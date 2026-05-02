@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.time_utils import format_display_time
+from services.user_flow import build_help_message, build_history_message, get_user_status
 
 
 class HandlerSupportMixin:
@@ -53,24 +54,20 @@ class HandlerSupportMixin:
         return self._reply(reply_token, f"✅ 已切換至第 {page_num} 頁")
 
     def _handle_status(self, user_id: str, reply_token: str) -> list:
-        position = self.queue_manager.get_user_position(user_id)
-        if position is None:
-            total_count = len(self.queue_manager.get_queue())
-            msg = f"📊 目前有 {total_count} 人在排隊中"
+        outcome = get_user_status(queue_manager=self.queue_manager, user_id=user_id)
+        if outcome["status"] == "not_in_queue":
+            msg = f"📊 目前有 {outcome['total_count']} 人在排隊中"
         else:
-            ahead_count = max(position - 1, 0)
-            msg = f"📊 目前你前面還有 {ahead_count} 人"
+            msg = f"📊 目前你前面還有 {outcome['ahead_count']} 人"
         return self._reply(reply_token, msg)
 
     def _handle_user_history(self, user_id: str, reply_token: str) -> list:
         history = self.queue_manager.get_history(user_id)
-        if not history:
-            return self._reply(reply_token, "查無排隊歷史紀錄。")
-
-        lines = ["排隊歷史紀錄"]
-        for entry in history:
-            lines.append(f"#{entry.queue_number} {entry.queue_type} - {entry.status} ({entry.time})")
-        return self._reply(reply_token, "\n".join(lines))
+        msg = build_history_message(
+            history,
+            formatter=lambda entry: f"#{entry.queue_number} {entry.queue_type} - {entry.status} ({entry.time})",
+        )
+        return self._reply(reply_token, msg)
 
     def _handle_coffee(self, user_id: str, reply_token: str) -> list:
         msg = (
@@ -88,34 +85,11 @@ class HandlerSupportMixin:
         return self._reply(reply_token, "❌ 找不到你的排隊記錄，請確認是否有正確的叫號。")
 
     def _handle_help(self, user_id: str, reply_token: str) -> list:
-        if not self._is_admin(user_id):
-            return self._reply(reply_token, "❌ 未授權，僅限管理員使用。")
-
-        msg = (
-            "📋 隊列系統指令\n\n"
-            "**一般使用者：**\n"
-            "/register [名稱] - 註冊或更新顯示名稱\n"
-            "/join - 以自己身分加入一般隊列\n"
-            "/join vip - 以自己身分加入 VIP 隊列\n"
-            "/cancel - 取消排隊\n"
-            "/status - 查看隊列狀態\n"
-            "/history - 查看你的排隊歷史\n"
-            "/coffee - 取得 VIP 連結\n"
-            "**管理員指令（/admin/ 開頭）：**\n"
-            "/admin/serve - 叫下一位\n"
-            "/admin/serve [id] - 叫指定使用者\n"
-            "/admin/ping - 手動提醒下一位\n"
-            "/admin/ping [id] - 手動提醒指定使用者\n"
-            "/admin/status - 完整狀態\n"
-            "/admin/stats - 統計面板\n"
-            "/admin/clear - 清空全部隊列\n"
-            "/admin/vip toggle [on/off] - 開關 VIP 隊列\n"
-            "/admin/vip clear - 清空 VIP 隊列\n"
-            "/admin/join [on/off] - 切換總隊列狀態\n"
-            "/admin/join status - 查看總隊列狀態\n"
-            "/admin/history [id] - 查詢使用者歷史\n"
-            "/admin/export - 匯出 CSV 預覽\n"
-            "/admin/config max [N] - 設定最大容量"
-            "/help - 顯示說明\n\n"
+        outcome = build_help_message(
+            is_admin=self._is_admin(user_id),
+            admin_only=True,
+            include_admin_commands=True,
+            include_vip_join=True,
+            include_coffee=True,
         )
-        return self._reply(reply_token, msg)
+        return self._reply(reply_token, outcome["message"])

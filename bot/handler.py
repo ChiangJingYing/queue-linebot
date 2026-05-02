@@ -14,6 +14,7 @@ from bot.handler_support import HandlerSupportMixin
 from core.queue_manager import QueueManager
 from core.validators import validate_command
 from services.notifier import Notifier
+from services.pending_state_store import MemoryPendingStateStore
 from services.vip_service import VipService
 
 
@@ -60,7 +61,7 @@ class LineBotHandler(
         self.new_order_announcement_text = (new_order_announcement_text or "您有新訂單").strip() or "您有新訂單"
         self._new_order_last_joined_at = datetime.now()
         self._announce_new_order_on_next_join = False
-        self.pending_actions: dict[str, dict] = {}
+        self.pending_state_store = MemoryPendingStateStore()
         self._admin_serve_lock = threading.Lock()
         self._admin_serve_cooldown_seconds = max(int(admin_serve_cooldown_seconds), 0)
         self._admin_serve_cooldown_clock = time.monotonic
@@ -86,7 +87,7 @@ class LineBotHandler(
             return self._handle_admin_page_switch(user_id, "page1", reply_token)
 
         command, args = validate_command(text)
-        pending_action = self.pending_actions.get(user_id)
+        pending_action = self._get_pending_state(user_id)
         if pending_action and not text.strip().startswith("/"):
             if pending_action.get("type") == "register_name":
                 return self._capture_register_name(user_id, text.strip(), reply_token)
@@ -122,3 +123,18 @@ class LineBotHandler(
             return self._handle_admin(user_id, command, args, reply_token)
 
         return self._reply(reply_token, "未知指令，請輸入 /help 查看可用功能。")
+
+    def _get_pending_state(self, user_id: str, flow: str | None = None) -> dict:
+        if flow is not None:
+            return self.pending_state_store.get(user_id=user_id, flow=flow)
+
+        for candidate_flow in ("register", "cancel"):
+            if state := self.pending_state_store.get(user_id=user_id, flow=candidate_flow):
+                return state
+        return {}
+
+    def _set_pending_state(self, user_id: str, flow: str, state: dict) -> None:
+        self.pending_state_store.set(user_id=user_id, flow=flow, state=state)
+
+    def _clear_pending_state(self, user_id: str, flow: str) -> None:
+        self.pending_state_store.clear(user_id=user_id, flow=flow)

@@ -373,19 +373,77 @@ Run with coverage:
 python -m pytest tests/ -v --cov=core --cov=services
 ```
 
+Focused cross-platform parity regression:
+
+```bash
+pytest -q --no-cov \
+  tests/test_cross_platform_parity.py \
+  tests/test_handler.py \
+  tests/test_telegram_commands.py \
+  tests/test_discord_commands.py
+```
+
+The parity suite is intended to verify that shared refactors preserve the same user-visible behavior across LINE / Telegram / Discord for shared flows such as registration prerequisites, queue status wording, history empty-state messaging, and closed-queue cancel lifecycle behavior.
+
 ## Project structure
 
 ```text
 queue-linebot/
-├── bot/                # Bot command handling and push helpers
+├── bot/                # LINE-facing command handling + transport-specific reply helpers
 ├── core/               # Database, models, validation, queue manager
 ├── scheduler/          # Timeout/reminder scheduled tasks
-├── services/           # Notifier and VIP service
+├── services/           # Shared flow services, presenters, adapters, notifier, VIP service
 ├── tests/              # Unit/integration tests
 ├── main.py             # FastAPI entry point
 ├── requirements.txt    # Python dependencies
 └── config/queue_config.yaml   # Runtime config sample
 ```
+
+## Shared architecture after the cross-platform refactor
+
+The queue bot now follows a "shared core, platform edge" structure:
+
+- **Shared business logic lives in `services/`**
+  - `services/user_flow.py` for join / cancel / status / history / help outcomes
+  - `services/register_flow.py` for multi-step register state transitions
+  - `services/register_service.py` for registration completion
+  - `services/admin_flow.py` for admin status / stats / history / queue controls / VIP operations
+  - `services/serve_flow.py` for serving queue entries
+  - `services/cancel_flow.py` for closed-queue cancel confirmation behavior
+- **Platform rendering is isolated**
+  - `services/interaction_presenters.py` builds LINE quick replies, Telegram keyboards, and Discord components
+  - `services/action_schema.py` centralizes cross-platform callback/custom-id shapes and normalization helpers
+- **Platform pending state storage is isolated**
+  - `services/pending_state_store.py` provides a shared `get / set / clear` API
+  - LINE uses in-memory `MemoryPendingStateStore`
+  - Telegram / Discord use config-backed `ConfigPendingStateStore`
+- **Platform handlers stay thin**
+  - `bot/handler*.py` handles LINE transport + reply formatting
+  - `services/telegram_commands.py` handles Telegram input normalization + markup output
+  - `services/discord_commands.py` handles Discord input normalization + component/modal output
+
+In practice, shared flows should not know whether the caller is LINE, Telegram, or Discord, and they should not know whether pending multi-step state is stored in memory or config.
+
+## Refactor audit status
+
+The cross-platform refactor tracker focused on removing duplicated queue/business logic while keeping UI differences at the edge.
+
+Completed shared layers:
+
+- shared user flow service
+- shared registration completion service
+- shared admin flow service
+- shared interaction presenter layer
+- shared pending state storage abstraction
+
+Remaining platform-specific code is intentionally limited to:
+
+- command/input normalization
+- transport-specific reply payloads
+- platform-only interaction details (LINE quick replies, Telegram inline/reply keyboards, Discord components/modals)
+- platform-specific side effects such as Telegram notification fan-out and LINE rich menu linking
+
+This means future business-rule fixes should usually land once in shared services, then render through platform adapters.
 
 ## Command interface
 

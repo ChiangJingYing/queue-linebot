@@ -1,6 +1,21 @@
 from __future__ import annotations
 
 from core.time_utils import format_display_time
+from services.admin_flow import (
+    build_admin_export_preview,
+    build_admin_history,
+    build_admin_stats,
+    build_admin_status,
+    build_vip_status,
+    clear_all_queue,
+    clear_vip_queue,
+    get_admin_join_status,
+    ping_user,
+    set_admin_join_enabled,
+    toggle_admin_join,
+    toggle_vip,
+)
+from services.serve_flow import serve_user
 
 
 class HandlerAdminMixin:
@@ -166,10 +181,9 @@ class HandlerAdminMixin:
             if guard_message:
                 return self._reply(reply_token, guard_message)
 
-            result = self.queue_manager.serve_next()
+            result = serve_user(queue_manager=self.queue_manager, announcement_service=self.announcement_service)
             if result["status"] == "served":
-                self._push_dashboard_announcement(result["id"])
-                display_name = self.queue_manager.db.get_display_name(result["id"])
+                display_name = result["display_name"]
                 self._record_admin_serve_success(display_name)
                 msg = f"✅ 已叫號：{display_name}"
             else:
@@ -186,10 +200,13 @@ class HandlerAdminMixin:
             if guard_message:
                 return self._reply(reply_token, guard_message)
 
-            result = self.queue_manager.serve_specific(target_id)
+            result = serve_user(
+                queue_manager=self.queue_manager,
+                target_user_id=target_id,
+                announcement_service=self.announcement_service,
+            )
             if result["status"] == "served":
-                self._push_dashboard_announcement(target_id)
-                display_name = self.queue_manager.db.get_display_name(target_id)
+                display_name = result["display_name"]
                 self._record_admin_serve_success(display_name)
                 msg = f"✅ 已叫號：{display_name}"
             else:
@@ -199,40 +216,30 @@ class HandlerAdminMixin:
             self._admin_serve_lock.release()
 
     def _admin_status(self, reply_token: str) -> list:
-        status = self.queue_manager.get_status()
-        entries = self.queue_manager.get_queue()
+        status = build_admin_status(queue_manager=self.queue_manager)
 
-        regular_lines = []
-        vip_lines = []
-        regular_idx = 0
-        vip_idx = 0
-        for entry in entries:
-            joined = format_display_time(entry.join_time, include_date=False)
-            name = self.queue_manager.db.get_display_name(entry.user_id)
-            verified = self.queue_manager.db.get_user_profile(entry.user_id)
-            badge = "✅" if verified and verified.verified else "🕓"
-            label = f"{name} {badge}"
-            if entry.queue_type == "vip":
-                vip_idx += 1
-                vip_lines.append(f"#{vip_idx} {label} — {joined}")
-            else:
-                regular_idx += 1
-                regular_lines.append(f"#{regular_idx} {label} — {joined}")
+        regular_lines = [
+            f"#{idx} {entry['display_name']} {'✅' if entry['verified'] else '🕓'} — {format_display_time(entry['join_time'], include_date=False)}"
+            for idx, entry in enumerate(status["regular_entries"], start=1)
+        ]
+        vip_lines = [
+            f"#{idx} {entry['display_name']} {'✅' if entry['verified'] else '🕓'} — {format_display_time(entry['join_time'], include_date=False)}"
+            for idx, entry in enumerate(status["vip_entries"], start=1)
+        ]
 
         regular_text = "\n".join(regular_lines) if regular_lines else "（空）"
         vip_text = "\n".join(vip_lines) if vip_lines else "（空）"
-
-        msg = (
+        message = (
             "📋 完整隊列狀態\n\n"
             f"標準隊列 ({status['regular_count']}人):\n{regular_text}\n\n"
             f"VIP 隊列 ({status['vip_count']}人):\n{vip_text}\n\n"
             f"VIP 啟用: {'是' if status['vip_enabled'] else '否'}"
         )
-        return self._reply(reply_token, msg)
+        return self._reply(reply_token, message)
 
     def _handle_stats(self, reply_token: str) -> list:
-        stats = self.queue_manager.get_stats()
-        msg = (
+        stats = build_admin_stats(queue_manager=self.queue_manager)
+        message = (
             "📈 統計面板\n\n"
             f"今日排隊人數: {stats['joined_today']}\n"
             f"被叫號人數: {stats['served_count']}\n"
@@ -243,38 +250,38 @@ class HandlerAdminMixin:
             f"VIP 今日排隊: {stats['vip']['joined_today']}\n"
             f"VIP 今日叫號: {stats['vip']['served_count']}"
         )
-        return self._reply(reply_token, msg)
+        return self._reply(reply_token, message)
 
     def _handle_vip_status(self, reply_token: str) -> list:
-        status = self.vip_service.get_vip_status()
-        msg = (
+        status = build_vip_status(vip_service=self.vip_service)
+        message = (
             "💎 VIP 隊列狀態\n"
             f"啟用: {'是' if status['enabled'] else '否'}\n"
             f"目前 VIP 排隊人數: {status['count']}"
         )
-        return self._reply(reply_token, msg)
+        return self._reply(reply_token, message)
 
     def _handle_vip_toggle(self, value: str, reply_token: str) -> list:
         normalized = value.lower()
         if normalized not in {"on", "off"}:
             return self._reply(reply_token, "用法：/admin/vip toggle [on/off]")
 
-        result = self.vip_service.toggle_vip(normalized == "on")
+        result = toggle_vip(vip_service=self.vip_service, enabled=normalized == "on")
         return self._reply(reply_token, f"✅ {result['message']}")
 
     def _handle_vip_clear(self, reply_token: str) -> list:
-        result = self.queue_manager.clear_vip_queue()
+        result = clear_vip_queue(queue_manager=self.queue_manager)
         return self._reply(reply_token, f"✅ 已清空 VIP 隊列，移除 {result['removed_count']} 筆")
 
     def _handle_admin_clear(self, reply_token: str) -> list:
         keep_admin_user_ids = set(self.admin_ids)
-        result = self.queue_manager.clear_all_queue(keep_admin_user_ids=keep_admin_user_ids)
+        result = clear_all_queue(queue_manager=self.queue_manager, keep_admin_user_ids=keep_admin_user_ids)
         self._announce_new_order_on_next_join = True
         return self._reply(reply_token, f"✅ 已清空全部隊列，移除 {result['removed_count']} 筆，並清除 {result['cleared_profiles']} 筆使用者資料、保留 {result['kept_admin_profiles']} 筆 admin 資料")
 
     def _handle_admin_ping(self, args: list, reply_token: str) -> list:
         target_id = args[0] if args else None
-        result = self.queue_manager.ping_user(target_id)
+        result = ping_user(queue_manager=self.queue_manager, target_id=target_id)
         if result["status"] != "success":
             return self._reply(reply_token, f"❌ 錯誤：{result['message']}")
         return self._reply(reply_token, f"✅ 已提醒 {result['display_name']}（{result['user_id']}）")
@@ -284,26 +291,21 @@ class HandlerAdminMixin:
             return self._reply(reply_token, "用法：/admin/history [ID]")
 
         user_id = args[0]
-        history = self.queue_manager.get_user_history(user_id)
-        if not history:
+        payload = build_admin_history(queue_manager=self.queue_manager, user_id=user_id)
+        if payload is None:
             return self._reply(reply_token, f"查無 {user_id} 的歷史紀錄")
-
-        lines = [f"🧾 {user_id} 歷史紀錄"]
-        for item in history[:10]:
+        lines = [f"🧾 {payload['user_id']} 歷史紀錄"]
+        for item in payload["history"]:
             lines.append(f"- {format_display_time(item['created_at'])}: {item['event_type']} ({item['queue_type'] or '-'})")
         return self._reply(reply_token, "\n".join(lines))
 
     def _handle_export(self, reply_token: str) -> list:
-        csv_data = self.queue_manager.export_queue_csv(limit=200)
-        lines = csv_data.splitlines()
-
-        if len(csv_data) > 3500:
-            preview = "\n".join(lines[:12])
-            msg = f"📤 CSV 匯出（總計 {max(len(lines) - 1, 0)} 筆，內容過長已預覽）\n{preview}"
-            return self._reply(reply_token, msg)
-
-        msg = f"📤 CSV 匯出（總計 {max(len(lines) - 1, 0)} 筆）\n{csv_data}"
-        return self._reply(reply_token, msg)
+        payload = build_admin_export_preview(queue_manager=self.queue_manager)
+        if payload["is_preview"]:
+            message = f"📤 CSV 匯出（總計 {payload['total']} 筆，內容過長已預覽）\n{payload['preview']}"
+        else:
+            message = f"📤 CSV 匯出（總計 {payload['total']} 筆）\n{payload['csv_data']}"
+        return self._reply(reply_token, message)
 
     def _admin_config(self, args: list, reply_token: str) -> list:
         if len(args) < 2:
@@ -324,20 +326,20 @@ class HandlerAdminMixin:
 
     def _admin_join(self, args: list, reply_token: str) -> list:
         if not args:
-            enabled = not self.queue_manager.db.is_queue_enabled()
-            self.queue_manager.db.set_config("queue_enabled", "true" if enabled else "false")
-            status = "開啟" if enabled else "關閉"
-            return self._reply(reply_token, f"✅ 隊列已{status}")
+            result = toggle_admin_join(queue_manager=self.queue_manager)
+            return self._reply(reply_token, f"✅ 隊列已{'開啟' if result['enabled'] else '關閉'}")
 
         sub_cmd = args[0].lower()
         if sub_cmd == "on":
-            self.queue_manager.db.set_config("queue_enabled", "true")
-            return self._reply(reply_token, "✅ 隊列已開啟")
+            result = set_admin_join_enabled(queue_manager=self.queue_manager, enabled=True)
+            return self._reply(reply_token, f"✅ 隊列已{'開啟' if result['enabled'] else '關閉'}")
         if sub_cmd == "off":
-            self.queue_manager.db.set_config("queue_enabled", "false")
-            return self._reply(reply_token, "✅ 隊列已關閉")
+            result = set_admin_join_enabled(queue_manager=self.queue_manager, enabled=False)
+            return self._reply(reply_token, f"✅ 隊列已{'開啟' if result['enabled'] else '關閉'}")
         if sub_cmd == "status":
-            enabled = self.queue_manager.db.is_queue_enabled()
-            return self._reply(reply_token, f"📋 隊列狀態：{'已開啟' if enabled else '已關閉'}")
+            result = get_admin_join_status(queue_manager=self.queue_manager)
+            return self._reply(reply_token, f"📋 隊列狀態：{'已開啟' if result['enabled'] else '已關閉'}")
 
         return self._reply(reply_token, "用法：/admin/join [on/off] 切換狀態 或 /admin/join status 查看狀態")
+
+

@@ -2,12 +2,31 @@
 
 from __future__ import annotations
 
-import json
-
 from core.database import DatabaseManager
 from core.queue_manager import QueueManager
 from core.time_utils import format_display_time
 from core.validators import validate_command
+from services.action_schema import (
+    DISCORD_CANCEL_ABORT,
+    DISCORD_CANCEL_CONFIRM,
+    DISCORD_REGISTER_GROUP_PREFIX,
+    DISCORD_REGISTER_ITEM_PREFIX,
+    build_discord_register_group_action,
+    build_discord_register_item_action,
+    is_discord_register_choice_action,
+    normalize_discord_action,
+    normalize_register_choice_action,
+)
+from services.cancel_flow import begin_closed_queue_cancel_flow, advance_closed_queue_cancel_flow
+from services.interaction_presenters import (
+    build_discord_cancel_confirmation_components,
+    build_discord_choice_components,
+    build_discord_menu_components,
+)
+from services.pending_state_store import ConfigPendingStateStore
+from services.register_flow import advance_register_flow, begin_register_location_flow
+from services.register_service import complete_registration
+from services.user_flow import build_help_message, build_history_message, cancel_user, get_user_status, join_user
 
 
 class DiscordCommandService:
@@ -28,10 +47,11 @@ class DiscordCommandService:
         self.db = db
         self.queue_manager = QueueManager(db) if isinstance(db, DatabaseManager) else None
         self.location_options = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
+        self.pending_state_store = ConfigPendingStateStore(db, namespace="discord")
 
     def handle_interaction(self, *, user_id: str, input_value: str) -> dict:
         raw_text = (input_value or "").strip()
-        normalized_text = self._normalize_action(raw_text)
+        normalized_text = normalize_discord_action(raw_text)
 
         if normalized_text.startswith("register:submit:"):
             display_name = normalized_text.removeprefix("register:submit:").strip()
@@ -42,10 +62,10 @@ class DiscordCommandService:
         if pending := self._get_pending_register_state(user_id):
             if normalized_text.startswith("/") and normalized_text != "/register":
                 self._clear_pending_register_state(user_id)
-            elif normalized_text.startswith(("register:group:", "register:item:")):
+            elif is_discord_register_choice_action(normalized_text):
                 return self._handle_register_pending(user_id=user_id, text=normalized_text, state=pending)
 
-        if normalized_text in {"cancel:confirm", "cancel:abort"}:
+        if normalized_text in {DISCORD_CANCEL_CONFIRM, DISCORD_CANCEL_ABORT}:
             return self._handle_cancel_confirmation(user_id=user_id, action=normalized_text)
 
         command, args = validate_command(normalized_text)
@@ -67,21 +87,13 @@ class DiscordCommandService:
         return {"status": "error", "message": "Unknown command."}
 
     def _normalize_action(self, text: str) -> str:
-        action_map = {
-            "menu:join": "/join",
-            "menu:cancel": "/cancel",
-            "menu:status": "/status",
-            "menu:history": "/history",
-            "menu:help": "/help",
-            "register:start": "/register",
-        }
-        return action_map.get(text, text)
+        return normalize_discord_action(text)
 
     def _handle_menu(self) -> dict:
         return {
             "status": "success",
             "message": "請使用下方功能選單。",
-            "components": self._button_rows(self.USER_ACTION_ROWS),
+            "components": build_discord_menu_components(self.USER_ACTION_ROWS),
         }
 
     def _handle_register(self, *, user_id: str, args: list[str]) -> dict:
@@ -115,31 +127,33 @@ class DiscordCommandService:
         }
 
     def _start_register_flow(self, *, user_id: str, display_name: str) -> dict:
-        self._set_pending_register_state(user_id, {"type": "register_location_group", "display_name": display_name})
-        groups = list(self.location_options.keys())
+        outcome = begin_register_location_flow(
+            display_name=display_name,
+            location_options=self.location_options,
+        )
+        self._set_pending_register_state(user_id, outcome["state"])
         return {
             "status": "pending",
-            "message": f"請選擇您在第幾排座位：{'、'.join(groups)}",
-            "components": self._button_rows([self._choice_buttons(groups, prefix="register:group:")]),
+            "message": outcome["message"],
+            "components": build_discord_choice_components(options=outcome["options"], prefix=DISCORD_REGISTER_GROUP_PREFIX),
         }
 
     def _handle_join(self, *, user_id: str, args: list[str]) -> dict:
-        profile = self.db.get_user_profile(user_id)
-        if profile is None or not profile.display_name or not profile.location:
+        queue_type = args[0].lower() if args else "regular"
+        outcome = join_user(queue_manager=self.queue_manager, user_id=user_id, queue_type=queue_type)
+        if outcome["status"] == "needs_registration":
             return {
                 "status": "error",
-                "message": "❌ 錯誤：請先完成註冊（學號與座位）後再加入隊列。",
+                "message": outcome["message"],
                 "components": self._button_rows([[{"label": "設定基本資料", "custom_id": "register:start", "style": "primary"}]]),
             }
 
-        queue_type = args[0].lower() if args else "regular"
-        result = self.queue_manager.join(user_id, queue_type)
-        if result["status"] != "success":
-            return {"status": "error", "message": f"❌ 錯誤：{result['message']}"}
+        if outcome["status"] != "success":
+            return {"status": "error", "message": outcome["message"]}
 
         return {
             "status": "success",
-            "message": f"✅ 已加入隊列，號碼 #{result['queue_number']}（目前 {result['total_in_queue']} 人）",
+            "message": f"✅ 已加入隊列，號碼 #{outcome['queue_number']}（目前 {outcome['total_in_queue']} 人）",
             "components": self._button_rows([
                 [
                     {"label": "放棄", "custom_id": "menu:cancel", "style": "secondary"},
@@ -151,25 +165,25 @@ class DiscordCommandService:
 
     def _handle_cancel(self, *, user_id: str) -> dict:
         if not self.queue_manager.get_queue_enabled() and self.queue_manager.get_user_position(user_id) is not None:
-            self.db.set_config(f"discord_pending_cancel:{user_id}", json.dumps({"type": "cancel_when_closed", "step": 1}))
+            outcome = begin_closed_queue_cancel_flow()
+            self.pending_state_store.set(user_id=user_id, flow="cancel", state=outcome["state"])
             return {
                 "status": "pending",
-                "message": "當前隊列已關閉，確定要放棄嗎？\n若放棄無法再加入到隊列中！",
-                "components": self._button_rows([self._cancel_confirmation_buttons()]),
+                "message": outcome["message"],
+                "components": build_discord_cancel_confirmation_components(),
             }
 
-        result = self.queue_manager.cancel(user_id)
-        if result["status"] != "cancelled":
-            return {"status": "error", "message": f"❌ 錯誤：{result['message']}"}
+        outcome = cancel_user(queue_manager=self.queue_manager, user_id=user_id)
+        if outcome["status"] != "cancelled":
+            return {"status": "error", "message": outcome["message"]}
         return {"status": "success", "message": "✅ 已取消排隊", "components": self._button_rows(self.USER_ACTION_ROWS)}
 
     def _handle_status(self, *, user_id: str) -> dict:
-        position = self.queue_manager.get_user_position(user_id)
-        if position is None:
-            total_count = len(self.queue_manager.get_queue())
+        outcome = get_user_status(queue_manager=self.queue_manager, user_id=user_id)
+        if outcome["status"] == "not_in_queue":
             return {
                 "status": "success",
-                "message": f"📊 目前有 {total_count} 人在排隊中",
+                "message": f"📊 目前有 {outcome['total_count']} 人在排隊中",
                 "components": self._button_rows([
                     [
                         {"label": "舉手", "custom_id": "menu:join", "style": "primary"},
@@ -178,10 +192,9 @@ class DiscordCommandService:
                 ]),
             }
 
-        ahead_count = max(position - 1, 0)
         return {
             "status": "success",
-            "message": f"📊 目前排在第 {position} 位\n前面還有 {ahead_count} 人",
+            "message": f"📊 目前排在第 {outcome['position']} 位\n前面還有 {outcome['ahead_count']} 人",
             "components": self._button_rows([
                 [
                     {"label": "舉手", "custom_id": "menu:join", "style": "primary"},
@@ -193,108 +206,118 @@ class DiscordCommandService:
 
     def _handle_user_history(self, *, user_id: str) -> dict:
         history = self.queue_manager.get_user_history(user_id)
-        if not history:
-            return {"status": "success", "message": "查無排隊歷史紀錄。", "components": self._button_rows(self.USER_ACTION_ROWS)}
-
-        lines = ["排隊歷史紀錄"]
-        for item in history[:10]:
-            lines.append(
-                f"- {format_display_time(item['created_at'])}: {item['event_type']} ({item['queue_type'] or '-'})"
-            )
-        return {"status": "success", "message": "\n".join(lines), "components": self._button_rows(self.USER_ACTION_ROWS)}
+        return {
+            "status": "success",
+            "message": build_history_message(
+                history,
+                formatter=lambda item: f"- {format_display_time(item['created_at'])}: {item['event_type']} ({item['queue_type'] or '-'})",
+            ),
+            "components": self._button_rows(self.USER_ACTION_ROWS),
+        }
 
     def _handle_help(self) -> dict:
-        msg = (
-            "📋 隊列系統指令\n\n"
-            "/register - 依提示完成學號與座位註冊\n"
-            "/join - 以自己身分加入一般隊列\n"
-            "/cancel - 取消排隊\n"
-            "/status - 查看隊列狀態\n"
-            "/history - 查看你的排隊歷史\n"
-            "/menu - 顯示常用功能按鈕\n"
-            "/help - 顯示說明\n"
+        outcome = build_help_message(
+            is_admin=False,
+            include_menu=True,
+            include_admin_commands=False,
+            include_vip_join=False,
+            include_coffee=False,
         )
-        return {"status": "success", "message": msg, "components": self._button_rows(self.USER_ACTION_ROWS)}
+        return {"status": outcome["status"], "message": outcome["message"], "components": self._button_rows(self.USER_ACTION_ROWS)}
+
+    def _normalize_register_pending_text(self, *, text: str, state: dict) -> str:
+        if not is_discord_register_choice_action(text):
+            return text
+
+        if state.get("type") == "register_location_group":
+            return normalize_register_choice_action(text, expected_prefix=DISCORD_REGISTER_GROUP_PREFIX)
+        if state.get("type") == "register_location_item":
+            return normalize_register_choice_action(text, expected_prefix=DISCORD_REGISTER_ITEM_PREFIX)
+        return text
 
     def _handle_register_pending(self, *, user_id: str, text: str, state: dict) -> dict:
-        step_type = state.get("type")
-        raw_text = text.strip()
+        normalized_pending_text = self._normalize_register_pending_text(text=text, state=state)
+        outcome = advance_register_flow(
+            state=state,
+            text=normalized_pending_text,
+            location_options=self.location_options,
+        )
 
-        if step_type == "register_location_group":
-            normalized_group = raw_text.removeprefix("register:group:").upper()
-            groups = list(self.location_options.keys())
-            if normalized_group not in self.location_options:
-                return {
-                    "status": "error",
-                    "message": f"無效的位置，請從以下選擇：{'、'.join(groups)}",
-                    "components": self._button_rows([self._choice_buttons(groups, prefix="register:group:")]),
-                }
-            self._set_pending_register_state(
-                user_id,
-                {
-                    "type": "register_location_item",
-                    "display_name": str(state.get("display_name") or ""),
-                    "group": normalized_group,
-                },
-            )
-            options = self.location_options[normalized_group]
+        if outcome["status"] == "pending":
+            self._set_pending_register_state(user_id, outcome["state"])
+            prefix = DISCORD_REGISTER_ITEM_PREFIX if outcome["state"]["type"] == "register_location_item" else DISCORD_REGISTER_GROUP_PREFIX
             return {
                 "status": "pending",
-                "message": f"請選擇您的座位（{normalized_group}-?）：{'、'.join(options)}",
-                "components": self._button_rows([self._choice_buttons(options, prefix="register:item:")]),
+                "message": outcome["message"],
+                "components": self._button_rows([
+                    self._choice_buttons(outcome["options"], prefix=prefix)
+                ]),
             }
 
-        if step_type == "register_location_item":
-            group = str(state.get("group") or "")
-            display_name = str(state.get("display_name") or "")
-            normalized_item = raw_text.removeprefix("register:item:").upper()
-            options = self.location_options.get(group, [])
-            if normalized_item not in options:
-                return {
-                    "status": "error",
-                    "message": f"無效的位置，請從以下選擇：{'、'.join(options)}",
-                    "components": self._button_rows([self._choice_buttons(options, prefix="register:item:")]),
-                }
+        if outcome["status"] == "error":
+            response = {"status": "error", "message": outcome["message"]}
+            if "options" in outcome:
+                prefix = DISCORD_REGISTER_ITEM_PREFIX if state.get("type") == "register_location_item" else DISCORD_REGISTER_GROUP_PREFIX
+                response["components"] = build_discord_choice_components(options=outcome["options"], prefix=prefix)
+            return response
+
+        if outcome["status"] == "complete":
             self._clear_pending_register_state(user_id)
-            return self._complete_register(user_id=user_id, display_name=display_name, location=f"{group}-{normalized_item}")
+            return self._complete_register(
+                user_id=user_id,
+                display_name=outcome["display_name"],
+                location=outcome["location"],
+            )
 
         self._clear_pending_register_state(user_id)
-        return {"status": "error", "message": "❌ 註冊流程已失效，請重新輸入 /register。"}
+        return {"status": "error", "message": outcome["message"]}
 
     def _complete_register(self, *, user_id: str, display_name: str, location: str) -> dict:
-        result = self.queue_manager.register_name(user_id, display_name, location=location)
-        if result["status"] != "success":
-            return {"status": "error", "message": f"❌ 錯誤：{result['message']}"}
+        outcome = complete_registration(
+            queue_manager=self.queue_manager,
+            user_id=user_id,
+            display_name=display_name,
+            location=location,
+        )
+        if outcome["status"] != "success":
+            return {"status": "error", "message": outcome["message"]}
 
         return {
             "status": "success",
-            "message": f"✅ 已更新學號：{result['display_name']}\n位置：{result['location']}",
+            "message": outcome["message"],
             "components": self._button_rows(self.USER_ACTION_ROWS),
         }
 
     def _handle_cancel_confirmation(self, *, user_id: str, action: str) -> dict:
         state = self._get_pending_cancel_state(user_id)
-        if state.get("type") != "cancel_when_closed" or state.get("step") not in {1, 2}:
+        outcome = advance_closed_queue_cancel_flow(
+            state=state,
+            action="確認放棄" if action == DISCORD_CANCEL_CONFIRM else "取消放棄",
+            still_in_queue=self.queue_manager.get_user_position(user_id) is not None,
+            expired_message="❌ 放棄確認流程已失效，請重新按一次放棄。",
+        )
+
+        if outcome["status"] == "expired":
             return {
                 "status": "error",
-                "message": "❌ 放棄確認流程已失效，請重新按一次放棄。",
+                "message": outcome["message"],
                 "components": self._button_rows(self.USER_ACTION_ROWS),
             }
 
-        if action == "cancel:abort":
+        if outcome["status"] == "aborted":
             self._clear_pending_cancel_state(user_id)
-            return {"status": "success", "message": "好的，已取消放棄", "components": self._button_rows(self.USER_ACTION_ROWS)}
+            return {"status": "success", "message": outcome["message"], "components": self._button_rows(self.USER_ACTION_ROWS)}
 
-        if self.queue_manager.get_user_position(user_id) is None:
+        if outcome["status"] == "not_in_queue":
             self._clear_pending_cancel_state(user_id)
-            return {"status": "error", "message": "❌ 錯誤：你目前不在隊列中。"}
+            return {"status": "error", "message": outcome["message"], "components": self._button_rows(self.USER_ACTION_ROWS)}
 
-        if state.get("step") == 1:
-            self.db.set_config(f"discord_pending_cancel:{user_id}", json.dumps({"type": "cancel_when_closed", "step": 2}))
+        if outcome["status"] == "pending":
+            self.pending_state_store.set(user_id=user_id, flow="cancel", state=outcome["state"])
             return {
                 "status": "pending",
-                "message": "您確定要放棄嗎？",
-                "components": self._button_rows([self._cancel_confirmation_buttons()]),
+                "message": outcome["message"],
+                "components": build_discord_cancel_confirmation_components(),
             }
 
         self._clear_pending_cancel_state(user_id)
@@ -303,37 +326,28 @@ class DiscordCommandService:
             return {"status": "error", "message": f"❌ 錯誤：{result['message']}"}
         return {"status": "success", "message": "✅ 已取消排隊", "components": self._button_rows(self.USER_ACTION_ROWS)}
 
+
     def _button_rows(self, rows: list[list[dict]]) -> list[dict]:
-        action_rows: list[dict] = []
-        for row in rows:
-            for start in range(0, len(row), 5):
-                chunk = row[start:start + 5]
-                action_rows.append(
-                    {
-                        "type": 1,
-                        "components": [
-                            {
-                                "type": 2,
-                                "style": self._discord_button_style(item.get("style", "secondary")),
-                                "label": item["label"],
-                                "custom_id": item["custom_id"],
-                            }
-                            for item in chunk
-                        ],
-                    }
-                )
-        return action_rows
+        return build_discord_menu_components(rows)
 
     def _choice_buttons(self, options: list[str], *, prefix: str) -> list[dict]:
         return [
-            {"label": str(option), "custom_id": f"{prefix}{option}", "style": "secondary"}
-            for option in options
+            {
+                "label": button["label"],
+                "custom_id": button["custom_id"],
+                "style": button.get("style", "secondary"),
+            }
+            for button in build_discord_choice_components(options=options, prefix=prefix)[0]["components"]
         ]
 
     def _cancel_confirmation_buttons(self) -> list[dict]:
         return [
-            {"label": "確認放棄", "custom_id": "cancel:confirm", "style": "danger"},
-            {"label": "取消放棄", "custom_id": "cancel:abort", "style": "secondary"},
+            {
+                "label": button["label"],
+                "custom_id": button["custom_id"],
+                "style": button.get("style", "secondary"),
+            }
+            for button in build_discord_cancel_confirmation_components()[0]["components"]
         ]
 
     def _discord_button_style(self, style: str) -> int:
@@ -346,30 +360,16 @@ class DiscordCommandService:
         return mapping.get(style, 2)
 
     def _get_pending_register_state(self, user_id: str) -> dict:
-        raw = self.db.get_config(f"discord_pending_register:{user_id}")
-        if not raw:
-            return {}
-        try:
-            data = json.loads(raw)
-        except (TypeError, ValueError):
-            return {}
-        return data if isinstance(data, dict) else {}
+        return self.pending_state_store.get(user_id=user_id, flow="register")
 
     def _set_pending_register_state(self, user_id: str, state: dict) -> None:
-        self.db.set_config(f"discord_pending_register:{user_id}", json.dumps(state, ensure_ascii=False))
+        self.pending_state_store.set(user_id=user_id, flow="register", state=state)
 
     def _clear_pending_register_state(self, user_id: str) -> None:
-        self.db.set_config(f"discord_pending_register:{user_id}", "")
+        self.pending_state_store.clear(user_id=user_id, flow="register")
 
     def _get_pending_cancel_state(self, user_id: str) -> dict:
-        raw = self.db.get_config(f"discord_pending_cancel:{user_id}")
-        if not raw:
-            return {}
-        try:
-            data = json.loads(raw)
-        except (TypeError, ValueError):
-            return {}
-        return data if isinstance(data, dict) else {}
+        return self.pending_state_store.get(user_id=user_id, flow="cancel")
 
     def _clear_pending_cancel_state(self, user_id: str) -> None:
-        self.db.set_config(f"discord_pending_cancel:{user_id}", "")
+        self.pending_state_store.clear(user_id=user_id, flow="cancel")
