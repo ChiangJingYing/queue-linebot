@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.time_utils import format_display_time
+from core.time_utils import format_display_time, now_in_taipei
 from services.admin_flow import (
     build_admin_export_preview,
     build_admin_history,
@@ -19,6 +19,8 @@ from services.serve_flow import serve_user
 
 
 class HandlerAdminMixin:
+    LINE_NOTIFICATION_PLATFORM = "Line"
+
     def _handle_admin(self, user_id: str, command: str, args: list, reply_token: str) -> list:
         if not self._is_admin(user_id):
             return self._reply(reply_token, "❌ 未授權，僅限管理員使用。")
@@ -26,7 +28,7 @@ class HandlerAdminMixin:
         if command == "/admin/serve" and len(args) > 0:
             return self._admin_serve(user_id, args[0], reply_token)
         elif command == "/admin/serve":
-            return self._admin_serve_next(reply_token)
+            return self._admin_serve_next(user_id, reply_token)
         elif command == "/admin/status":
             return self._admin_status(reply_token)
         elif command == "/admin/stats":
@@ -36,16 +38,16 @@ class HandlerAdminMixin:
         elif command == "/admin/export":
             return self._handle_export(reply_token)
         elif command == "/admin/clear":
-            return self._handle_admin_clear(reply_token)
+            return self._handle_admin_clear(user_id, reply_token)
         elif command == "/admin/ping":
             return self._handle_admin_ping(args, reply_token)
         elif command == "/admin/vip":
             if len(args) >= 1 and args[0] == "status":
                 return self._handle_vip_status(reply_token)
             if len(args) >= 2 and args[0] == "toggle":
-                return self._handle_vip_toggle(args[1], reply_token)
+                return self._handle_vip_toggle(user_id, args[1], reply_token)
             if len(args) >= 1 and args[0] == "clear":
-                return self._handle_vip_clear(reply_token)
+                return self._handle_vip_clear(user_id, reply_token)
         elif command == "/admin/config":
             return self._admin_config(args, reply_token)
         elif command == "/admin/join":
@@ -173,7 +175,48 @@ class HandlerAdminMixin:
         self._last_admin_serve_at = self._admin_serve_cooldown_clock()
         self._last_admin_serve_label = display_name
 
-    def _admin_serve_next(self, reply_token: str) -> list:
+    def _broadcast_simple_event(
+        self,
+        *,
+        category: str,
+        title: str,
+        actor_label: str,
+        target_label: str,
+        detail_lines: list[str] | None = None,
+    ) -> None:
+        if getattr(self, "notification_service", None) is None:
+            return
+        self.notification_service.broadcast_event(
+            category=category,
+            title=title,
+            actor_label=actor_label,
+            target_label=target_label,
+            detail_lines=detail_lines,
+            platform=self.LINE_NOTIFICATION_PLATFORM,
+        )
+
+    def _broadcast_serve_event(
+        self,
+        *,
+        admin_user_id: str,
+        admin_display_name: str,
+        target_user_id: str,
+        target_display_name: str,
+        command_text: str,
+    ) -> None:
+        if getattr(self, "notification_service", None) is None:
+            return
+        self.notification_service.broadcast_serve_event(
+            admin_user_id=admin_user_id,
+            admin_display_name=admin_display_name,
+            target_user_id=target_user_id,
+            target_display_name=target_display_name,
+            command_text=command_text,
+            at_text=now_in_taipei().strftime("%Y-%m-%d %H:%M:%S"),
+            platform=self.LINE_NOTIFICATION_PLATFORM,
+        )
+
+    def _admin_serve_next(self, user_id: str, reply_token: str) -> list:
         if not self._admin_serve_lock.acquire(blocking=False):
             return self._reply(reply_token, "⚠️ 叫號進行中，請勿重複操作。")
         try:
@@ -185,6 +228,13 @@ class HandlerAdminMixin:
             if result["status"] == "served":
                 display_name = result["display_name"]
                 self._record_admin_serve_success(display_name)
+                self._broadcast_serve_event(
+                    admin_user_id=user_id,
+                    admin_display_name=self.queue_manager.db.get_display_name(user_id),
+                    target_user_id=result["target_user_id"],
+                    target_display_name=display_name,
+                    command_text="/admin/serve",
+                )
                 msg = f"✅ 已叫號：{display_name}"
             else:
                 msg = f"❌ 錯誤：{result['message']}"
@@ -208,6 +258,13 @@ class HandlerAdminMixin:
             if result["status"] == "served":
                 display_name = result["display_name"]
                 self._record_admin_serve_success(display_name)
+                self._broadcast_serve_event(
+                    admin_user_id=user_id,
+                    admin_display_name=self.queue_manager.db.get_display_name(user_id),
+                    target_user_id=result["target_user_id"],
+                    target_display_name=display_name,
+                    command_text=f"/admin/serve {target_id}",
+                )
                 msg = f"✅ 已叫號：{display_name}"
             else:
                 msg = f"❌ 錯誤：{result['message']}"
@@ -261,22 +318,43 @@ class HandlerAdminMixin:
         )
         return self._reply(reply_token, message)
 
-    def _handle_vip_toggle(self, value: str, reply_token: str) -> list:
+    def _handle_vip_toggle(self, user_id: str, value: str, reply_token: str) -> list:
         normalized = value.lower()
         if normalized not in {"on", "off"}:
             return self._reply(reply_token, "用法：/admin/vip toggle [on/off]")
 
         result = toggle_vip(vip_service=self.vip_service, enabled=normalized == "on")
+        self._broadcast_simple_event(
+            category="admin_action",
+            title="管理操作通知",
+            actor_label=f"管理員：{self.queue_manager.db.get_display_name(user_id)}（{user_id}）",
+            target_label=f"指令：/admin/vip toggle {normalized}",
+            detail_lines=[f"結果：{result['message']}"],
+        )
         return self._reply(reply_token, f"✅ {result['message']}")
 
-    def _handle_vip_clear(self, reply_token: str) -> list:
+    def _handle_vip_clear(self, user_id: str, reply_token: str) -> list:
         result = clear_vip_queue(queue_manager=self.queue_manager)
+        self._broadcast_simple_event(
+            category="admin_action",
+            title="管理操作通知",
+            actor_label=f"管理員：{self.queue_manager.db.get_display_name(user_id)}（{user_id}）",
+            target_label="指令：/admin/vip clear",
+            detail_lines=[f"結果：移除 {result['removed_count']} 筆 VIP 隊列"],
+        )
         return self._reply(reply_token, f"✅ 已清空 VIP 隊列，移除 {result['removed_count']} 筆")
 
-    def _handle_admin_clear(self, reply_token: str) -> list:
+    def _handle_admin_clear(self, user_id: str, reply_token: str) -> list:
         keep_admin_user_ids = set(self.admin_ids)
         result = clear_all_queue(queue_manager=self.queue_manager, keep_admin_user_ids=keep_admin_user_ids)
         self._announce_new_order_on_next_join = True
+        self._broadcast_simple_event(
+            category="admin_action",
+            title="管理操作通知",
+            actor_label=f"管理員：{self.queue_manager.db.get_display_name(user_id)}（{user_id}）",
+            target_label="指令：/admin/clear",
+            detail_lines=[f"結果：移除 {result['removed_count']} 筆隊列，清除 {result['cleared_profiles']} 筆使用者資料"],
+        )
         return self._reply(reply_token, f"✅ 已清空全部隊列，移除 {result['removed_count']} 筆，並清除 {result['cleared_profiles']} 筆使用者資料、保留 {result['kept_admin_profiles']} 筆 admin 資料")
 
     def _handle_admin_ping(self, args: list, reply_token: str) -> list:
@@ -341,5 +419,3 @@ class HandlerAdminMixin:
             return self._reply(reply_token, f"📋 隊列狀態：{'已開啟' if result['enabled'] else '已關閉'}")
 
         return self._reply(reply_token, "用法：/admin/join [on/off] 切換狀態 或 /admin/join status 查看狀態")
-
-

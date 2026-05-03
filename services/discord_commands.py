@@ -26,10 +26,12 @@ from services.interaction_presenters import (
 from services.pending_state_store import ConfigPendingStateStore
 from services.register_flow import advance_register_flow, begin_register_location_flow
 from services.register_service import complete_registration
+from services.telegram_admin_notifications import TelegramAdminNotificationService
 from services.user_flow import build_help_message, build_history_message, cancel_user, get_user_status, join_user
 
 
 class DiscordCommandService:
+    PLATFORM_LABEL = "Discord"
     USER_ACTION_ROWS = [
         [
             {"label": "舉手", "custom_id": "menu:join", "style": "primary"},
@@ -43,11 +45,16 @@ class DiscordCommandService:
         ],
     ]
 
-    def __init__(self, *, db, location_options: dict[str, list[str]] | None = None) -> None:
+    def __init__(self, *, db, location_options: dict[str, list[str]] | None = None, telegram_sender=None) -> None:
         self.db = db
         self.queue_manager = QueueManager(db) if isinstance(db, DatabaseManager) else None
         self.location_options = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
         self.pending_state_store = ConfigPendingStateStore(db, namespace="discord")
+        self.notification_service = (
+            TelegramAdminNotificationService(db=db, sender=telegram_sender)
+            if telegram_sender is not None
+            else None
+        )
 
     def handle_interaction(self, *, user_id: str, input_value: str) -> dict:
         raw_text = (input_value or "").strip()
@@ -151,6 +158,19 @@ class DiscordCommandService:
         if outcome["status"] != "success":
             return {"status": "error", "message": outcome["message"]}
 
+        if self.notification_service is not None:
+            self.notification_service.broadcast_event(
+                category="join",
+                title="排隊通知",
+                actor_label=f"使用者：{self.db.get_display_name(user_id)}（{user_id}）",
+                target_label=f"隊列：{queue_type}",
+                detail_lines=[
+                    f"號碼：#{outcome['queue_number']}",
+                    f"目前總人數：{outcome['total_in_queue']}",
+                ],
+                platform=self.PLATFORM_LABEL,
+            )
+
         return {
             "status": "success",
             "message": f"✅ 已加入隊列，號碼 #{outcome['queue_number']}（目前 {outcome['total_in_queue']} 人）",
@@ -176,6 +196,14 @@ class DiscordCommandService:
         outcome = cancel_user(queue_manager=self.queue_manager, user_id=user_id)
         if outcome["status"] != "cancelled":
             return {"status": "error", "message": outcome["message"]}
+        if self.notification_service is not None:
+            self.notification_service.broadcast_event(
+                category="cancel",
+                title="取消通知",
+                actor_label=f"使用者：{self.db.get_display_name(user_id)}（{user_id}）",
+                target_label="動作：離開隊列",
+                platform=self.PLATFORM_LABEL,
+            )
         return {"status": "success", "message": "✅ 已取消排隊", "components": self._button_rows(self.USER_ACTION_ROWS)}
 
     def _handle_status(self, *, user_id: str) -> dict:
@@ -323,7 +351,15 @@ class DiscordCommandService:
         self._clear_pending_cancel_state(user_id)
         result = self.queue_manager.cancel(user_id)
         if result["status"] != "cancelled":
-            return {"status": "error", "message": f"❌ 錯誤：{result['message']}"}
+            return {"status": "error", "message": f"❌ 錯誤：{result['message']}", "components": self._button_rows(self.USER_ACTION_ROWS)}
+        if self.notification_service is not None:
+            self.notification_service.broadcast_event(
+                category="cancel",
+                title="取消通知",
+                actor_label=f"使用者：{self.db.get_display_name(user_id)}（{user_id}）",
+                target_label="動作：離開隊列",
+                platform=self.PLATFORM_LABEL,
+            )
         return {"status": "success", "message": "✅ 已取消排隊", "components": self._button_rows(self.USER_ACTION_ROWS)}
 
 

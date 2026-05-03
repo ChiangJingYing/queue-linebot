@@ -36,8 +36,12 @@ class TelegramAdminNotificationService:
         actor_label: str,
         target_label: str,
         detail_lines: list[str] | None = None,
+        platform: str | None = None,
     ) -> list[str]:
-        lines = [f"🔔 {title}", actor_label, target_label]
+        lines = [f"🔔 {title}"]
+        if platform:
+            lines.append(f"平台：{platform}")
+        lines.extend([actor_label, target_label])
         if detail_lines:
             lines.extend(detail_lines)
         return self.broadcast(category=category, message="\n".join(lines))
@@ -51,12 +55,17 @@ class TelegramAdminNotificationService:
         target_display_name: str,
         command_text: str,
         at_text: str,
+        platform: str | None = None,
     ) -> list[str]:
-        message = (
-            "🔔 管理叫號通知\n"
-            f"時間：{at_text}\n"
-            f"管理員：{admin_display_name}（{admin_user_id}）\n"
-            f"指令：{command_text}\n"
-            f"叫號對象：{target_display_name}（{target_user_id}）"
+        lines = ["🔔 管理叫號通知"]
+        if platform:
+            lines.append(f"平台：{platform}")
+        lines.extend(
+            [
+                f"時間：{at_text}",
+                f"管理員：{admin_display_name}（{admin_user_id}）",
+                f"指令：{command_text}",
+                f"叫號對象：{target_display_name}（{target_user_id}）",
+            ]
         )
-        return self.broadcast(category="serve", message=message)
+        return self.broadcast(category="serve", message="\n".join(lines))

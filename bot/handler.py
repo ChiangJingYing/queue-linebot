@@ -15,6 +15,7 @@ from core.queue_manager import QueueManager
 from core.validators import validate_command
 from services.notifier import Notifier
 from services.pending_state_store import MemoryPendingStateStore
+from services.telegram_admin_notifications import TelegramAdminNotificationService
 from services.vip_service import VipService
 
 
@@ -41,6 +42,7 @@ class LineBotHandler(
         new_order_idle_seconds: int = 300,
         new_order_announcement_text: str = "您有新訂單",
         admin_serve_cooldown_seconds: int = 3,
+        telegram_sender=None,
     ) -> None:
         self.channel_secret = channel_secret
         self.channel_access_token = channel_access_token
@@ -67,6 +69,11 @@ class LineBotHandler(
         self._admin_serve_cooldown_clock = time.monotonic
         self._last_admin_serve_at = 0.0
         self._last_admin_serve_label = ""
+        self.notification_service = (
+            TelegramAdminNotificationService(db=self.queue_manager.db, sender=telegram_sender)
+            if telegram_sender is not None
+            else None
+        )
 
     def handle_event(self, event) -> list:
         user_id = getattr(getattr(event, "source", None), "userId", "")

@@ -758,6 +758,7 @@ class TelegramCommandService:
                 target_display_name=target_display_name,
                 command_text=raw_text,
                 at_text=now_in_taipei().strftime("%Y-%m-%d %H:%M:%S"),
+                platform="Telegram",
             )
         return {"status": "success", "message": f"✅ 已叫號：{target_display_name}"}
 
@@ -812,6 +813,7 @@ class TelegramCommandService:
             actor_label=actor_label,
             target_label=target_label,
             detail_lines=detail_lines,
+            platform="Telegram",
         )
 
     def _broadcast_error_event(self, *, user_id: str, command_text: str, error_message: str) -> None:
@@ -823,6 +825,7 @@ class TelegramCommandService:
             actor_label=f"使用者：{self._format_profile_label(user_id)}",
             target_label=f"指令：{command_text}",
             detail_lines=[f"原因：{error_message}"],
+            platform="Telegram",
         )
 
     def _format_profile_label(self, user_id: str) -> str:

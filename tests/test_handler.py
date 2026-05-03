@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import bot.handler_admin as handler_admin_module
+
 from bot.handler import LineBotHandler
 from core.queue_manager import QueueManager
 from core.database import DatabaseManager
@@ -25,16 +27,27 @@ def reply_texts(result):
 
 
 
-def test_handle_join_without_args_joins_current_user(tmp_path):
+def test_handle_join_without_args_joins_current_user_and_broadcasts_line_platform(tmp_path):
     db = DatabaseManager(str(tmp_path / "handler.db"))
     qm = QueueManager(db)
+    db.upsert_user_profile("tg_admin_1", "Telegram 管理員", verified=True, role="admin")
+    db.set_admin_notification_preference("tg_admin_1", "join", True)
     qm.register_name("alice", "Alice", location="A-1")
-    handler = LineBotHandler(queue_manager=qm)
+    sent = []
+
+    def telegram_sender(user_id: str, text: str) -> None:
+        sent.append((user_id, text))
+
+    handler = LineBotHandler(queue_manager=qm, telegram_sender=telegram_sender)
 
     result = handler.handle_event(make_event("/join", user_id="alice"))
 
     assert "加入隊列成功" in reply_texts(result)[0]
     assert [entry.user_id for entry in handler.queue_manager.get_queue()] == ["alice"]
+    assert sent == [("tg_admin_1", sent[0][1])]
+    assert "排隊通知" in sent[0][1]
+    assert "平台：Line" in sent[0][1]
+    assert "Alice（A-1）" in sent[0][1]
 
 
 
@@ -140,17 +153,28 @@ def test_cancel_closed_queue_can_be_aborted_without_leaving_queue(tmp_path):
     assert qm.get_user_position("alice") == 1
 
 
-def test_cancel_when_queue_open_still_cancels_immediately(tmp_path):
+def test_cancel_when_queue_open_still_cancels_immediately_and_broadcasts_line_platform(tmp_path):
     db = DatabaseManager(str(tmp_path / "cancel-open.db"))
     qm = QueueManager(db)
+    db.upsert_user_profile("tg_admin_1", "Telegram 管理員", verified=True, role="admin")
+    db.set_admin_notification_preference("tg_admin_1", "cancel", True)
     qm.register_name("alice", "Alice", location="A-1")
     qm.join("alice", "regular")
-    handler = LineBotHandler(queue_manager=qm)
+    sent = []
+
+    def telegram_sender(user_id: str, text: str) -> None:
+        sent.append((user_id, text))
+
+    handler = LineBotHandler(queue_manager=qm, telegram_sender=telegram_sender)
 
     result = handler.handle_event(make_event("/cancel", user_id="alice"))
 
     assert "已取消排隊" in result[0]["text"]
     assert qm.get_user_position("alice") is None
+    assert sent == [("tg_admin_1", sent[0][1])]
+    assert "取消通知" in sent[0][1]
+    assert "平台：Line" in sent[0][1]
+    assert "Alice（A-1）" in sent[0][1]
 
 
 
@@ -459,10 +483,32 @@ def test_admin_clear_keeps_all_admin_roles_but_clears_dashboard_registration_fie
     assert dynamic_kept.verified == 0
 
 
-def test_admin_serve_next_uses_display_name_and_location(tmp_path):
-    db = DatabaseManager(str(tmp_path / "serve-next.db"))
+def test_admin_serve_next_broadcasts_line_platform_to_telegram_admins(tmp_path, monkeypatch):
+    db = DatabaseManager(str(tmp_path / "handler-admin-serve-notify.db"))
     qm = QueueManager(db)
-    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+    db.upsert_user_profile("admin", "LINE 管理員", verified=True, role="admin")
+    db.upsert_user_profile("tg_admin_1", "Telegram 管理員", verified=True, role="admin")
+    db.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+    db.set_admin_notification_preference("tg_admin_1", "serve", True)
+
+    sent = []
+
+    class _FakeNow:
+        def strftime(self, fmt: str) -> str:
+            return "2026-05-03 15:54:00"
+
+    monkeypatch.setattr(handler_admin_module, "format_display_time", handler_admin_module.format_display_time)
+    monkeypatch.setattr(handler_admin_module, "now_in_taipei", lambda: _FakeNow(), raising=False)
+
+    def telegram_sender(user_id: str, text: str) -> None:
+        sent.append((user_id, text))
+
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+        telegram_sender=telegram_sender,
+    )
 
     qm.register_name("alice", "B12345678", location="A-1")
     qm.join("alice", "regular")
@@ -470,6 +516,43 @@ def test_admin_serve_next_uses_display_name_and_location(tmp_path):
     reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
 
     assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert sent == [("tg_admin_1", sent[0][1])]
+    assert "管理叫號通知" in sent[0][1]
+    assert "平台：Line" in sent[0][1]
+    assert "LINE 管理員（admin）" in sent[0][1]
+    assert "B12345678（A-1）（alice）" in sent[0][1]
+
+
+def test_admin_clear_broadcasts_line_platform_to_telegram_admins(tmp_path):
+    db = DatabaseManager(str(tmp_path / "handler-admin-clear-notify.db"))
+    qm = QueueManager(db)
+    db.upsert_user_profile("admin", "LINE 管理員", verified=True, role="admin")
+    db.upsert_user_profile("tg_admin_1", "Telegram 管理員", verified=True, role="admin")
+    db.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+    db.set_admin_notification_preference("tg_admin_1", "admin_action", True)
+
+    sent = []
+
+    def telegram_sender(user_id: str, text: str) -> None:
+        sent.append((user_id, text))
+
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+        telegram_sender=telegram_sender,
+    )
+
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.join("alice", "regular")
+
+    reply = handler.handle_event(make_event("/admin/clear", user_id="admin"))
+
+    assert "已清空全部隊列" in reply[0]["text"]
+    assert sent == [("tg_admin_1", sent[0][1])]
+    assert "管理操作通知" in sent[0][1]
+    assert "平台：Line" in sent[0][1]
+    assert "指令：/admin/clear" in sent[0][1]
 
 
 

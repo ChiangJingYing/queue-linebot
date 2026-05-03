@@ -76,9 +76,16 @@ class TestDiscordCommandService:
         assert profile.display_name == "B12345678"
         assert profile.location == "A-1"
 
-    def test_join_success_returns_followup_buttons(self, db_manager):
+    def test_join_success_returns_followup_buttons_and_broadcasts_discord_platform(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "Telegram 管理員", verified=True, role="admin")
         db_manager.upsert_user_profile("discord_user_1", "B12345678", location="A-1", verified=True, role="user")
-        service = DiscordCommandService(db=db_manager)
+        db_manager.set_admin_notification_preference("admin_a", "join", True)
+        sent = []
+
+        def sender(user_id: str, text: str) -> None:
+            sent.append((user_id, text))
+
+        service = DiscordCommandService(db=db_manager, telegram_sender=sender)
 
         result = service.handle_interaction(user_id="discord_user_1", input_value="menu:join")
 
@@ -86,6 +93,10 @@ class TestDiscordCommandService:
         assert "已加入隊列" in result["message"]
         labels = [item["label"] for row in result["components"] for item in row["components"]]
         assert labels == ["放棄", "看狀態", "看紀錄"]
+        assert sent == [("admin_a", sent[0][1])]
+        assert "排隊通知" in sent[0][1]
+        assert "平台：Discord" in sent[0][1]
+        assert "B12345678（A-1）" in sent[0][1]
 
     def test_status_returns_total_count_when_user_not_in_queue(self, db_manager):
         db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
@@ -180,6 +191,28 @@ class TestDiscordCommandService:
         assert stale_confirm["status"] == "error"
         assert "確認流程已失效" in stale_confirm["message"]
         assert service.queue_manager.get_user_position("alice") == 1
+
+    def test_cancel_final_confirmation_broadcasts_discord_platform(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "Telegram 管理員", verified=True, role="admin")
+        db_manager.upsert_user_profile("discord_user_1", "B12345678", location="A-1", verified=True, role="user")
+        db_manager.set_admin_notification_preference("admin_a", "cancel", True)
+        sent = []
+
+        def sender(user_id: str, text: str) -> None:
+            sent.append((user_id, text))
+
+        service = DiscordCommandService(db=db_manager, telegram_sender=sender)
+        service.handle_interaction(user_id="discord_user_1", input_value="/join")
+        sent.clear()
+
+        final = service.handle_interaction(user_id="discord_user_1", input_value="/cancel")
+
+        assert final["status"] == "success"
+        assert final["message"] == "✅ 已取消排隊"
+        assert sent == [("admin_a", sent[0][1])]
+        assert "取消通知" in sent[0][1]
+        assert "平台：Discord" in sent[0][1]
+        assert "B12345678（A-1）" in sent[0][1]
 
     def test_history_returns_recent_user_events(self, db_manager):
         db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")

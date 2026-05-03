@@ -345,7 +345,7 @@ class TestTelegramCommandService:
         assert "已提醒" in result["message"]
         assert "B12345678（A-1）" in result["message"]
 
-    def test_admin_serve_next_broadcasts_called_user(self, db_manager, monkeypatch):
+    def test_admin_serve_next_broadcasts_called_user_with_platform_label(self, db_manager, monkeypatch):
         db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
         db_manager.upsert_user_profile("admin_b", "管理員乙", verified=True, role="admin")
         db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
@@ -371,6 +371,7 @@ class TestTelegramCommandService:
         assert "已叫號" in result["message"]
         assert "B12345678（A-1）" in result["message"]
         assert sent == [("admin_b", sent[0][1])]
+        assert "平台：Telegram" in sent[0][1]
         assert "管理員甲" in sent[0][1]
         assert "B12345678（A-1）" in sent[0][1]
         assert "時間：2026-04-30 03:30:00" in sent[0][1]
@@ -523,6 +524,7 @@ class TestTelegramCommandService:
         assert result["status"] == "success"
         assert sent == [("admin_a", sent[0][1])]
         assert "排隊通知" in sent[0][1]
+        assert "平台：Telegram" in sent[0][1]
         assert "B12345678（A-1）" in sent[0][1]
 
     def test_cancel_broadcasts_to_admins_with_cancel_pref(self, db_manager):

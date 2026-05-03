@@ -8,6 +8,8 @@ from services.user_flow import cancel_user, join_user
 
 
 class HandlerCommandsMixin:
+    LINE_NOTIFICATION_PLATFORM = "Line"
+
     def _handle_join(self, user_id: str, args: list, reply_token: str) -> list:
         if not args:
             target_id = user_id
@@ -29,6 +31,18 @@ class HandlerCommandsMixin:
         if outcome["status"] == "success":
             self._maybe_push_new_order_announcement(queue_size_after_join=outcome.get("total_in_queue", 0))
             self._new_order_last_joined_at = datetime.now()
+            if getattr(self, "notification_service", None) is not None:
+                self.notification_service.broadcast_event(
+                    category="join",
+                    title="排隊通知",
+                    actor_label=f"使用者：{self.queue_manager.db.get_display_name(target_id)}（{target_id}）",
+                    target_label=f"隊列：{queue_type}",
+                    detail_lines=[
+                        f"號碼：#{outcome['queue_number']}",
+                        f"目前總人數：{outcome['total_in_queue']}",
+                    ],
+                    platform=self.LINE_NOTIFICATION_PLATFORM,
+                )
             msg = (
                 f"✅ 加入隊列成功！\n"
                 f"   你的號碼：#{outcome['queue_number']}\n"
@@ -84,6 +98,14 @@ class HandlerCommandsMixin:
         outcome = cancel_user(queue_manager=self.queue_manager, user_id=user_id)
 
         if outcome["status"] == "cancelled":
+            if self.notification_service is not None:
+                self.notification_service.broadcast_event(
+                    category="cancel",
+                    title="取消通知",
+                    actor_label=f"使用者：{self.queue_manager.db.get_display_name(user_id)}（{user_id}）",
+                    target_label="動作：離開隊列",
+                    platform=self.LINE_NOTIFICATION_PLATFORM,
+                )
             msg = (
                 f"✅ 已取消排隊！\n"
                 f"   原始順位：#{outcome['removed_position']}\n"

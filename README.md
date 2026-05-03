@@ -670,6 +670,95 @@ curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
   }'
 ```
 
+### Telegram admin 推播設定（/admin/notify）
+
+Telegram admin 可用：
+
+- `/admin/notify status`：查看目前每個推播類別是 on / off
+- `/admin/notify [category] on`：開啟指定類別
+- `/admin/notify [category] off`：關閉指定類別
+- `/admin/notify all on`：全部開啟
+- `/admin/notify all off`：全部關閉
+
+目前可設定的類別如下：
+
+- `register`
+  - 意義：註冊相關通知
+  - 目前來源平台：`Telegram`
+  - 典型情境：Telegram 使用者完成註冊後，通知有開啟 `register` 的 Telegram admin
+
+- `join`
+  - 意義：加入隊列通知
+  - 目前來源平台：`Telegram`、`Line`、`Discord`
+  - 典型情境：
+    - Telegram 使用者 `/join`
+    - LINE 使用者加入隊列
+    - Discord 使用者加入隊列
+  - 備註：目前三個平台共用同一個 `join` 開關，不分平台細拆
+
+- `cancel`
+  - 意義：離開／放棄隊列通知
+  - 目前來源平台：`Telegram`、`Line`、`Discord`
+  - 典型情境：
+    - Telegram 使用者 `/cancel`
+    - LINE 使用者確實放棄排隊
+    - Discord 使用者確實放棄排隊
+  - 備註：目前三個平台共用同一個 `cancel` 開關，不分平台細拆
+
+- `serve`
+  - 意義：管理員叫號通知
+  - 目前來源平台：`Telegram`、`Line`
+  - 典型情境：
+    - Telegram admin 執行 `/admin/serve`
+    - LINE admin 執行叫號相關操作
+  - 備註：目前 Discord 尚未實作 admin serve 流程
+
+- `skip`
+  - 意義：跳過使用者通知
+  - 目前來源平台：`Telegram`
+  - 典型情境：Telegram admin 執行 `/admin/skip`
+
+- `admin_action`
+  - 意義：一般管理操作通知（非叫號）
+  - 目前來源平台：`Telegram`、`Line`
+  - 典型情境：
+    - Telegram admin 執行 `/admin/clear`
+    - Telegram admin 執行 `/admin/vip toggle [on/off]`
+    - Telegram admin 執行 `/admin/vip clear`
+    - LINE admin 執行 `/admin/clear`
+    - LINE admin 執行 `/admin/vip toggle [on/off]`
+    - LINE admin 執行 `/admin/vip clear`
+  - 備註：目前 Discord 尚未實作 admin 指令，因此沒有 Discord 來源的 `admin_action`
+
+- `error`
+  - 意義：操作失敗通知
+  - 目前來源平台：`Telegram`
+  - 典型情境：Telegram 指令執行失敗時，通知有開啟 `error` 的 Telegram admin
+
+### 推播設定支援範圍
+
+這套 `/admin/notify` 目前是 **Telegram admin 的通知接收偏好設定**，也就是：
+
+- 誰可以設定：只有 `Telegram` admin
+- 通知送到哪裡：送到有開啟該類別的 `Telegram` admin
+- 哪些平台事件可以觸發：目前已有部分 `Line` / `Discord` 事件接上，並送往 Telegram admin
+
+簡單講：
+
+- `Line` / `Discord` **可以當通知來源**（例如 join / cancel）
+- 但 `Line admin` / `Discord admin` **目前不能各自在自己平台上設定這些通知開關**
+- 也沒有 LINE / Discord 版本的 `/admin/notify`
+
+如果要看目前哪些跨平台事件已接入 Telegram admin 推播，可以先記這個對照：
+
+- `join`：Telegram / Line / Discord
+- `cancel`：Telegram / Line / Discord
+- `serve`：Telegram / Line
+- `admin_action`：Telegram / Line
+- `skip`：Telegram
+- `register`：Telegram
+- `error`：Telegram
+
 ---
 
 ## Dashboard 與語音播報

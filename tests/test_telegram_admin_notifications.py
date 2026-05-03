@@ -64,7 +64,7 @@ class TestTelegramAdminNotificationService:
         assert delivered == ["admin_a"]
         assert sent == [("admin_a", "Alice joined")]
 
-    def test_serve_broadcast_message_includes_operator_and_target(self, tmp_path):
+    def test_serve_broadcast_message_includes_operator_target_and_platform(self, tmp_path):
         db = DatabaseManager(str(tmp_path / "telegram-serve.db"))
         db.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
         db.set_admin_notification_preference("admin_a", "serve", True)
@@ -82,17 +82,19 @@ class TestTelegramAdminNotificationService:
             target_display_name="B12345678（A-1）",
             command_text="/admin/serve",
             at_text="2026-04-30 00:30:00",
+            platform="Line",
         )
 
         assert delivered == ["admin_a"]
         assert len(sent) == 1
         _, message = sent[0]
+        assert "平台：Line" in message
         assert "管理員乙" in message
         assert "/admin/serve" in message
         assert "B12345678（A-1）" in message
         assert "2026-04-30 00:30:00" in message
 
-    def test_simple_event_broadcast_includes_actor_and_target(self, tmp_path):
+    def test_simple_event_broadcast_includes_actor_target_and_platform(self, tmp_path):
         db = DatabaseManager(str(tmp_path / "telegram-event.db"))
         db.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
         db.set_admin_notification_preference("admin_a", "join", True)
@@ -109,12 +111,14 @@ class TestTelegramAdminNotificationService:
             actor_label="使用者：B12345678（A-1）",
             target_label="隊列：regular",
             detail_lines=["時間：2026-04-30 00:55:00"],
+            platform="Discord",
         )
 
         assert delivered == ["admin_a"]
         assert len(sent) == 1
         _, message = sent[0]
         assert "排隊通知" in message
+        assert "平台：Discord" in message
         assert "使用者：B12345678（A-1）" in message
         assert "隊列：regular" in message
         assert "時間：2026-04-30 00:55:00" in message

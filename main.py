@@ -319,6 +319,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         announcement_service=dashboard_announcement_service,
         new_order_idle_seconds=int(tts_config.get("new_order_idle_seconds", 300)),
         new_order_announcement_text=str(tts_config.get("new_order_announcement_text", "您有新訂單")),
+        telegram_sender=_send_telegram_text,
     )
     telegram_command_service = TelegramCommandService(
         db=db_manager,
@@ -330,6 +331,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     discord_command_service = DiscordCommandService(
         db=db_manager,
         location_options=LOCATION_OPTIONS,
+        telegram_sender=_send_telegram_text,
     )
 
     scheduler = BackgroundScheduler()
