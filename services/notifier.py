@@ -114,8 +114,7 @@ class Notifier:
         """Notify user they are being served."""
         msg = (
             f"🎉 輪到你了，號碼 #{queue_number}！\n"
-            "請前往服務區。\n"
-            "完成後請回覆 'done'。"
+            "請做好準備，若沒有助教前往，請舉手或找助教反應。"
         )
         return self.notify_user(user_id, msg)
 
