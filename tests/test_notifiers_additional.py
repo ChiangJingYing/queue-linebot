@@ -25,6 +25,15 @@ class TestNotifierAdditional:
         assert "助教" in result
         assert "#9" in result
 
+    def test_notify_served_can_skip_line_push_when_config_disabled(self):
+        notifier = Notifier("secret", "token", line_push_on_served=False)
+        result = notifier.notify_served("alice", 9)
+
+        assert result.startswith("已略過 LINE 被叫號推播給 alice：")
+        assert "請做好準備" in result
+        assert "助教" in result
+        assert "#9" in result
+
     def test_notify_join_success_contains_checkmark_and_number(self):
         notifier = Notifier("secret", "token")
         result = notifier.notify_join_success("alice", 4)

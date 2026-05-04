@@ -288,6 +288,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         discord_sender=_send_discord_text,
         telegram_sender=_send_telegram_text,
         db=db_manager,
+        line_push_on_served=bool(line_bot_config.get("push_on_served", True)),
     )
     queue_manager = QueueManager(db_manager, notifier)
     vip_service = VipService(db_manager)

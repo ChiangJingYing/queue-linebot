@@ -34,6 +34,14 @@ web_ui:
   allow_query_token: false
   session_cookie_name: queue_admin_session
 
+line_bot:
+  # 控制 LINE 使用者在「被叫號」時是否額外收到 push。
+  # 設為 false 時：
+  # - admin / user 一般 webhook reply 仍正常可用
+  # - admin ping 仍可送出
+  # - rich menu 綁定仍正常
+  push_on_served: false
+
 # Bot tokens / secrets should stay in .env
 # line_bot / telegram_bot / discord_bot sections are allowed here only for
 # non-sensitive toggles if you add them later.
