@@ -743,6 +743,27 @@ class TestTelegramCommandService:
         assert profile.display_name == "B12345678"
         assert profile.location == "A-1"
 
+    def test_promoted_admin_using_stale_user_reply_keyboard_refreshes_admin_menu(self, db_manager):
+        db_manager.upsert_user_profile("tg_user_1", "User 1", verified=True, role="user")
+        service = TelegramCommandService(db=db_manager)
+
+        first_menu = service.handle_text(user_id="tg_user_1", text="/menu")
+        assert first_menu["reply_markup"]["keyboard"] == [
+            [{"text": "舉手"}, {"text": "放棄"}, {"text": "看狀態"}],
+            [{"text": "看紀錄"}, {"text": "設定資料"}, {"text": "排隊紀錄"}],
+        ]
+
+        db_manager.upsert_user_profile("tg_user_1", "User 1", verified=True, role="admin")
+
+        result = service.handle_text(user_id="tg_user_1", text="看狀態")
+
+        assert result["status"] == "success"
+        assert "reply_markup" in result
+        assert result["reply_markup"]["keyboard"] == [
+            [{"text": "叫號"}, {"text": "提醒"}, {"text": "完整狀態"}],
+            [{"text": "開關排隊"}, {"text": "更多功能"}],
+        ]
+
 
     def test_non_admin_cannot_use_admin_vip(self, db_manager):
         db_manager.upsert_user_profile("user_a", "User A", verified=True, role="user")

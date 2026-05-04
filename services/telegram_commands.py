@@ -155,6 +155,7 @@ class TelegramCommandService:
         self.db.set_config(f"telegram_user:{user_id}", "1")
         raw_text = text.strip()
         normalized_text = self._normalize_text_alias(user_id=user_id, text=raw_text)
+        used_stale_user_reply_button = self.db.is_admin(user_id) and raw_text in self.USER_TEXT_ALIASES
 
         if raw_text in self.ADMIN_TEXT_ALIASES and not self.db.is_admin(user_id):
             return {
@@ -182,46 +183,51 @@ class TelegramCommandService:
 
         command, args = validate_command(normalized_text)
         if command == "/menu":
-            return self._handle_menu(user_id=user_id)
-        if command == "/hostory":
-            return self._handle_user_history(user_id=user_id)
-        if command == "/register":
-            return self._handle_register(user_id=user_id, args=args)
-        if command == "/join":
-            return self._handle_join(user_id=user_id, args=args, raw_text=raw_text)
-        if command == "/cancel":
-            return self._handle_cancel(user_id=user_id, raw_text=raw_text)
-        if command == "/status":
-            return self._handle_status(user_id=user_id)
-        if command == "/history":
-            return self._handle_user_history(user_id=user_id)
-        if command == "/help":
-            return self._handle_help(user_id=user_id)
-        if command == "/admin/apply":
-            return self._handle_admin_apply(user_id=user_id, args=args)
-        if command == "/admin/notify":
-            return self._handle_admin_notify(user_id=user_id, args=args)
-        if command == "/admin/join":
-            return self._handle_admin_join(user_id=user_id, args=args)
-        if command == "/admin/status":
-            return self._handle_admin_status(user_id=user_id)
-        if command == "/admin/stats":
-            return self._handle_admin_stats(user_id=user_id)
-        if command == "/admin/history":
-            return self._handle_admin_history(user_id=user_id, args=args)
-        if command == "/admin/export":
-            return self._handle_admin_export(user_id=user_id)
-        if command == "/admin/clear":
-            return self._handle_admin_clear(user_id=user_id, raw_text=raw_text)
-        if command == "/admin/ping":
-            return self._handle_admin_ping(user_id=user_id, args=args)
-        if command == "/admin/serve":
-            return self._handle_admin_serve(user_id=user_id, args=args, raw_text=raw_text)
-        if command == "/admin/skip":
-            return self._handle_admin_skip(user_id=user_id, args=args, raw_text=raw_text)
-        if command == "/admin/vip":
-            return self._handle_admin_vip(user_id=user_id, args=args, raw_text=raw_text)
-        return {"status": "error", "message": "Unknown command."}
+            result = self._handle_menu(user_id=user_id)
+        elif command == "/hostory":
+            result = self._handle_user_history(user_id=user_id)
+        elif command == "/register":
+            result = self._handle_register(user_id=user_id, args=args)
+        elif command == "/join":
+            result = self._handle_join(user_id=user_id, args=args, raw_text=raw_text)
+        elif command == "/cancel":
+            result = self._handle_cancel(user_id=user_id, raw_text=raw_text)
+        elif command == "/status":
+            result = self._handle_status(user_id=user_id)
+        elif command == "/history":
+            result = self._handle_user_history(user_id=user_id)
+        elif command == "/help":
+            result = self._handle_help(user_id=user_id)
+        elif command == "/admin/apply":
+            result = self._handle_admin_apply(user_id=user_id, args=args)
+        elif command == "/admin/notify":
+            result = self._handle_admin_notify(user_id=user_id, args=args)
+        elif command == "/admin/join":
+            result = self._handle_admin_join(user_id=user_id, args=args)
+        elif command == "/admin/status":
+            result = self._handle_admin_status(user_id=user_id)
+        elif command == "/admin/stats":
+            result = self._handle_admin_stats(user_id=user_id)
+        elif command == "/admin/history":
+            result = self._handle_admin_history(user_id=user_id, args=args)
+        elif command == "/admin/export":
+            result = self._handle_admin_export(user_id=user_id)
+        elif command == "/admin/clear":
+            result = self._handle_admin_clear(user_id=user_id, raw_text=raw_text)
+        elif command == "/admin/ping":
+            result = self._handle_admin_ping(user_id=user_id, args=args)
+        elif command == "/admin/serve":
+            result = self._handle_admin_serve(user_id=user_id, args=args, raw_text=raw_text)
+        elif command == "/admin/skip":
+            result = self._handle_admin_skip(user_id=user_id, args=args, raw_text=raw_text)
+        elif command == "/admin/vip":
+            result = self._handle_admin_vip(user_id=user_id, args=args, raw_text=raw_text)
+        else:
+            result = {"status": "error", "message": "Unknown command."}
+
+        if used_stale_user_reply_button and "reply_markup" not in result:
+            result = {**result, "reply_markup": self._reply_keyboard_markup(user_id)}
+        return result
 
     def _handle_menu(self, *, user_id: str) -> dict:
         return {
