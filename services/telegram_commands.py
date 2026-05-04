@@ -121,6 +121,13 @@ class TelegramCommandService:
         raw_text = text.strip()
         normalized_text = self._normalize_text_alias(user_id=user_id, text=raw_text)
 
+        if raw_text in self.ADMIN_TEXT_ALIASES and not self.db.is_admin(user_id):
+            return {
+                "status": "error",
+                "message": "❌ 未授權，已切回一般功能選單。",
+                "reply_markup": self._reply_keyboard_markup(user_id),
+            }
+
         if pending := self._get_pending_register_state(user_id):
             if normalized_text.startswith("/") and normalized_text != "/register":
                 self._clear_pending_register_state(user_id)

@@ -42,6 +42,18 @@ class TestTelegramCommandService:
             [{"text": "幫助"}, {"text": "返回主選單"}],
         ]
 
+    def test_non_admin_pressing_stale_admin_reply_button_refreshes_user_menu(self, db_manager):
+        service = TelegramCommandService(db=db_manager)
+
+        result = service.handle_text(user_id="user_a", text="推播設定")
+
+        assert result["status"] == "error"
+        assert "已切回一般功能選單" in result["message"]
+        assert result["reply_markup"]["keyboard"] == [
+            [{"text": "舉手"}, {"text": "放棄"}, {"text": "看狀態"}],
+            [{"text": "看紀錄"}, {"text": "設定資料"}, {"text": "排隊紀錄"}],
+        ]
+
     def test_admin_notification_menu_opens_inline_keyboard_for_all_categories(self, db_manager):
         db_manager.upsert_user_profile("admin_a", "Admin A", verified=True, role="admin")
         service = TelegramCommandService(db=db_manager)
