@@ -21,7 +21,8 @@ class TestNotifierAdditional:
         notifier = Notifier("secret", "token")
         result = notifier.notify_served("alice", 9)
 
-        assert "服務區" in result
+        assert "請做好準備" in result
+        assert "助教" in result
         assert "#9" in result
 
     def test_notify_join_success_contains_checkmark_and_number(self):

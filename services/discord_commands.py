@@ -1,4 +1,11 @@
-"""Discord DM user command handling built on the shared queue logic."""
+"""Discord DM 指令入口與互動元件整合層。
+
+此模組建立在共用 queue flow 之上，負責：
+- 將 Discord interaction payload 正規化成共用命令
+- 轉接 register/cancel/join/status/history/help 等流程
+- 組裝 Discord modal 與 button components
+- 視需要透過 Telegram admin notification service 廣播後台通知
+"""
 
 from __future__ import annotations
 
@@ -31,7 +38,11 @@ from services.user_flow import build_help_message, build_history_message, cancel
 
 
 class DiscordCommandService:
+    """Discord 平台的 command façade 與 component presenter。"""
+
+    #: 廣播給 admin 時使用的平台標籤。
     PLATFORM_LABEL = "Discord"
+    #: 一般使用者固定功能列。
     USER_ACTION_ROWS = [
         [
             {"label": "舉手", "custom_id": "menu:join", "style": "primary"},
@@ -46,10 +57,14 @@ class DiscordCommandService:
     ]
 
     def __init__(self, *, db, location_options: dict[str, list[str]] | None = None, telegram_sender=None) -> None:
+        """建立 Discord command service 與其共用依賴。"""
         self.db = db
+        #: Discord command 層共用的隊列核心；join/cancel/status 都透過它落到共用邏輯。
         self.queue_manager = QueueManager(db) if isinstance(db, DatabaseManager) else None
         self.location_options = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
+        #: 保存 Discord register/cancel 多步驟互動狀態。
         self.pending_state_store = ConfigPendingStateStore(db, namespace="discord")
+        #: 透過 Telegram 發送給管理員的後台事件廣播 service。
         self.notification_service = (
             TelegramAdminNotificationService(db=db, sender=telegram_sender)
             if telegram_sender is not None
@@ -57,6 +72,7 @@ class DiscordCommandService:
         )
 
     def handle_interaction(self, *, user_id: str, input_value: str) -> dict:
+        """處理 Discord slash command、button action 與 modal submit payload。"""
         raw_text = (input_value or "").strip()
         normalized_text = normalize_discord_action(raw_text)
 
@@ -94,9 +110,11 @@ class DiscordCommandService:
         return {"status": "error", "message": "Unknown command."}
 
     def _normalize_action(self, text: str) -> str:
+        """將 Discord menu/button action 正規化為共用命令字串。"""
         return normalize_discord_action(text)
 
     def _handle_menu(self) -> dict:
+        """回傳 Discord 使用者功能選單。"""
         return {
             "status": "success",
             "message": "請使用下方功能選單。",
@@ -104,12 +122,14 @@ class DiscordCommandService:
         }
 
     def _handle_register(self, *, user_id: str, args: list[str]) -> dict:
+        """啟動 Discord 註冊 modal。"""
         if args:
             return {"status": "error", "message": "❌ 錯誤：/register 不接受參數，請直接輸入 /register 後依提示完成註冊。"}
 
         return self._build_register_modal()
 
     def _build_register_modal(self) -> dict:
+        """建立 Discord 學號輸入 modal。"""
         return {
             "status": "modal",
             "modal": {
@@ -134,6 +154,7 @@ class DiscordCommandService:
         }
 
     def _start_register_flow(self, *, user_id: str, display_name: str) -> dict:
+        """在 Discord modal 送出學號後，進入排別/座位多步驟流程。"""
         outcome = begin_register_location_flow(
             display_name=display_name,
             location_options=self.location_options,
@@ -146,6 +167,7 @@ class DiscordCommandService:
         }
 
     def _handle_join(self, *, user_id: str, args: list[str]) -> dict:
+        """處理 Discord 使用者加入隊列，必要時附回後續操作按鈕。"""
         queue_type = args[0].lower() if args else "regular"
         outcome = join_user(queue_manager=self.queue_manager, user_id=user_id, queue_type=queue_type)
         if outcome["status"] == "needs_registration":
@@ -184,6 +206,7 @@ class DiscordCommandService:
         }
 
     def _handle_cancel(self, *, user_id: str) -> dict:
+        """處理取消排隊；封隊時改走 Discord 二次確認按鈕流程。"""
         if not self.queue_manager.get_queue_enabled() and self.queue_manager.get_user_position(user_id) is not None:
             outcome = begin_closed_queue_cancel_flow()
             self.pending_state_store.set(user_id=user_id, flow="cancel", state=outcome["state"])
@@ -207,6 +230,7 @@ class DiscordCommandService:
         return {"status": "success", "message": "✅ 已取消排隊", "components": self._button_rows(self.USER_ACTION_ROWS)}
 
     def _handle_status(self, *, user_id: str) -> dict:
+        """回傳 Discord 版個人隊列狀態。"""
         outcome = get_user_status(queue_manager=self.queue_manager, user_id=user_id)
         if outcome["status"] == "not_in_queue":
             return {
@@ -233,6 +257,7 @@ class DiscordCommandService:
         }
 
     def _handle_user_history(self, *, user_id: str) -> dict:
+        """回傳使用者歷史紀錄，並保留 Discord 功能按鈕。"""
         history = self.queue_manager.get_user_history(user_id)
         return {
             "status": "success",
@@ -244,6 +269,7 @@ class DiscordCommandService:
         }
 
     def _handle_help(self) -> dict:
+        """回傳 Discord 使用者版說明文字。"""
         outcome = build_help_message(
             is_admin=False,
             include_menu=True,
@@ -254,6 +280,7 @@ class DiscordCommandService:
         return {"status": outcome["status"], "message": outcome["message"], "components": self._button_rows(self.USER_ACTION_ROWS)}
 
     def _normalize_register_pending_text(self, *, text: str, state: dict) -> str:
+        """將 Discord 註冊 callback 還原成 flow state machine 可理解的值。"""
         if not is_discord_register_choice_action(text):
             return text
 
@@ -264,6 +291,7 @@ class DiscordCommandService:
         return text
 
     def _handle_register_pending(self, *, user_id: str, text: str, state: dict) -> dict:
+        """推進 Discord 註冊 pending state。"""
         normalized_pending_text = self._normalize_register_pending_text(text=text, state=state)
         outcome = advance_register_flow(
             state=state,
@@ -301,6 +329,7 @@ class DiscordCommandService:
         return {"status": "error", "message": outcome["message"]}
 
     def _complete_register(self, *, user_id: str, display_name: str, location: str) -> dict:
+        """將 Discord 註冊結果落地並返回預設功能列。"""
         outcome = complete_registration(
             queue_manager=self.queue_manager,
             user_id=user_id,
@@ -317,6 +346,7 @@ class DiscordCommandService:
         }
 
     def _handle_cancel_confirmation(self, *, user_id: str, action: str) -> dict:
+        """處理 Discord 封隊放棄確認按鈕的狀態推進。"""
         state = self._get_pending_cancel_state(user_id)
         outcome = advance_closed_queue_cancel_flow(
             state=state,
@@ -364,9 +394,11 @@ class DiscordCommandService:
 
 
     def _button_rows(self, rows: list[list[dict]]) -> list[dict]:
+        """將內部按鈕列表示法轉成 Discord components rows。"""
         return build_discord_menu_components(rows)
 
     def _choice_buttons(self, options: list[str], *, prefix: str) -> list[dict]:
+        """建立單一 action row 可直接使用的 Discord 選項按鈕。"""
         return [
             {
                 "label": button["label"],
@@ -377,6 +409,7 @@ class DiscordCommandService:
         ]
 
     def _cancel_confirmation_buttons(self) -> list[dict]:
+        """建立 Discord 封隊取消確認的單列按鈕。"""
         return [
             {
                 "label": button["label"],
@@ -387,16 +420,21 @@ class DiscordCommandService:
         ]
 
     def _get_pending_register_state(self, user_id: str) -> dict:
+        """讀取 Discord 註冊流程 pending state。"""
         return self.pending_state_store.get(user_id=user_id, flow="register")
 
     def _set_pending_register_state(self, user_id: str, state: dict) -> None:
+        """寫入 Discord 註冊流程 pending state。"""
         self.pending_state_store.set(user_id=user_id, flow="register", state=state)
 
     def _clear_pending_register_state(self, user_id: str) -> None:
+        """清除 Discord 註冊流程 pending state。"""
         self.pending_state_store.clear(user_id=user_id, flow="register")
 
     def _get_pending_cancel_state(self, user_id: str) -> dict:
+        """讀取 Discord 封隊取消流程 pending state。"""
         return self.pending_state_store.get(user_id=user_id, flow="cancel")
 
     def _clear_pending_cancel_state(self, user_id: str) -> None:
+        """清除 Discord 封隊取消流程 pending state。"""
         self.pending_state_store.clear(user_id=user_id, flow="cancel")

@@ -844,7 +844,8 @@ def test_telegram_webhook_marks_user_and_notifier_sends_called_message_via_teleg
     assert sent == [("45678", sent[0][1], None)]
     assert "輪到你了" in sent[0][1]
     assert "#1" in sent[0][1]
-    assert "服務區" in sent[0][1]
+    assert "請做好準備" in sent[0][1]
+    assert "助教" in sent[0][1]
 
 
 def test_telegram_webhook_sends_inline_keyboard_markup(tmp_path, monkeypatch):

@@ -1,3 +1,15 @@
+"""LINE 管理員指令處理 mixin。
+
+這個模組承接 ``LineBotHandler`` 分派過來的管理員命令，主要負責：
+- admin 權限檢查與子命令路由
+- 叫號 / 跳過 / 清隊列 / 匯出 / 統計
+- admin 申請審核流程
+- 管理通知廣播
+
+實際的資料操作大多委派給 ``services.admin_flow``、``services.serve_flow``
+與 ``QueueManager`` / ``DatabaseManager``。
+"""
+
 from __future__ import annotations
 
 from core.time_utils import format_display_time, now_in_taipei
@@ -19,9 +31,16 @@ from services.serve_flow import serve_user
 
 
 class HandlerAdminMixin:
+    """封裝 LINE 管理員專用指令流程。"""
+
+    #: 用於管理通知廣播中的平台名稱標記。
     LINE_NOTIFICATION_PLATFORM = "Line"
 
     def _handle_admin(self, user_id: str, command: str, args: list, reply_token: str) -> list:
+        """管理員指令總入口。
+
+        先做 admin 權限檢查，再依命令字串分派到各個子處理器。
+        """
         if not self._is_admin(user_id):
             return self._reply(reply_token, "❌ 未授權，僅限管理員使用。")
 
@@ -56,6 +75,12 @@ class HandlerAdminMixin:
         return self._reply(reply_token, "未知管理員指令。")
 
     def _handle_admin_apply_command(self, user_id: str, args: list, reply_token: str) -> list:
+        """處理 admin 申請相關子命令。
+
+        - 無參數：提出申請
+        - list：查看待審核清單
+        - approve / reject：審核申請
+        """
         if not args:
             return self._handle_admin_apply(user_id, reply_token)
 
@@ -85,6 +110,7 @@ class HandlerAdminMixin:
         return self._reply(reply_token, "用法：/admin/apply [list|approve|reject]")
 
     def _handle_admin_apply(self, user_id: str, reply_token: str) -> list:
+        """讓一般使用者送出 admin 申請。"""
         if self._is_admin(user_id):
             return self._reply(reply_token, "❌ 你已經是管理員了，無需再次申請。")
 
@@ -99,6 +125,7 @@ class HandlerAdminMixin:
         return self._reply(reply_token, f"❌ 錯誤：{result.get('message', 'Unknown error')}")
 
     def _handle_admin_apply_list(self, reply_token: str = "", user_id: str | None = None, page: int = 1) -> list:
+        """列出待審核的 admin 申請，並附上 quick reply 操作。"""
         pending = self.queue_manager.db.get_pending_applications()
         if not pending:
             return self._reply(reply_token, "📋 Admin 申請列表\n─────────────\n目前沒有待審核的申請。")
@@ -143,18 +170,21 @@ class HandlerAdminMixin:
         return self._reply(reply_token, msg, quick_options=items)
 
     def _handle_admin_apply_approve(self, user_id: str | None = None, target_id: str = "", reply_token: str = "") -> list:
+        """批准指定使用者的 admin 申請。"""
         result = self.queue_manager.db.approve_admin_application(target_id, user_id or "")
         if result["status"] == "success":
             return self._reply(reply_token, f"✅ 已批准 {target_id} 的 admin 申請。")
         return self._reply(reply_token, f"❌ 找不到 {target_id} 的待審核申請。")
 
     def _handle_admin_apply_reject(self, user_id: str | None = None, target_id: str = "", reply_token: str = "") -> list:
+        """拒絕指定使用者的 admin 申請。"""
         result = self.queue_manager.db.reject_admin_application(target_id, user_id or "")
         if result["status"] == "success":
             return self._reply(reply_token, f"✅ 已拒絕 {target_id} 的 admin 申請。")
         return self._reply(reply_token, f"❌ 找不到 {target_id} 的待審核申請（已處理或不存在）。")
 
     def _is_admin(self, user_id: str) -> bool:
+        """判斷使用者是否具有管理員權限。"""
         if user_id in self.admin_ids:
             return True
         try:
@@ -163,6 +193,7 @@ class HandlerAdminMixin:
             return False
 
     def _admin_serve_guard_message(self) -> str | None:
+        """檢查叫號冷卻是否仍在生效，避免重複叫號。"""
         now = self._admin_serve_cooldown_clock()
         cooldown_seconds = self._admin_serve_cooldown_seconds
         if cooldown_seconds > 0 and self._last_admin_serve_at:
@@ -172,6 +203,7 @@ class HandlerAdminMixin:
         return None
 
     def _record_admin_serve_success(self, display_name: str) -> None:
+        """記錄最近一次成功叫號，用於冷卻判斷。"""
         self._last_admin_serve_at = self._admin_serve_cooldown_clock()
         self._last_admin_serve_label = display_name
 
@@ -184,6 +216,7 @@ class HandlerAdminMixin:
         target_label: str,
         detail_lines: list[str] | None = None,
     ) -> None:
+        """廣播一般管理事件到 Telegram 管理通知通道。"""
         if getattr(self, "notification_service", None) is None:
             return
         self.notification_service.broadcast_event(
@@ -204,6 +237,7 @@ class HandlerAdminMixin:
         target_display_name: str,
         command_text: str,
     ) -> None:
+        """廣播叫號事件到 Telegram 管理通知通道。"""
         if getattr(self, "notification_service", None) is None:
             return
         self.notification_service.broadcast_serve_event(
@@ -217,6 +251,12 @@ class HandlerAdminMixin:
         )
 
     def _admin_serve_next(self, user_id: str, reply_token: str) -> list:
+        """叫下一位使用者，並處理冷卻與通知。
+
+        這裡會同時觸發兩種效果：
+        - ``serve_user(..., announcement_service=...)``：更新 dashboard / 語音公告
+        - ``QueueManager`` 內部 notifier：對被叫號者送出私訊通知（若已配置）
+        """
         if not self._admin_serve_lock.acquire(blocking=False):
             return self._reply(reply_token, "⚠️ 叫號進行中，請勿重複操作。")
         try:
@@ -243,6 +283,12 @@ class HandlerAdminMixin:
             self._admin_serve_lock.release()
 
     def _admin_serve(self, user_id: str, target_id: str, reply_token: str) -> list:
+        """叫指定使用者，並處理冷卻與通知。
+
+        同樣會區分：
+        - ``announcement_service``：現場公告
+        - ``queue_manager.notifier``：被叫號者私訊推播
+        """
         if not self._admin_serve_lock.acquire(blocking=False):
             return self._reply(reply_token, "⚠️ 叫號進行中，請勿重複操作。")
         try:
@@ -273,6 +319,7 @@ class HandlerAdminMixin:
             self._admin_serve_lock.release()
 
     def _admin_status(self, reply_token: str) -> list:
+        """回傳完整隊列狀態，包含 regular / VIP 明細。"""
         status = build_admin_status(queue_manager=self.queue_manager)
 
         regular_lines = [
@@ -295,6 +342,7 @@ class HandlerAdminMixin:
         return self._reply(reply_token, message)
 
     def _handle_stats(self, reply_token: str) -> list:
+        """回傳今日統計面板。"""
         stats = build_admin_stats(queue_manager=self.queue_manager)
         message = (
             "📈 統計面板\n\n"
@@ -310,6 +358,7 @@ class HandlerAdminMixin:
         return self._reply(reply_token, message)
 
     def _handle_vip_status(self, reply_token: str) -> list:
+        """回傳 VIP 隊列啟用狀態與當前人數。"""
         status = build_vip_status(vip_service=self.vip_service)
         message = (
             "💎 VIP 隊列狀態\n"

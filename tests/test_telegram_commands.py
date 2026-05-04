@@ -411,7 +411,8 @@ class TestTelegramCommandService:
         assert sent == [("discord_user_1", sent[0][1])]
         assert "輪到你了" in sent[0][1]
         assert "#1" in sent[0][1]
-        assert "服務區" in sent[0][1]
+        assert "請做好準備" in sent[0][1]
+        assert "助教" in sent[0][1]
 
 
     def test_admin_serve_next_sends_telegram_message_to_called_user(self, db_manager):
@@ -434,7 +435,8 @@ class TestTelegramCommandService:
         assert sent == [("tg_user_1", sent[0][1])]
         assert "輪到你了" in sent[0][1]
         assert "#1" in sent[0][1]
-        assert "服務區" in sent[0][1]
+        assert "請做好準備" in sent[0][1]
+        assert "助教" in sent[0][1]
 
     def test_admin_serve_next_triggers_dashboard_announcement(self, db_manager):
         class FakeAnnouncementService:

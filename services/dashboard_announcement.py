@@ -81,7 +81,14 @@ class GoogleCloudTTSService:
 
 
 class DashboardAnnouncementService:
-    """Persist latest dashboard announcement and optional audio asset."""
+    """維護 dashboard 最新公告內容與可選語音檔。
+
+    這個 service 的責任是「現場公告」而不是對使用者發私訊：
+    - ``announce_called_guest()``：更新儀表板上的叫號文案，並視設定產生/複製語音檔
+    - ``announce_new_order()``：更新「您有新訂單」類型的公告
+
+    若要把叫號訊息直接推播給被叫號者，應走 ``Notifier`` / ``QueueManager.notifier``。
+    """
 
     def __init__(
         self,
@@ -107,6 +114,7 @@ class DashboardAnnouncementService:
         return safe_name
 
     def announce_called_guest(self, *, display_name: str) -> dict:
+        """發布「某位來賓請準備 demo」的現場公告。"""
         safe_name = (display_name or "").strip() or "來賓"
         speech_name = self._normalize_display_name_for_speech(safe_name)
         if self._uses_static_audio_template():
@@ -116,6 +124,7 @@ class DashboardAnnouncementService:
         return self._write_announcement(text)
 
     def announce_new_order(self, *, text: str | None = None) -> dict:
+        """發布「您有新訂單」類型的現場公告。"""
         raw_text = (text or self.new_order_announcement_text or "您有新訂單").strip()
         safe_text = raw_text or "您有新訂單"
         if safe_text.lower().endswith(".mp3"):

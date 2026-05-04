@@ -1,4 +1,15 @@
-"""Queue manager - core queue business logic."""
+"""Queue manager 核心商業邏輯。
+
+這個模組負責與資料庫層協作，實作隊列的主要規則：
+- 加入 / 取消 / 叫號 / 跳過
+- 一般與 VIP 隊列檢查
+- 管理統計、匯出與清空
+- 使用者基本資料與驗證狀態
+- 通知器觸發時機
+
+平台層（LINE / Telegram / Discord）應盡量透過這個 class 操作隊列，
+把 UI 與訊息格式留在 service / handler 層處理。
+"""
 
 from __future__ import annotations
 
@@ -9,20 +20,46 @@ from .validators import validate_user_id
 
 
 class QueueManager:
-    """Manages queue operations (join, cancel, serve, skip)."""
+    """封裝隊列核心規則與資料庫/通知器協作。
+
+    ``QueueManager`` 本身不建立平台推播物件；``self.notifier`` 採注入式設計：
+    - 可在建構時透過 ``QueueManager(db, notifier=...)`` 傳入
+    - 也可在外部初始化完成後再補掛 ``queue_manager.notifier = Notifier(...)``
+
+    這樣 queue 核心就能維持與 LINE / Telegram / Discord 平台實作解耦，
+    只在需要通知使用者時呼叫 notifier 的共用介面。
+    """
 
     def __init__(
         self,
         db: DatabaseManager | None = None,
         notifier: object | None = None,
     ) -> None:
+        """初始化資料庫介面與可選 notifier。
+
+        ``notifier`` 預期提供像 ``notify_served()``、``notify_skip()``、
+        ``notify_user()`` 這類方法。若未注入，queue 操作仍可正常進行，
+        只是 serve / skip / ping 等流程不會額外對使用者送出私訊通知。
+        """
+        #: 資料存取層，負責 queue row、config、profile、event log 等持久化操作。
         self.db = db or DatabaseManager()
+        #: 可選通知出口；由外部 runtime / service 注入，不由 QueueManager 自行建立。
         self.notifier = notifier
 
     # -- join --
 
     def join(self, user_id: str, queue_type: str = "regular") -> dict:
-        """Add user to queue. Returns status dict."""
+        """將使用者加入一般或 VIP 隊列。
+
+        主要檢查項目：
+        - user id 是否有效
+        - 是否重複排隊
+        - 總隊列是否開放
+        - VIP 是否啟用且使用者是否已購買
+        - 一般隊列是否超過容量上限
+
+        成功時回傳目前號碼、位置與總人數；失敗時回傳統一錯誤 dict。
+        """
         valid_id = validate_user_id(user_id)
         if valid_id is None:
             return {"status": "error", "message": "使用者 ID 格式不正確。"}
@@ -64,7 +101,7 @@ class QueueManager:
     # -- cancel --
 
     def cancel(self, user_id: str) -> dict:
-        """Cancel user's queue entry."""
+        """取消使用者目前的有效排隊紀錄。"""
         valid_id = validate_user_id(user_id)
         if valid_id is None:
             return {"status": "error", "message": "使用者 ID 格式不正確。"}
@@ -85,7 +122,13 @@ class QueueManager:
     # -- serve --
 
     def serve_next(self) -> dict:
-        """Serve head of queue."""
+        """叫號目前隊列最前面的使用者，必要時觸發 notifier。
+
+        成功 serve 後會：
+        1. 更新隊列資料狀態
+        2. 寫入 ``serve`` event log
+        3. 若 ``self.notifier`` 存在，呼叫 ``notify_served(user_id, queue_number)``（私訊通知被叫號者）
+        """
         all_q = self.db.get_all_queue()
         if not all_q:
             return {"status": "error", "message": "目前隊列是空的。"}
@@ -103,7 +146,11 @@ class QueueManager:
         return {"status": "served", "id": head.user_id, "queue_number": served.queue_number}
 
     def serve_specific(self, user_id: str) -> dict:
-        """Serve a specific user."""
+        """叫指定使用者的號，前提是該使用者目前仍在有效隊列中。
+
+        與 ``serve_next()`` 相同，成功後若有 ``self.notifier``，
+        會對該使用者送出 ``notify_served()`` 私訊通知。
+        """
         valid_id = validate_user_id(user_id)
         if valid_id is None:
             return {"status": "error", "message": "使用者 ID 格式不正確。"}
@@ -122,7 +169,10 @@ class QueueManager:
     # -- skip --
 
     def skip_next(self) -> dict:
-        """Skip head of queue."""
+        """跳過目前隊列最前面的使用者，必要時觸發 notifier。
+
+        若 ``self.notifier`` 存在，會呼叫 ``notify_skip(user_id)`` 通知被跳過者。
+        """
         all_q = self.db.get_all_queue()
         if not all_q:
             return {"status": "error", "message": "目前隊列是空的。"}
@@ -141,7 +191,10 @@ class QueueManager:
         return {"status": "skipped", "id": head.user_id, "queue_number": head.queue_number}
 
     def skip_specific(self, user_id: str) -> dict:
-        """Skip a specific user."""
+        """跳過指定使用者。
+
+        成功後若有 ``self.notifier``，會對被跳過的使用者送出 ``notify_skip()``。
+        """
         valid_id = validate_user_id(user_id)
         if valid_id is None:
             return {"status": "error", "message": "使用者 ID 格式不正確。"}
@@ -161,7 +214,7 @@ class QueueManager:
     # -- status --
 
     def get_status(self) -> dict:
-        """Get aggregated queue status."""
+        """回傳 admin/status 類介面需要的聚合隊列狀態。"""
         regular = self.db.get_regular_queue()
         vip = self.db.get_vip_queue()
 
@@ -178,18 +231,26 @@ class QueueManager:
         }
 
     def get_queue(self) -> list:
-        """Get full queue list (admin view)."""
+        """取得完整有效隊列，供 admin 視圖或 presenter 使用。"""
         return self.db.get_all_queue()
 
     def get_history(self, user_id: str) -> list:
-        """Get queue history for a user."""
+        """取得特定使用者的原始歷史資料；無效 id 時回空列表。"""
         valid_id = validate_user_id(user_id)
         if valid_id is None:
             return []
         return self.db.get_user_history(valid_id)
 
     def get_stats(self) -> dict:
-        """Get daily/admin statistics for queue operations."""
+        """計算今日 admin 統計資料。
+
+        目前統計包含：
+        - 今日加入人數
+        - 今日叫號數
+        - 今日取消/跳過數
+        - 平均等待分鐘數
+        - VIP 啟用/活躍/今日加入/今日叫號
+        """
         today = datetime.now().date()
         all_rows = self.db.get_queue_rows_for_export(limit=1000)
 
@@ -242,7 +303,7 @@ class QueueManager:
         }
 
     def clear_vip_queue(self) -> dict:
-        """Clear all active VIP queue entries and log each removal."""
+        """清空所有有效 VIP 排隊紀錄，並逐筆記錄 admin event log。"""
         removed_users = []
         for entry in list(self.db.get_vip_queue()):
             cancelled = self.db.cancel_queue(entry.user_id)
@@ -257,7 +318,7 @@ class QueueManager:
         }
 
     def get_user_position(self, user_id: str) -> int | None:
-        """Return 1-based position for the current active queue entry, or None."""
+        """回傳使用者目前的 1-based 排位；若不在隊列中則為 ``None``。"""
         valid_id = validate_user_id(user_id)
         if valid_id is None:
             return None
@@ -268,7 +329,13 @@ class QueueManager:
         return None
 
     def get_queue_stats(self) -> dict:
-        """Get overall queue statistics (registered count, active queue, served count)."""
+        """回傳整體系統摘要統計。
+
+        與 ``get_stats()`` 不同，這裡偏向總覽：
+        - 已完成基本註冊的人數
+        - 目前排隊中人數
+        - 累計已叫號人數
+        """
         profiles = self.db.get_all_user_profiles()
         registered = sum(1 for p in profiles if p.location and p.location.strip())
         active_queue = self.db.get_all_queue()
@@ -286,7 +353,11 @@ class QueueManager:
         }
 
     def clear_all_queue(self, keep_admin_user_ids: set[str] | None = None) -> dict:
-        """Clear all queue records and user profiles."""
+        """清空全部隊列、已服務紀錄、使用者資料與管理員申請。
+
+        ``keep_admin_user_ids`` 允許在重置時保留部分 admin 個人資料，避免管理後台
+        清空隊列時把自己也一併刪掉。
+        """
         removed_entries = self.db.clear_all_queue()
         removed_users = [entry.user_id for entry in removed_entries]
         cleared_served = self.db.clear_served_queue()
@@ -309,7 +380,10 @@ class QueueManager:
         }
 
     def register_name(self, user_id: str, display_name: str, location: str = "") -> dict:
-        """Register or update the user's display name and optional location."""
+        """建立或更新使用者基本資料。
+
+        目前至少要求非空白顯示名稱，位置可由上層流程決定是否必填。
+        """
         valid_id = validate_user_id(user_id)
         if valid_id is None:
             return {"status": "error", "message": "使用者 ID 格式不正確。"}
@@ -328,7 +402,7 @@ class QueueManager:
         }
 
     def verify_user(self, user_id: str, verified: bool = True) -> dict:
-        """Verify or unverify a user's identity profile."""
+        """設定使用者驗證狀態。"""
         valid_id = validate_user_id(user_id)
         if valid_id is None:
             return {"status": "error", "message": "使用者 ID 格式不正確。"}
@@ -346,7 +420,11 @@ class QueueManager:
         }
 
     def ping_user(self, user_id: str | None = None) -> dict:
-        """Send a manual ping to the specified or next queued user."""
+        """手動提醒指定使用者，或預設提醒隊首使用者。
+
+        這個方法不改變 queue 狀態，只在有 ``self.notifier`` 時呼叫
+        ``notify_user()`` 送出提醒訊息，並記錄一筆 ``ping`` event。
+        """
         target_id = user_id
         if not target_id:
             all_q = self.db.get_all_queue()
@@ -369,7 +447,7 @@ class QueueManager:
         return {"status": "success", "user_id": valid_id, "display_name": display_name}
 
     def get_user_history(self, user_id: str, limit: int = 20) -> list[dict]:
-        """Get event history for a specific user."""
+        """將 event history 轉成平台層較容易消費的 dict 結構。"""
         valid_id = validate_user_id(user_id)
         if valid_id is None:
             return []
@@ -387,26 +465,26 @@ class QueueManager:
         ]
 
     def export_queue_csv(self, limit: int = 20) -> str:
-        """Export queue rows as CSV text."""
+        """匯出隊列資料為 CSV 字串。"""
         return self.db.export_queue_csv(limit=limit)
 
     # -- config --
 
     def set_queue_enabled(self, enabled: bool) -> dict:
-        """Enable or disable queue joining."""
+        """開啟或關閉隊列加入功能。"""
         self.db.set_config("queue_enabled", "true" if enabled else "false")
         return {"status": "ok", "queue_enabled": enabled}
 
     def get_queue_enabled(self) -> bool:
-        """Check if queue joining is enabled."""
+        """讀取目前是否允許新使用者加入隊列。"""
         return self.db.is_queue_enabled()
 
     def set_max_capacity(self, n: int) -> dict:
-        """Set max queue capacity."""
+        """設定一般隊列人數上限。"""
         self.db.set_config("queue_max_capacity", str(n))
         return {"status": "ok", "max_capacity": n}
 
     def get_max_capacity(self) -> int:
-        """Get max queue capacity."""
+        """讀取一般隊列人數上限。"""
         return self.db.get_queue_max_capacity()
 

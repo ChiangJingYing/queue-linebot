@@ -1,7 +1,14 @@
+"""註冊流程狀態機。
+
+這個模組只負責「根據目前 state 與使用者輸入，決定下一步」；
+不直接寫入資料庫。這讓不同平台可以共用同一套註冊互動邏輯。
+"""
+
 from __future__ import annotations
 
 
 def begin_register_location_flow(*, display_name: str, location_options: dict[str, list[str]]) -> dict:
+    """從已取得學號/顯示名稱後，建立選排別的下一步狀態。"""
     groups = list(location_options.keys())
     return {
         'status': 'pending',
@@ -19,6 +26,15 @@ def advance_register_flow(
     group_prefix: str = '',
     item_prefix: str = '',
 ) -> dict:
+    """推進註冊流程狀態機。
+
+    支援三種步驟：
+    - ``register_name``
+    - ``register_location_group``
+    - ``register_location_item``
+
+    若 state 已失效或無法辨識，回傳 ``expired``，由上層要求使用者重新註冊。
+    """
     step_type = state.get('type')
     raw_text = text.strip()
 

@@ -1,4 +1,11 @@
-"""Telegram command parsing and admin self-service flows."""
+"""Telegram 指令解析、互動式選單與 admin 自助流程。
+
+這個 service 是 Telegram 平台的主要 command façade：
+- 把文字/按鈕 callback 正規化成共用命令
+- 接上 register/cancel/admin 等共用 flow helpers
+- 產生 Telegram 專用 reply markup
+- 視需要對 admin 廣播操作通知
+"""
 
 from __future__ import annotations
 
@@ -61,19 +68,25 @@ from services.vip_service import VipService
 
 
 class TelegramCommandService:
+    """Telegram 平台的指令入口與 UI 組裝器。"""
+
+    #: 一般使用者在 Telegram reply keyboard 上看到的固定選單。
     USER_REPLY_KEYBOARD = [
         [{"text": "舉手"}, {"text": "放棄"}, {"text": "看狀態"}],
         [{"text": "看紀錄"}, {"text": "設定資料"}, {"text": "排隊紀錄"}],
     ]
+    #: admin 第一頁功能選單。
     ADMIN_REPLY_KEYBOARD_PAGE1 = [
         [{"text": "叫號"}, {"text": "提醒"}, {"text": "完整狀態"}],
         [{"text": "開關排隊"}, {"text": "更多功能"}],
     ]
+    #: admin 第二頁功能選單。
     ADMIN_REPLY_KEYBOARD_PAGE2 = [
         [{"text": "清空隊列"}, {"text": "VIP 狀態"}, {"text": "推播設定"}],
         [{"text": "幫助"}, {"text": "返回主選單"}],
     ]
 
+    #: 將 reply keyboard 文案映射成共用 slash command。
     USER_TEXT_ALIASES = {
         "舉手": "/join",
         "放棄": "/cancel",
@@ -82,6 +95,7 @@ class TelegramCommandService:
         "設定資料": "/register",
         "排隊紀錄": "/history",
     }
+    #: admin reply keyboard 與 callback 的文字別名表。
     ADMIN_TEXT_ALIASES = {
         "叫號": "/admin/serve",
         "提醒": "/admin/ping",
@@ -104,19 +118,40 @@ class TelegramCommandService:
         location_options: dict[str, list[str]] | None = None,
         announcement_service=None,
     ) -> None:
+        """建立 Telegram command service 與其依賴。
+
+        會在可行時自動建立：
+        - QueueManager
+        - VIP service
+        - Telegram admin notification service
+        - QueueManager notifier（若尚未注入）
+        """
         self.db = db
+        #: Telegram command 層共用的隊列核心；admin serve/join/cancel 皆會經過它。
         self.queue_manager = queue_manager or (QueueManager(db) if isinstance(db, DatabaseManager) else None)
         self.vip_service = VipService(db) if isinstance(db, DatabaseManager) else None
         self.location_options = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
+        #: 保存 Telegram register/cancel 多步驟互動的暫存狀態。
         self.pending_state_store = ConfigPendingStateStore(db, namespace="telegram")
+        #: 廣播給 Telegram admin 訂閱者的後台通知 service。
         self.notification_service = None
+        #: Dashboard / 語音公告通道。
         self.announcement_service = announcement_service
         if telegram_sender is not None:
             self.notification_service = TelegramAdminNotificationService(db=db, sender=telegram_sender)
             if self.queue_manager is not None and getattr(self.queue_manager, "notifier", None) is None:
+                #: 真正送被叫號者私訊通知的 notifier 會掛在 queue_manager 上。
                 self.queue_manager.notifier = Notifier(telegram_sender=telegram_sender, db=db)
 
     def handle_text(self, *, user_id: str, text: str) -> dict:
+        """處理 Telegram 收到的文字或 callback payload。
+
+        這裡是整個 Telegram flow 的總入口，會依序處理：
+        - 使用者平台標記
+        - pending register/cancel state
+        - admin 頁面切換/通知 callback
+        - 一般 slash command 與 admin command
+        """
         self.db.set_config(f"telegram_user:{user_id}", "1")
         raw_text = text.strip()
         normalized_text = self._normalize_text_alias(user_id=user_id, text=raw_text)
@@ -196,6 +231,7 @@ class TelegramCommandService:
         }
 
     def _handle_register(self, *, user_id: str, args: list[str]) -> dict:
+        """啟動互動式註冊流程。"""
         if args:
             return {"status": "error", "message": "❌ 錯誤：/register 不接受參數，請直接輸入 /register 後依提示完成註冊。"}
 
@@ -203,6 +239,7 @@ class TelegramCommandService:
         return {"status": "pending", "message": "請輸入你的學號。"}
 
     def _handle_join(self, *, user_id: str, args: list[str], raw_text: str) -> dict:
+        """處理一般/VIP 加入隊列，並在失敗時補上 Telegram UI。"""
         queue_type = args[0].lower() if args else "regular"
         outcome = join_user(queue_manager=self.queue_manager, user_id=user_id, queue_type=queue_type)
         if outcome["status"] == "needs_registration":
@@ -235,6 +272,7 @@ class TelegramCommandService:
         }
 
     def _handle_cancel(self, *, user_id: str, raw_text: str) -> dict:
+        """處理取消排隊；若已封隊則改走雙重確認流程。"""
         if not self.queue_manager.get_queue_enabled() and self.queue_manager.get_user_position(user_id) is not None:
             outcome = begin_closed_queue_cancel_flow()
             self.pending_state_store.set(user_id=user_id, flow="cancel", state=outcome["state"])
@@ -271,6 +309,7 @@ class TelegramCommandService:
         return {"status": "error", "message": f"❌ 錯誤：{result['message']}"}
 
     def _handle_admin_notify(self, *, user_id: str, args: list[str]) -> dict:
+        """處理 Telegram admin 推播偏好查詢與開關。"""
         if not self.db.is_admin(user_id):
             return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
 
@@ -356,6 +395,7 @@ class TelegramCommandService:
         return {"status": "error", "message": "用法：/admin/join [on/off] 切換狀態 或 /admin/join status 查看狀態"}
 
     def _handle_admin_status(self, *, user_id: str) -> dict:
+        """渲染 Telegram 版完整隊列狀態。"""
         if not self.db.is_admin(user_id):
             return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
 
@@ -554,6 +594,7 @@ class TelegramCommandService:
         return text
 
     def _handle_register_pending(self, *, user_id: str, text: str, state: dict) -> dict:
+        """推進註冊 pending state，並補上 Telegram inline keyboard。"""
         normalized_pending_text = self._normalize_register_pending_text(text=text, state=state)
         outcome = advance_register_flow(
             state=state,
@@ -597,6 +638,7 @@ class TelegramCommandService:
         return {"status": "error", "message": outcome["message"]}
 
     def _complete_register(self, *, user_id: str, display_name: str, location: str) -> dict:
+        """將註冊流程結果落地，並廣播成功/失敗事件。"""
         if self.queue_manager is None:
             return {"status": "error", "message": "Queue manager unavailable."}
 
@@ -635,6 +677,7 @@ class TelegramCommandService:
         }
 
     def _handle_cancel_confirmation(self, *, user_id: str, text: str) -> dict:
+        """處理封隊狀態下的取消二次確認互動。"""
         state = self._get_pending_cancel_state(user_id)
         outcome = advance_closed_queue_cancel_flow(
             state=state,
@@ -737,6 +780,11 @@ class TelegramCommandService:
         self.pending_state_store.clear(user_id=user_id, flow="cancel")
 
     def _handle_admin_serve(self, *, user_id: str, args: list[str], raw_text: str) -> dict:
+        """處理 Telegram admin 叫號，並同步 admin 廣播通知。
+
+        ``serve_user()`` 會幫忙把現場公告（dashboard/語音）與 queue manager 的
+        私訊推播路徑串起來；這裡再補上 Telegram admin 後台事件廣播。
+        """
         if not self.db.is_admin(user_id):
             return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
 
@@ -812,6 +860,7 @@ class TelegramCommandService:
         target_label: str,
         detail_lines: list[str] | None = None,
     ) -> None:
+        """以統一格式廣播一般 Telegram admin 事件。"""
         if self.notification_service is None:
             return
         self.notification_service.broadcast_event(
@@ -824,6 +873,7 @@ class TelegramCommandService:
         )
 
     def _broadcast_error_event(self, *, user_id: str, command_text: str, error_message: str) -> None:
+        """廣播 Telegram 指令失敗事件給有訂閱的 admin。"""
         if self.notification_service is None:
             return
         self.notification_service.broadcast_event(

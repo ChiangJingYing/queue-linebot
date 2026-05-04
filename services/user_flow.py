@@ -1,13 +1,27 @@
+"""一般使用者共用流程與訊息組裝。
+
+這個模組提供與平台無關的 user-facing flow helpers，讓 LINE / Telegram /
+Discord 等入口能共用相同的商業邏輯結果，只在最外層處理各平台 UI 差異。
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 
+#: 使用者尚未完成基本資料註冊時的統一錯誤訊息。
 REGISTRATION_REQUIRED_MESSAGE = "❌ 錯誤：請先完成註冊（學號與座位）後再加入隊列。"
+#: 查詢歷史但沒有資料時的預設回覆。
 HISTORY_EMPTY_MESSAGE = "查無排隊歷史紀錄。"
+#: 非管理員嘗試讀取管理員 help 時的錯誤訊息。
 HELP_UNAUTHORIZED_MESSAGE = "❌ 未授權，僅限管理員使用。"
 
 
 def join_user(*, queue_manager, user_id: str, queue_type: str = "regular") -> dict:
+    """以平台無關的方式處理加入隊列。
+
+    先檢查使用者是否已完成註冊；若未完成，回傳統一的
+    ``needs_registration`` 狀態，交由上層平台決定如何呈現。
+    """
     profile = queue_manager.db.get_user_profile(user_id)
     if profile is None or not profile.display_name or not profile.location:
         return {
@@ -33,6 +47,7 @@ def join_user(*, queue_manager, user_id: str, queue_type: str = "regular") -> di
 
 
 def cancel_user(*, queue_manager, user_id: str) -> dict:
+    """以平台無關的方式處理取消排隊。"""
     result = queue_manager.cancel(user_id)
     if result.get("status") != "cancelled":
         return {
@@ -50,6 +65,7 @@ def cancel_user(*, queue_manager, user_id: str) -> dict:
 
 
 def get_user_status(*, queue_manager, user_id: str) -> dict:
+    """回傳使用者當前排隊位置或全隊列總人數。"""
     position = queue_manager.get_user_position(user_id)
     if position is None:
         total_count = len(queue_manager.get_queue())
@@ -77,6 +93,7 @@ def build_history_message(
     empty_message: str = HISTORY_EMPTY_MESSAGE,
     limit: int = 10,
 ) -> str:
+    """將歷史資料組裝成可直接回覆給使用者的文字。"""
     items = list(history)
     if not items:
         return empty_message
@@ -96,6 +113,14 @@ def build_help_message(
     include_vip_join: bool = True,
     include_coffee: bool = False,
 ) -> dict:
+    """依呼叫情境組裝 help 文字。
+
+    這個 helper 讓不同平台可以用相同的命令說明內容，但依需求切換：
+    - 是否只限管理員查看
+    - 是否包含 /menu
+    - 是否顯示管理員命令區塊
+    - 是否顯示 VIP / coffee 相關說明
+    """
     if admin_only and not is_admin:
         return {"status": "error", "message": HELP_UNAUTHORIZED_MESSAGE}
 
