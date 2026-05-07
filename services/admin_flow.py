@@ -119,3 +119,8 @@ def ping_user(*, queue_manager, target_id: str | None = None) -> dict:
 def clear_all_queue(*, queue_manager, keep_admin_user_ids: set[str]) -> dict:
     """清空全部隊列，但保留指定 admin 使用者資料。"""
     return queue_manager.clear_all_queue(keep_admin_user_ids=keep_admin_user_ids)
+
+
+def release_user(*, queue_manager, user_id: str) -> dict:
+    """解除指定使用者的叫號鎖定，使其可再次加入隊列。"""
+    return queue_manager.release_served(user_id)

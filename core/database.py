@@ -102,6 +102,7 @@ class DatabaseManager:
         self._migrate_user_profiles_add_location()
         self._migrate_admin_applications()
         self._migrate_admin_notification_preferences()
+        self._migrate_queues_add_release_time()
 
     def _migrate_queues_remove_user_unique(self) -> None:
         """Remove legacy UNIQUE constraint on queues.user_id so users can rejoin later."""
@@ -134,6 +135,14 @@ class DatabaseManager:
             )
             conn.execute("DROP TABLE queues_legacy")
             conn.commit()
+
+    def _migrate_queues_add_release_time(self) -> None:
+        """Add release_time column to queues table for the 'called but not yet released' state."""
+        with self._connection() as conn:
+            columns = [row[1] for row in conn.execute("PRAGMA table_info(queues)").fetchall()]
+            if "release_time" not in columns:
+                conn.execute("ALTER TABLE queues ADD COLUMN release_time TEXT")
+                conn.commit()
 
     def _migrate_user_profiles_add_location(self) -> None:
         """Ensure user_profiles has a location column."""
@@ -231,10 +240,32 @@ class DatabaseManager:
         return val.lower() == "true" if val else True
 
     def get_active_queue_entry(self, user_id: str) -> Optional[QueueEntry]:
-        """Get active queue entry for user, if any."""
+        """Get active queue entry for user, if any.
+
+        Returns an entry if the user is either:
+        - Still waiting in the queue (served=0, no cancel_time)
+        - Already called but not yet released (served=1, served_time set, release_time IS NULL)
+        """
         with self._connection() as conn:
             row = conn.execute(
-                "SELECT * FROM queues WHERE user_id = ? AND served = 0 AND cancel_time IS NULL LIMIT 1",
+                "SELECT * FROM queues WHERE user_id = ? "
+                "AND cancel_time IS NULL "
+                "AND (served = 0 OR (served = 1 AND served_time IS NOT NULL AND release_time IS NULL)) "
+                "ORDER BY id DESC LIMIT 1",
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return QueueEntry(**dict(row))
+
+    def get_called_entry(self, user_id: str) -> Optional[QueueEntry]:
+        """Get the entry for a user that has been called but not yet released."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM queues WHERE user_id = ? "
+                "AND served = 1 AND served_time IS NOT NULL "
+                "AND release_time IS NULL AND cancel_time IS NULL "
+                "ORDER BY id DESC LIMIT 1",
                 (user_id,),
             ).fetchone()
             if row is None:
@@ -333,6 +364,50 @@ class DatabaseManager:
                 served_time=served_time,
                 served=True,
             )
+
+    def release_queue(self, user_id: str) -> Optional[QueueEntry]:
+        """Release a user that was called but hasn't been released yet.
+
+        This marks the queue entry as fully completed by setting release_time.
+        After this, the user is free to join the queue again.
+        Returns the updated QueueEntry, or None if no matching entry found.
+        """
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM queues WHERE user_id = ? "
+                "AND served = 1 AND served_time IS NOT NULL "
+                "AND release_time IS NULL AND cancel_time IS NULL "
+                "ORDER BY id DESC LIMIT 1",
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            release_time = now_in_taipei().isoformat()
+            conn.execute(
+                "UPDATE queues SET release_time = ? WHERE id = ?",
+                (release_time, row["id"]),
+            )
+            conn.commit()
+            return QueueEntry(
+                id=row["id"],
+                user_id=row["user_id"],
+                queue_type=row["queue_type"],
+                queue_number=row["queue_number"],
+                join_time=row["join_time"],
+                served_time=row["served_time"],
+                served=True,
+            )
+
+    def get_called_queue(self) -> list:
+        """Get all entries that have been called but not yet released."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM queues "
+                "WHERE served = 1 AND served_time IS NOT NULL "
+                "AND release_time IS NULL AND cancel_time IS NULL "
+                "ORDER BY served_time ASC"
+            ).fetchall()
+            return [QueueEntry(**dict(r)) for r in rows]
 
     def skip_queue(self, user_id: str) -> Optional[QueueEntry]:
         """Skip (cancel) user's queue without serving."""

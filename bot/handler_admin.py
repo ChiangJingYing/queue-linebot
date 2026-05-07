@@ -23,6 +23,7 @@ from services.admin_flow import (
     clear_vip_queue,
     get_admin_join_status,
     ping_user,
+    release_user,
     set_admin_join_enabled,
     toggle_admin_join,
     toggle_vip,
@@ -48,6 +49,10 @@ class HandlerAdminMixin:
             return self._admin_serve(user_id, args[0], reply_token)
         elif command == "/admin/serve":
             return self._admin_serve_next(user_id, reply_token)
+        elif command == "/admin/release":
+            return self._handle_admin_release(user_id, args, reply_token)
+        elif command == "/admin/release_confirm":
+            return self._handle_admin_release_confirm(user_id, args, reply_token)
         elif command == "/admin/status":
             return self._admin_status(reply_token)
         elif command == "/admin/stats":
@@ -275,7 +280,9 @@ class HandlerAdminMixin:
                     target_display_name=display_name,
                     command_text="/admin/serve",
                 )
-                msg = f"✅ 已叫號：{display_name}"
+                msg = f"✅ 已叫號：{display_name}（叫號完成後請點擊下方按鈕解除鎖定）"
+                quick_options = [{"label": "解除鎖定", "text": f"/admin/release {result['target_user_id']}"}]
+                return self._reply(reply_token, msg, quick_options=quick_options)
             else:
                 msg = f"❌ 錯誤：{result['message']}"
             return self._reply(reply_token, msg)
@@ -311,12 +318,48 @@ class HandlerAdminMixin:
                     target_display_name=display_name,
                     command_text=f"/admin/serve {target_id}",
                 )
-                msg = f"✅ 已叫號：{display_name}"
+                msg = f"✅ 已叫號：{display_name}（叫號完成後請點擊下方按鈕解除鎖定）"
+                quick_options = [{"label": "解除鎖定", "text": f"/admin/release {result['target_user_id']}"}]
+                return self._reply(reply_token, msg, quick_options=quick_options)
             else:
                 msg = f"❌ 錯誤：{result['message']}"
             return self._reply(reply_token, msg)
         finally:
             self._admin_serve_lock.release()
+
+    def _handle_admin_release(self, user_id: str, args: list, reply_token: str) -> list:
+        """確認是否要解除指定使用者的叫號鎖定。"""
+        if not args:
+            return self._reply(reply_token, "用法：/admin/release [user_id]")
+            
+        target_id = args[0]
+        display_name = self.queue_manager.db.get_display_name(target_id)
+        msg = f"⚠️ 確定要解除 {display_name} 的鎖定嗎？"
+        quick_options = [
+            {"label": "確認解除", "text": f"/admin/release_confirm {target_id}"},
+            {"label": "暫不解除", "text": "暫不解除"},
+        ]
+        return self._reply(reply_token, msg, quick_options=quick_options)
+
+    def _handle_admin_release_confirm(self, user_id: str, args: list, reply_token: str) -> list:
+        """解除指定使用者的叫號鎖定，讓其可再次排隊。"""
+        if not args:
+            return self._reply(reply_token, "用法：/admin/release_confirm [user_id]")
+
+        target_id = args[0]
+        result = release_user(queue_manager=self.queue_manager, user_id=target_id)
+        if result["status"] != "released":
+            return self._reply(reply_token, f"❌ 錯誤：{result['message']}")
+
+        display_name = self.queue_manager.db.get_display_name(target_id)
+        self._broadcast_simple_event(
+            category="admin_action",
+            title="解除叫號通知",
+            actor_label=f"管理員：{self.queue_manager.db.get_display_name(user_id)}（{user_id}）",
+            target_label=f"對象：{display_name}（{target_id}）",
+            detail_lines=[f"號碼：#{result['queue_number']}"],
+        )
+        return self._reply(reply_token, f"✅ 已解除 {display_name} 的叫號鎖定，其可重新排隊")
 
     def _admin_status(self, reply_token: str) -> list:
         """回傳完整隊列狀態，包含 regular / VIP 明細。"""

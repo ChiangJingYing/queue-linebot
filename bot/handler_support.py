@@ -71,6 +71,8 @@ class HandlerSupportMixin:
         outcome = get_user_status(queue_manager=self.queue_manager, user_id=user_id)
         if outcome["status"] == "not_in_queue":
             msg = f"📊 目前有 {outcome['total_count']} 人在排隊中"
+        elif outcome["status"] == "called":
+            msg = f"📣 你的號碼 #{outcome['queue_number']} 已被叫號！請至現場報到，等待叫號者解除後可再次排隊。"
         else:
             msg = f"📊 目前你前面還有 {outcome['ahead_count']} 人"
         return self._reply(reply_token, msg)

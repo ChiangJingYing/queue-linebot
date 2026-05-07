@@ -66,6 +66,11 @@ class QueueManager:
 
         existing = self.db.get_active_queue_entry(valid_id)
         if existing is not None:
+            if existing.served:
+                return {
+                    "status": "error",
+                    "message": f"你已被叫號（號碼 #{existing.queue_number}），請等待叫號者解除後再加入。",
+                }
             return {
                 "status": "error",
                 "message": f"你已在排隊中（號碼 #{existing.queue_number}），請勿重複加入。",
@@ -210,6 +215,36 @@ class QueueManager:
             self.notifier.notify_skip(valid_id)
 
         return {"status": "skipped", "id": valid_id, "queue_number": skipped.queue_number}
+
+    # -- release (解除叫號鎖定) --
+
+    def release_served(self, user_id: str) -> dict:
+        """解除指定使用者的叫號鎖定，使其可再次加入隊列。
+
+        當管理員完成服務後，呼叫此方法解除使用者的「已叫號待解除」狀態，
+        讓使用者可以重新加入隊列。
+        """
+        valid_id = validate_user_id(user_id)
+        if valid_id is None:
+            return {"status": "error", "message": "使用者 ID 格式不正確。"}
+
+        released = self.db.release_queue(valid_id)
+        if released is None:
+            return {"status": "error", "message": "該使用者目前沒有待解除的叫號記錄。"}
+
+        self.db.log_event("release", valid_id, released.queue_type, "管理員解除叫號鎖定")
+        return {"status": "released", "id": valid_id, "queue_number": released.queue_number}
+
+    def get_called_entry(self, user_id: str):
+        """回傳使用者目前「已叫號待解除」的記錄；若不存在則為 ``None``。"""
+        valid_id = validate_user_id(user_id)
+        if valid_id is None:
+            return None
+        return self.db.get_called_entry(valid_id)
+
+    def get_called_queue(self) -> list:
+        """回傳所有目前「已叫號待解除」的使用者列表。"""
+        return self.db.get_called_queue()
 
     # -- status --
 
