@@ -69,7 +69,7 @@ class QueueManager:
             if existing.served:
                 return {
                     "status": "error",
-                    "message": f"你已被叫號（號碼 #{existing.queue_number}），請等待叫號者解除後再加入。",
+                    "message": f"你正在 Demo 中（號碼 #{existing.queue_number}），請 Demo 完後再加入。",
                 }
             return {
                 "status": "error",
