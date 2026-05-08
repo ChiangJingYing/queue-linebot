@@ -234,3 +234,14 @@ class TestQueueManagerAdditional:
         assert result["status"] == "success"
         assert result["user_id"] == "alice"
         assert result["display_name"] == "王小明"
+
+    def test_join_user_returns_demo_error_when_served(self, queue_manager):
+        queue_manager.register_name("alice", "王小明")
+        queue_manager.join("alice", "regular")
+        queue_manager.serve_next()
+
+        result = queue_manager.join("alice", "regular")
+        
+        assert result["status"] == "error"
+        assert "你正在 Demo 中" in result["message"]
+

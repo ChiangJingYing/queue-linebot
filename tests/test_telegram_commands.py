@@ -407,7 +407,7 @@ class TestTelegramCommandService:
         result = service.handle_text(user_id="admin_a", text="/admin/serve")
 
         assert result["status"] == "success"
-        assert result["message"] == "✅ 已叫號：B12345678（A-1）"
+        assert result["message"] == "✅ 已叫號：B12345678（A-1）（請於完成後解除鎖定）"
         assert sent == [("discord_user_1", sent[0][1])]
         assert "輪到你了" in sent[0][1]
         assert "#1" in sent[0][1]
@@ -431,7 +431,7 @@ class TestTelegramCommandService:
         result = service.handle_text(user_id="admin_a", text="/admin/serve")
 
         assert result["status"] == "success"
-        assert result["message"] == "✅ 已叫號：B12345678（A-1）"
+        assert result["message"] == "✅ 已叫號：B12345678（A-1）（請於完成後解除鎖定）"
         assert sent == [("tg_user_1", sent[0][1])]
         assert "輪到你了" in sent[0][1]
         assert "#1" in sent[0][1]
@@ -782,3 +782,23 @@ class TestTelegramCommandService:
 
         assert result["status"] == "error"
         assert "未授權" in result["message"]
+
+    def test_admin_release_immediately_releases_user_and_broadcasts(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+        db_manager.set_admin_notification_preference("admin_a", "admin_action", True)
+        
+        sent = []
+        def sender(user_id: str, text: str) -> None:
+            sent.append((user_id, text))
+            
+        service = TelegramCommandService(db=db_manager, telegram_sender=sender)
+        service.queue_manager.join("alice", "regular")
+        service.queue_manager.serve_next()
+        
+        result = service.handle_text(user_id="admin_a", text="/admin/release alice")
+        
+        assert result["status"] == "success"
+        assert "已解除" in result["message"]
+        assert service.queue_manager.get_user_position("alice") is None
+        assert any("Demo完成通知" in text for uid, text in sent)

@@ -515,7 +515,7 @@ def test_admin_serve_next_broadcasts_line_platform_to_telegram_admins(tmp_path, 
 
     reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
 
-    assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+12345678（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"    assert reply[0]["text"] == "✅ 已叫號：B
     assert sent == [("tg_admin_1", sent[0][1])]
     assert "管理叫號通知" in sent[0][1]
     assert "平台：Line" in sent[0][1]
@@ -572,7 +572,7 @@ def test_admin_serve_next_is_blocked_during_cooldown(tmp_path):
     handler._admin_serve_cooldown_clock = lambda: 101.0
     second = handler.handle_event(make_event("/admin/serve", user_id="admin"))
 
-    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
     assert second[0]["text"] == "⚠️ 剛剛已叫號：B12345678（A-1），請稍候再試，避免重複叫號。"
     assert [entry.user_id for entry in qm.get_queue()] == ["bob"]
 
@@ -594,7 +594,7 @@ def test_admin_serve_specific_shares_same_cooldown_guard(tmp_path):
     handler._admin_serve_cooldown_clock = lambda: 201.0
     second = handler.handle_event(make_event("/admin/serve bob", user_id="admin"))
 
-    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
     assert second[0]["text"] == "⚠️ 剛剛已叫號：B12345678（A-1），請稍候再試，避免重複叫號。"
     assert [entry.user_id for entry in qm.get_queue()] == ["bob"]
 
@@ -635,8 +635,8 @@ def test_admin_serve_cooldown_expires_and_next_serve_succeeds(tmp_path):
     handler._admin_serve_cooldown_clock = lambda: 304.0
     second = handler.handle_event(make_event("/admin/serve", user_id="admin"))
 
-    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
-    assert second[0]["text"] == "✅ 已叫號：B23456789（A-2）"
+    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
+    assert second[0]["text"] == "✅ 已叫號：B23456789（A-2）（叫號完成後請點擊下方按鈕解除鎖定）"
     assert qm.get_queue() == []
 
 
@@ -656,7 +656,7 @@ def test_admin_serve_failure_does_not_start_cooldown(tmp_path):
     second = handler.handle_event(make_event("/admin/serve", user_id="admin"))
 
     assert first[0]["text"] == "❌ 錯誤：目前隊列是空的。"
-    assert second[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert second[0]["text"] == "✅ 已叫號：B12345678（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
 
 
 
@@ -701,7 +701,7 @@ def test_admin_serve_concurrent_requests_only_serve_one_user(tmp_path):
     t1.join(timeout=2)
 
     first_reply = dict(replies)["first"]
-    assert first_reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert first_reply[0]["text"] == "✅ 已叫號：B12345678（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
     assert second[0]["text"] == "⚠️ 叫號進行中，請勿重複操作。"
     assert [entry.user_id for entry in qm.get_queue()] == ["bob"]
 
@@ -717,7 +717,7 @@ def test_admin_serve_specific_uses_display_name_and_location(tmp_path):
 
     reply = handler.handle_event(make_event("/admin/serve alice", user_id="admin"))
 
-    assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
 
 
 class FakeAnnouncementService:
@@ -763,7 +763,7 @@ def test_admin_serve_next_sends_discord_dm_to_called_user(tmp_path):
 
     reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
 
-    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）"
+    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
     assert sent == [("discord_user_1", 1)]
 
 
@@ -783,7 +783,7 @@ def test_admin_serve_next_creates_dashboard_announcement_with_display_name(tmp_p
 
     reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
 
-    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）"
+    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
     assert announcement_service.calls == [("called_guest", "110316888")]
 
 
@@ -803,7 +803,7 @@ def test_admin_serve_specific_creates_dashboard_announcement_with_display_name(t
 
     reply = handler.handle_event(make_event("/admin/serve alice", user_id="admin"))
 
-    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）"
+    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
     assert announcement_service.calls == [("called_guest", "110316888")]
 
 
@@ -939,3 +939,26 @@ def test_admin_ping_next_user(tmp_path):
     reply = handler.handle_event(make_event("/admin/ping", user_id="admin"))
 
     assert "已提醒 王小明（alice）" in reply[0]["text"]
+
+def test_handle_status_when_user_is_called_shows_demo_prompt(tmp_path):
+    db = DatabaseManager(str(tmp_path / "status-demo.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.join("alice", "regular")
+    qm.serve_next()
+
+    reply = handler.handle_event(make_event("/status", user_id="alice"))
+    assert reply[0]["text"] == "📣 你正在 Demo #1，請 Demo 完後再加入。"
+
+def test_handle_admin_release_immediately_releases_user(tmp_path):
+    db = DatabaseManager(str(tmp_path / "admin-release.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.join("alice", "regular")
+    qm.serve_next()
+
+    reply = handler.handle_event(make_event("/admin/release alice", user_id="admin"))
+    assert "✅ 已解除 B12345678（A-1） 的叫號鎖定" in reply[0]["text"]
+    assert qm.get_user_position("alice") is None
