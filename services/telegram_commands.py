@@ -221,8 +221,6 @@ class TelegramCommandService:
             result = self._handle_admin_serve(user_id=user_id, args=args, raw_text=raw_text)
         elif command == "/admin/release":
             result = self._handle_admin_release(user_id=user_id, args=args)
-        elif command == "/admin/release_confirm":
-            result = self._handle_admin_release_confirm(user_id=user_id, args=args)
         elif command == "/admin/skip":
             result = self._handle_admin_skip(user_id=user_id, args=args, raw_text=raw_text)
         elif command == "/admin/vip":
@@ -839,35 +837,12 @@ class TelegramCommandService:
         }
 
     def _handle_admin_release(self, *, user_id: str, args: list[str]) -> dict:
-        """處理 Telegram admin 解除叫號鎖定（發送確認按鈕）。"""
-        if not self.db.is_admin(user_id):
-            return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
-
-        if not args:
-            return {"status": "error", "message": "用法：/admin/release [user_id]"}
-            
-        target_id = args[0]
-        target_display_name = self.db.get_display_name(target_id)
-        return {
-            "status": "success",
-            "message": f"⚠️ 確定要解除 {target_display_name} 的鎖定嗎？",
-            "reply_markup": {
-                "inline_keyboard": [
-                    [
-                        {"text": "確認解除", "callback_data": f"/admin/release_confirm {target_id}"},
-                        {"text": "暫不解除", "callback_data": "/admin/ignore"}
-                    ]
-                ]
-            }
-        }
-
-    def _handle_admin_release_confirm(self, *, user_id: str, args: list[str]) -> dict:
         """處理 Telegram admin 解除叫號鎖定。"""
         if not self.db.is_admin(user_id):
             return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
 
         if not args:
-            return {"status": "error", "message": "用法：/admin/release_confirm [user_id]"}
+            return {"status": "error", "message": "用法：/admin/release [user_id]"}
 
         target_id = args[0]
         result = release_user(queue_manager=self.queue_manager, user_id=target_id)
@@ -877,12 +852,12 @@ class TelegramCommandService:
         target_display_name = self.db.get_display_name(target_id)
         self._broadcast_simple_event(
             category="admin_action",
-            title="解除叫號通知",
+            title="Demo完成通知",
             actor_label=f"管理員：{self._format_profile_label(user_id)}（{user_id}）",
             target_label=f"對象：{target_display_name}（{target_id}）",
             detail_lines=[f"號碼：#{result['queue_number']}"],
         )
-        return {"status": "success", "message": f"✅ 已解除 {target_display_name} 的叫號鎖定，其可重新排隊"}
+        return {"status": "success", "message": f"✅ 已解除 {target_display_name} 的叫號鎖定"}
 
     def _handle_admin_skip(self, *, user_id: str, args: list[str], raw_text: str) -> dict:
         if not self.db.is_admin(user_id):

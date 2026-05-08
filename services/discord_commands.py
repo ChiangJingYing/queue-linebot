@@ -109,8 +109,8 @@ class DiscordCommandService:
             return self._handle_help()
         if command == "/admin/release":
             return self._handle_admin_release(user_id=user_id, args=args)
-        if command == "/admin/release_confirm":
-            return self._handle_admin_release_confirm(user_id=user_id, args=args)
+        # if command == "/admin/release_confirm":
+        #     return self._handle_admin_release(user_id=user_id, args=args)
 
         return {"status": "error", "message": "Unknown command."}
 
@@ -293,49 +293,30 @@ class DiscordCommandService:
         )
         return {"status": outcome["status"], "message": outcome["message"], "components": self._button_rows(self.USER_ACTION_ROWS)}
 
-    def _handle_admin_release(self, *, user_id: str, args: list[str]) -> dict:
-        """處理 Discord admin 解除叫號鎖定（發送確認按鈕）。"""
-        if not self.db.is_admin(user_id):
-            return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
+    # def _handle_admin_release(self, *, user_id: str, args: list[str]) -> dict:
+    #     """處理 Discord admin 解除叫號鎖定。"""
+    #     if not self.db.is_admin(user_id):
+    #         return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
 
-        if not args:
-            return {"status": "error", "message": "用法：/admin/release [user_id]"}
+    #     if not args:
+    #         return {"status": "error", "message": "用法：/admin/release [user_id]"}
             
-        target_id = args[0]
-        target_display_name = self.db.get_display_name(target_id)
-        return {
-            "status": "success",
-            "message": f"⚠️ 確定要解除 {target_display_name} 的鎖定嗎？",
-            "components": self._button_rows([[
-                {"label": "確認解除", "custom_id": f"/admin/release_confirm {target_id}", "style": "danger"},
-                {"label": "暫不解除", "custom_id": "/admin/ignore", "style": "secondary"}
-            ]]),
-        }
+    #     target_id = args[0]
+    #     result = release_user(queue_manager=self.queue_manager, user_id=target_id)
+    #     if result["status"] != "released":
+    #         return {"status": "error", "message": f"❌ 錯誤：{result['message']}"}
 
-    def _handle_admin_release_confirm(self, *, user_id: str, args: list[str]) -> dict:
-        """處理 Discord admin 解除叫號鎖定。"""
-        if not self.db.is_admin(user_id):
-            return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
-
-        if not args:
-            return {"status": "error", "message": "用法：/admin/release_confirm [user_id]"}
-
-        target_id = args[0]
-        result = release_user(queue_manager=self.queue_manager, user_id=target_id)
-        if result["status"] != "released":
-            return {"status": "error", "message": f"❌ 錯誤：{result['message']}"}
-
-        target_display_name = self.db.get_display_name(target_id)
-        if self.notification_service is not None:
-            self.notification_service.broadcast_event(
-                category="admin_action",
-                title="解除叫號通知",
-                actor_label=f"管理員：{self.db.get_display_name(user_id)}（{user_id}）",
-                target_label=f"對象：{target_display_name}（{target_id}）",
-                detail_lines=[f"號碼：#{result['queue_number']}"],
-                platform=self.PLATFORM_LABEL,
-            )
-        return {"status": "success", "message": f"✅ 已解除 {target_display_name} 的叫號鎖定，其可重新排隊"}
+    #     target_display_name = self.db.get_display_name(target_id)
+    #     if self.notification_service is not None:
+    #         self.notification_service.broadcast_event(
+    #             category="admin_action",
+    #             title="解除叫號通知",
+    #             actor_label=f"管理員：{self.db.get_display_name(user_id)}（{user_id}）",
+    #             target_label=f"對象：{target_display_name}（{target_id}）",
+    #             detail_lines=[f"號碼：#{result['queue_number']}"],
+    #             platform=self.PLATFORM_LABEL,
+    #         )
+    #     return {"status": "success", "message": f"✅ 已解除 {target_display_name} 的叫號鎖定，其可重新排隊"}
 
     def _normalize_register_pending_text(self, *, text: str, state: dict) -> str:
         """將 Discord 註冊 callback 還原成 flow state machine 可理解的值。"""
