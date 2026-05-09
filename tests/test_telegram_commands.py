@@ -407,7 +407,7 @@ class TestTelegramCommandService:
         result = service.handle_text(user_id="admin_a", text="/admin/serve")
 
         assert result["status"] == "success"
-        assert result["message"] == "✅ 已叫號：B12345678（A-1）（請於完成後解除鎖定）"
+        assert result["message"] == "✅ 已叫號：B12345678（A-1）"
         assert sent == [("discord_user_1", sent[0][1])]
         assert "輪到你了" in sent[0][1]
         assert "#1" in sent[0][1]
@@ -431,7 +431,7 @@ class TestTelegramCommandService:
         result = service.handle_text(user_id="admin_a", text="/admin/serve")
 
         assert result["status"] == "success"
-        assert result["message"] == "✅ 已叫號：B12345678（A-1）（請於完成後解除鎖定）"
+        assert result["message"] == "✅ 已叫號：B12345678（A-1）"
         assert sent == [("tg_user_1", sent[0][1])]
         assert "輪到你了" in sent[0][1]
         assert "#1" in sent[0][1]
