@@ -249,15 +249,6 @@ class DiscordCommandService:
                 ]),
             }
 
-        if outcome["status"] == "called":
-            return {
-                "status": "success",
-                "message": f"📣 你的號碼 #{outcome['queue_number']} 已被叫號！請至現場報到，等待叫號者解除後可再次排隊。",
-                "components": self._button_rows([[
-                    {"label": "看紀錄", "custom_id": "menu:history", "style": "secondary"},
-                ]]),
-            }
-
         return {
             "status": "success",
             "message": f"📊 目前排在第 {outcome['position']} 位\n前面還有 {outcome['ahead_count']} 人",

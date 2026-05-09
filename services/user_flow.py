@@ -67,19 +67,8 @@ def cancel_user(*, queue_manager, user_id: str) -> dict:
 def get_user_status(*, queue_manager, user_id: str) -> dict:
     """回傳使用者當前排隊位置或全隊列總人數。
 
-    若使用者已被叫號但叫號者尚未解除，回傳 ``called`` 狀態。
+    叫號鎖定狀態不阻擋查詢，仍正常顯示整體排隊情況。
     """
-    # 先檢查是否處於「已叫號待解除」狀態
-    called_entry = queue_manager.get_called_entry(user_id)
-    if called_entry is not None:
-        return {
-            "status": "called",
-            "queue_number": called_entry.queue_number,
-            "position": None,
-            "ahead_count": None,
-            "total_count": len(queue_manager.get_queue()),
-        }
-
     position = queue_manager.get_user_position(user_id)
     if position is None:
         total_count = len(queue_manager.get_queue())

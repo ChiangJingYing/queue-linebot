@@ -561,8 +561,6 @@ class TelegramCommandService:
         outcome = get_user_status(queue_manager=self.queue_manager, user_id=user_id)
         if outcome["status"] == "not_in_queue":
             return {"status": "success", "message": f"📊 目前有 {outcome['total_count']} 人在排隊中"}
-        if outcome["status"] == "called":
-            return {"status": "success", "message": f"📣 你的號碼 #{outcome['queue_number']} 已被叫號！請至現場報到，等待叫號者解除後可再次排隊。"}
 
         return {
             "status": "success",
@@ -818,7 +816,7 @@ class TelegramCommandService:
         target_user_id = result["target_user_id"]
         target_display_name = result["display_name"]
         release_key = result.get("location") or target_user_id
-        auto_note = f"（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
+        auto_note = f"\n（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
         if self.notification_service is not None:
             self.notification_service.broadcast_serve_event(
                 admin_user_id=user_id,
@@ -831,7 +829,7 @@ class TelegramCommandService:
             )
         return {
             "status": "success",
-            "message": f"✅ 已叫號：{target_display_name}{auto_note}（請於完成後解除鎖定）",
+            "message": f"✅ 已叫號：{target_display_name}{auto_note}",
             "reply_markup": {
                 "inline_keyboard": [
                     [{"text": "解除鎖定", "callback_data": f"/admin/release {release_key}"}]

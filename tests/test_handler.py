@@ -940,7 +940,7 @@ def test_admin_ping_next_user(tmp_path):
 
     assert "已提醒 王小明（alice）" in reply[0]["text"]
 
-def test_handle_status_when_user_is_called_shows_demo_prompt(tmp_path):
+def test_handle_status_when_user_is_called_shows_queue_count(tmp_path):
     db = DatabaseManager(str(tmp_path / "status-demo.db"))
     qm = QueueManager(db)
     handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
@@ -949,7 +949,7 @@ def test_handle_status_when_user_is_called_shows_demo_prompt(tmp_path):
     qm.serve_next()
 
     reply = handler.handle_event(make_event("/status", user_id="alice"))
-    assert reply[0]["text"] == "📣 你正在 Demo #1，請 Demo 完後再加入。"
+    assert reply[0]["text"] == "📊 目前有 0 人在排隊中"
 
 def test_handle_admin_release_immediately_releases_user(tmp_path):
     db = DatabaseManager(str(tmp_path / "admin-release.db"))
