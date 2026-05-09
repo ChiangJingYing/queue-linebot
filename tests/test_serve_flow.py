@@ -49,3 +49,42 @@ def test_serve_user_serves_specific_and_ignores_announcement_failures(tmp_path):
     assert outcome['display_name'] == '110316999（A-2）'
     assert outcome['announcement_display_name'] == '110316999'
     assert announcement_service.calls == ['110316999']
+
+
+def test_serve_user_includes_location_in_result(tmp_path):
+    db = DatabaseManager(str(tmp_path / 'serve-flow-location.db'))
+    qm = QueueManager(db)
+
+    qm.register_name('alice', '110316888', location='A-1')
+    qm.join('alice', 'regular')
+
+    outcome = serve_user(queue_manager=qm)
+
+    assert outcome['location'] == 'A-1'
+
+
+def test_serve_user_auto_released_display_name_is_none_on_first_serve(tmp_path):
+    db = DatabaseManager(str(tmp_path / 'serve-flow-first.db'))
+    qm = QueueManager(db)
+
+    qm.register_name('alice', '110316888', location='A-1')
+    qm.join('alice', 'regular')
+
+    outcome = serve_user(queue_manager=qm, admin_user_id='admin1')
+
+    assert outcome['auto_released_display_name'] is None
+
+
+def test_serve_user_includes_auto_released_display_name_when_admin_has_prior_session(tmp_path):
+    db = DatabaseManager(str(tmp_path / 'serve-flow-auto-release.db'))
+    qm = QueueManager(db)
+
+    qm.register_name('alice', '110316888', location='A-1')
+    qm.register_name('bob', '110316999', location='A-2')
+    qm.join('alice', 'regular')
+    qm.join('bob', 'regular')
+
+    serve_user(queue_manager=qm, admin_user_id='admin1')
+    outcome = serve_user(queue_manager=qm, admin_user_id='admin1')
+
+    assert outcome['auto_released_display_name'] == '110316888（A-1）'

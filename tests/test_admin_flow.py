@@ -11,6 +11,7 @@ from services.admin_flow import (
     build_admin_status,
     clear_vip_queue,
     get_admin_join_status,
+    release_user,
     set_admin_join_enabled,
     toggle_admin_join,
     toggle_vip,
@@ -112,3 +113,39 @@ def test_toggle_vip_and_clear_vip_queue_go_through_shared_service(tmp_path):
     assert clear_result["status"] == "cleared"
     assert clear_result["removed_count"] == 1
     assert clear_result["removed_users"] == ["bob"]
+
+
+def test_release_user_by_location_success_returns_user_id_and_display_name(tmp_path):
+    db = DatabaseManager(str(tmp_path / "release-user-success.db"))
+    db.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+    qm = QueueManager(db)
+    qm.join("alice", "regular")
+    qm.serve_next()
+
+    result = release_user(queue_manager=qm, location="A-1")
+
+    assert result["status"] == "released"
+    assert result["user_id"] == "alice"
+    assert result["display_name"] == "B12345678（A-1）"
+
+
+def test_release_user_by_location_not_registered_returns_error(tmp_path):
+    db = DatabaseManager(str(tmp_path / "release-user-missing.db"))
+    qm = QueueManager(db)
+
+    result = release_user(queue_manager=qm, location="Z-9")
+
+    assert result["status"] == "error"
+    assert "Z-9" in result["message"]
+
+
+def test_release_user_by_location_no_queue_entry_still_succeeds(tmp_path):
+    db = DatabaseManager(str(tmp_path / "release-user-no-entry.db"))
+    db.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+    qm = QueueManager(db)
+
+    result = release_user(queue_manager=qm, location="A-1")
+
+    assert result["status"] == "released"
+    assert result["user_id"] == "alice"
+    assert result["queue_number"] is None

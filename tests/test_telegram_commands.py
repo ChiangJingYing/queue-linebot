@@ -802,3 +802,12 @@ class TestTelegramCommandService:
         assert "已解除" in result["message"]
         assert service.queue_manager.get_user_position("alice") is None
         assert any("Demo完成通知" in text for uid, text in sent)
+
+    def test_admin_release_unknown_location_returns_error_message(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        service = TelegramCommandService(db=db_manager)
+
+        result = service.handle_text(user_id="admin_a", text="/admin/release Z-9")
+
+        assert result["status"] == "error"
+        assert "Z-9" in result["message"]

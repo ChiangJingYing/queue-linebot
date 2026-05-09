@@ -962,3 +962,12 @@ def test_handle_admin_release_immediately_releases_user(tmp_path):
     reply = handler.handle_event(make_event("/admin/release A-1", user_id="admin"))
     assert "✅ 已解除 B12345678（A-1） 的叫號鎖定" in reply[0]["text"]
     assert qm.get_user_position("alice") is None
+
+
+def test_handle_admin_release_with_unknown_location_returns_error(tmp_path):
+    db = DatabaseManager(str(tmp_path / "admin-release-unknown.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+
+    reply = handler.handle_event(make_event("/admin/release Z-9", user_id="admin"))
+    assert "Z-9" in reply[0]["text"]

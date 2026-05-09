@@ -83,6 +83,18 @@ def test_get_user_status_reports_total_count_when_not_in_queue(tmp_path):
     }
 
 
+def test_get_user_status_returns_not_in_queue_when_user_is_in_called_state(tmp_path):
+    qm = _make_queue_manager(tmp_path)
+    qm.register_name("alice", "Alice", location="A-1")
+    qm.join("alice", "regular")
+    qm.serve_next()
+
+    outcome = get_user_status(queue_manager=qm, user_id="alice")
+
+    assert outcome["status"] == "not_in_queue"
+    assert outcome["total_count"] == 0
+
+
 def test_build_history_message_supports_dict_history_format():
     history = [
         {"created_at": "2026-01-01T10:00:00", "event_type": "join", "queue_type": "regular"},

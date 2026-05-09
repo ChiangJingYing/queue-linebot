@@ -283,8 +283,8 @@ class HandlerAdminMixin:
                 quick_options = [{"label": "解除鎖定", "text": f"/admin/release {result['location']}"}]
                 return self._reply(reply_token, msg, quick_options=quick_options)
             else:
-                auto_note = f"（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
-                msg = f"❌ 錯誤：{result['message']}{' ' + auto_note if auto_note else ''}"
+                auto_note = f"\n（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
+                msg = f"❌ 錯誤：{result['message']}{auto_note if auto_note else ''}"
             return self._reply(reply_token, msg)
         finally:
             self._admin_serve_lock.release()

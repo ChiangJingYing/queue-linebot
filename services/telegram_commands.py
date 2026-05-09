@@ -811,13 +811,13 @@ class TelegramCommandService:
 
         if result["status"] != "served":
             self._broadcast_error_event(user_id=user_id, command_text=raw_text, error_message=result["message"])
-            auto_note = f"（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
-            return {"status": "error", "message": f"❌ 錯誤：{result['message']}{' ' + auto_note if auto_note else ''}"}
+            auto_note = f"\n（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
+            return {"status": "error", "message": f"❌ 錯誤：{result['message']}{auto_note if auto_note else ''}"}
 
         target_user_id = result["target_user_id"]
         target_display_name = result["display_name"]
         release_key = result.get("location") or target_user_id
-        auto_note = f"（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
+        auto_note = f"\n（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
         if self.notification_service is not None:
             self.notification_service.broadcast_serve_event(
                 admin_user_id=user_id,

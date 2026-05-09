@@ -768,7 +768,7 @@ Telegram admin 可用：
 - `/admin/serve`
 - `/admin/serve [user_id]`
 
-執行叫號時，若該管理員上一次叫的人尚未解除鎖定，系統會自動靜默 release 前一位，並在回覆訊息中提示。叫號完成後，系統會顯示「解除鎖定」快捷按鈕（帶入位置編號），方便管理員點擊執行 `/admin/release [位置編號]`。
+執行叫號時，若該管理員上一次叫的人尚未解除鎖定，系統會自動靜默 release 前一位，並在回覆訊息中提示。此自動解除**無條件發生**——即使目前隊列已空（新叫號本身失敗），前一位的鎖定仍會被解除。叫號完成後，系統會顯示「解除鎖定」快捷按鈕（帶入位置編號），方便管理員點擊執行 `/admin/release [位置編號]`。
 
 系統會：
 
@@ -862,6 +862,7 @@ python scripts/upload_rich_menus.py \
 - LINE 目前仍保有最完整的管理員命令覆蓋，主要分布在 `bot/handler_commands.py`、`bot/handler_registration.py`、`bot/handler_admin.py`。
 - `/join vip` 目前在 LINE 與 Telegram 可用；Discord 目前 README 應視為未支援，而不是推定未來一定會支援。
 - `/admin/skip` 目前只在 TelegramCommandService 中有實作與測試，LINE 與 Discord 不應在 README 誤寫成已支援。
+- `/admin/release [位置編號]` 只需該位置編號有對應的登記紀錄（user_profiles 中有 location 欄位），即可執行解除。**不需要**該使用者有有效的 queue entry 或已被標記為 `served`——若無 queue entry，仍視為成功（空操作）。
 - 「可收到『輪到你了』叫號推播」指的是該平台身分的使用者在被叫號時，系統目前有實作通知出口。LINE 走 `services/notifier.py` 的 LINE push，Discord 使用者會透過 `discord_sender` 收到 DM，Telegram 使用者也可透過 Telegram sender 收到通知。
 - 「可收到其他 admin 的操作通知」指的是管理員自己所在的平台帳號，是否能收到其他管理員操作所觸發的通知；這不是跨平台廣播。以目前實作來說，Telegram admin 可透過 `/admin/notify ...` 收到 Telegram 管理通知；LINE admin 與 Discord admin 目前沒有對應的管理通知機制。
 - 也就是說，像 LINE 的 admin 動作不會自動讓 Telegram 的一般使用者收到管理通知；通知是否送出、送到誰，仍以各平台現有 sender 與通知偏好設定為準。

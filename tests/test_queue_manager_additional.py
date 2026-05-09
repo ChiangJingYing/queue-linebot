@@ -241,7 +241,125 @@ class TestQueueManagerAdditional:
         queue_manager.serve_next()
 
         result = queue_manager.join("alice", "regular")
-        
+
         assert result["status"] == "error"
         assert "你正在 Demo 中" in result["message"]
+
+
+class TestAdminServeSessionsAutoRelease:
+    """Tests for the _admin_serve_sessions auto-release mechanism."""
+
+    def test_serve_next_records_session_for_admin(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "session.db"))
+        qm = QueueManager(db)
+        qm.register_name("alice", "王小明")
+        qm.join("alice", "regular")
+
+        result = qm.serve_next(admin_user_id="admin1")
+
+        assert result["status"] == "served"
+        assert qm._admin_serve_sessions["admin1"] == "alice"
+
+    def test_serve_next_auto_releases_previous_before_serving_next(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "auto-release.db"))
+        qm = QueueManager(db)
+        qm.register_name("alice", "王小明", location="A-1")
+        qm.register_name("bob", "李大華", location="A-2")
+        qm.join("alice", "regular")
+        qm.join("bob", "regular")
+
+        qm.serve_next(admin_user_id="admin1")
+        result = qm.serve_next(admin_user_id="admin1")
+
+        assert result["status"] == "served"
+        assert result["id"] == "bob"
+        assert result["auto_released_display_name"] == "王小明（A-1）"
+        assert qm._admin_serve_sessions["admin1"] == "bob"
+        # alice's called-lock should now be released
+        assert db.get_called_entry("alice") is None
+
+    def test_serve_next_returns_none_auto_released_when_no_previous_session(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "no-session.db"))
+        qm = QueueManager(db)
+        qm.register_name("alice", "王小明")
+        qm.join("alice", "regular")
+
+        result = qm.serve_next(admin_user_id="admin1")
+
+        assert result["auto_released_display_name"] is None
+
+    def test_serve_next_auto_releases_even_when_queue_is_empty(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "empty-queue.db"))
+        qm = QueueManager(db)
+        qm.register_name("alice", "王小明", location="A-1")
+        qm.join("alice", "regular")
+        qm.serve_next(admin_user_id="admin1")
+
+        result = qm.serve_next(admin_user_id="admin1")
+
+        assert result["status"] == "error"
+        assert "空的" in result["message"]
+        assert result["auto_released_display_name"] == "王小明（A-1）"
+        assert db.get_called_entry("alice") is None
+
+    def test_multiple_admins_sessions_are_independent(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "multi-admin.db"))
+        qm = QueueManager(db)
+        qm.register_name("alice", "王小明")
+        qm.register_name("bob", "李大華")
+        qm.join("alice", "regular")
+        qm.join("bob", "regular")
+
+        qm.serve_next(admin_user_id="admin1")
+        qm.serve_next(admin_user_id="admin2")
+
+        assert qm._admin_serve_sessions["admin1"] == "alice"
+        assert qm._admin_serve_sessions["admin2"] == "bob"
+
+    def test_manual_release_clears_session_entry(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "manual-release.db"))
+        qm = QueueManager(db)
+        qm.register_name("alice", "王小明")
+        qm.join("alice", "regular")
+        qm.serve_next(admin_user_id="admin1")
+
+        qm.release_served("alice")
+
+        assert "admin1" not in qm._admin_serve_sessions
+
+    def test_force_release_clears_session_entry(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "force-release.db"))
+        qm = QueueManager(db)
+        qm.register_name("alice", "王小明")
+        qm.join("alice", "regular")
+        qm.serve_next(admin_user_id="admin1")
+
+        qm.force_release_served("alice")
+
+        assert "admin1" not in qm._admin_serve_sessions
+
+    def test_serve_specific_records_and_auto_releases(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "specific.db"))
+        qm = QueueManager(db)
+        qm.register_name("alice", "王小明", location="A-1")
+        qm.register_name("bob", "李大華", location="A-2")
+        qm.join("alice", "regular")
+        qm.join("bob", "regular")
+
+        qm.serve_specific("alice", admin_user_id="admin1")
+        result = qm.serve_specific("bob", admin_user_id="admin1")
+
+        assert result["status"] == "served"
+        assert result["auto_released_display_name"] == "王小明（A-1）"
+        assert qm._admin_serve_sessions["admin1"] == "bob"
+
+    def test_admin_without_id_does_not_create_session(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "no-admin-id.db"))
+        qm = QueueManager(db)
+        qm.register_name("alice", "王小明")
+        qm.join("alice", "regular")
+
+        qm.serve_next()
+
+        assert qm._admin_serve_sessions == {}
 

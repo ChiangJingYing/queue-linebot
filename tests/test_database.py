@@ -157,3 +157,64 @@ class TestDatabaseManager:
         rendered = format_display_time(value)
 
         assert rendered == "2026-04-30 10:12"
+
+
+class TestLocationAndForceReleaseMethods:
+    """Tests for find_user_profile_by_location, find_called_user_by_location, force_release_queue."""
+
+    def test_find_user_profile_by_location_returns_profile_when_found(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "find-profile-loc.db"))
+        db.upsert_user_profile("alice", "王小明", location="A-1", verified=True, role="user")
+
+        profile = db.find_user_profile_by_location("A-1")
+
+        assert profile is not None
+        assert profile.user_id == "alice"
+        assert profile.location == "A-1"
+
+    def test_find_user_profile_by_location_returns_none_when_not_found(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "find-profile-loc-miss.db"))
+
+        profile = db.find_user_profile_by_location("Z-9")
+
+        assert profile is None
+
+    def test_find_called_user_by_location_returns_entry_when_user_is_called(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "find-called-loc.db"))
+        db.upsert_user_profile("alice", "王小明", location="A-1", verified=True, role="user")
+        db.join_queue("alice", "regular")
+        db.serve_queue("alice")
+
+        entry = db.find_called_user_by_location("A-1")
+
+        assert entry is not None
+        assert entry.user_id == "alice"
+        assert entry.release_time is None
+
+    def test_find_called_user_by_location_returns_none_when_not_called(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "find-called-loc-miss.db"))
+        db.upsert_user_profile("alice", "王小明", location="A-1", verified=True, role="user")
+
+        entry = db.find_called_user_by_location("A-1")
+
+        assert entry is None
+
+    def test_force_release_queue_sets_release_time_and_served_flag(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "force-release.db"))
+        db.join_queue("alice", "regular")
+
+        released = db.force_release_queue("alice")
+
+        assert released is not None
+        assert released.user_id == "alice"
+        assert released.served == 1
+        # verify release_time is persisted in DB
+        called = db.get_called_entry("alice")
+        assert called is None  # no longer in called state after release
+
+    def test_force_release_queue_returns_none_when_no_queue_entry(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "force-release-empty.db"))
+
+        released = db.force_release_queue("ghost")
+
+        assert released is None
