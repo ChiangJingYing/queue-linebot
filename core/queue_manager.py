@@ -153,11 +153,11 @@ class QueueManager:
         3. 寫入 ``serve`` event log
         4. 若 ``self.notifier`` 存在，呼叫 ``notify_served(user_id, queue_number)``
         """
+        auto_released = self._auto_release_previous(admin_user_id) if admin_user_id else None
+
         all_q = self.db.get_all_queue()
         if not all_q:
-            return {"status": "error", "message": "目前隊列是空的。"}
-
-        auto_released = self._auto_release_previous(admin_user_id) if admin_user_id else None
+            return {"status": "error", "message": "目前隊列是空的。", "auto_released_display_name": auto_released}
 
         head = all_q[0]
         served = self.db.serve_queue(head.user_id)

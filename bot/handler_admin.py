@@ -278,12 +278,13 @@ class HandlerAdminMixin:
                     target_display_name=display_name,
                     command_text="/admin/serve",
                 )
-                auto_note = f"（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
-                msg = f"✅ 已叫號：{display_name}{auto_note}（叫號完成後請點擊下方按鈕解除鎖定）"
+                auto_note = f"\n（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
+                msg = f"✅ 已叫號：{display_name}{auto_note}"
                 quick_options = [{"label": "解除鎖定", "text": f"/admin/release {result['location']}"}]
                 return self._reply(reply_token, msg, quick_options=quick_options)
             else:
-                msg = f"❌ 錯誤：{result['message']}"
+                auto_note = f"（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
+                msg = f"❌ 錯誤：{result['message']}{' ' + auto_note if auto_note else ''}"
             return self._reply(reply_token, msg)
         finally:
             self._admin_serve_lock.release()
@@ -323,7 +324,8 @@ class HandlerAdminMixin:
                 quick_options = [{"label": "解除鎖定", "text": f"/admin/release {result['location']}"}]
                 return self._reply(reply_token, msg, quick_options=quick_options)
             else:
-                msg = f"❌ 錯誤：{result['message']}"
+                auto_note = f"（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
+                msg = f"❌ 錯誤：{result['message']}{' ' + auto_note if auto_note else ''}"
             return self._reply(reply_token, msg)
         finally:
             self._admin_serve_lock.release()
