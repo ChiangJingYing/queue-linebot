@@ -515,7 +515,7 @@ def test_admin_serve_next_broadcasts_line_platform_to_telegram_admins(tmp_path, 
 
     reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
 
-12345678（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"    assert reply[0]["text"] == "✅ 已叫號：B
+    assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
     assert sent == [("tg_admin_1", sent[0][1])]
     assert "管理叫號通知" in sent[0][1]
     assert "平台：Line" in sent[0][1]
@@ -636,7 +636,7 @@ def test_admin_serve_cooldown_expires_and_next_serve_succeeds(tmp_path):
     second = handler.handle_event(make_event("/admin/serve", user_id="admin"))
 
     assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
-    assert second[0]["text"] == "✅ 已叫號：B23456789（A-2）（叫號完成後請點擊下方按鈕解除鎖定）"
+    assert second[0]["text"] == "✅ 已叫號：B23456789（A-2）（已自動解除 B12345678（A-1） 的鎖定）（叫號完成後請點擊下方按鈕解除鎖定）"
     assert qm.get_queue() == []
 
 
@@ -665,9 +665,9 @@ class BlockingQueueManager(QueueManager):
         super().__init__(db)
         self.gate = gate
 
-    def serve_next(self) -> dict:
+    def serve_next(self, admin_user_id=None) -> dict:
         self.gate.wait(timeout=2)
-        return super().serve_next()
+        return super().serve_next(admin_user_id=admin_user_id)
 
 
 
@@ -959,6 +959,6 @@ def test_handle_admin_release_immediately_releases_user(tmp_path):
     qm.join("alice", "regular")
     qm.serve_next()
 
-    reply = handler.handle_event(make_event("/admin/release alice", user_id="admin"))
+    reply = handler.handle_event(make_event("/admin/release A-1", user_id="admin"))
     assert "✅ 已解除 B12345678（A-1） 的叫號鎖定" in reply[0]["text"]
     assert qm.get_user_position("alice") is None

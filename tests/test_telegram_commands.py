@@ -796,7 +796,7 @@ class TestTelegramCommandService:
         service.queue_manager.join("alice", "regular")
         service.queue_manager.serve_next()
         
-        result = service.handle_text(user_id="admin_a", text="/admin/release alice")
+        result = service.handle_text(user_id="admin_a", text="/admin/release A-1")
         
         assert result["status"] == "success"
         assert "已解除" in result["message"]

@@ -768,6 +768,8 @@ Telegram admin 可用：
 - `/admin/serve`
 - `/admin/serve [user_id]`
 
+執行叫號時，若該管理員上一次叫的人尚未解除鎖定，系統會自動靜默 release 前一位，並在回覆訊息中提示。叫號完成後，系統會顯示「解除鎖定」快捷按鈕（帶入位置編號），方便管理員點擊執行 `/admin/release [位置編號]`。
+
 系統會：
 
 1. 正常叫號
@@ -834,7 +836,7 @@ python scripts/upload_rich_menus.py \
 | --- | --- | --- | --- |
 | `/admin/serve` 叫下一位 | ✅ | ✅ | ❌ |
 | `/admin/serve [id]` 叫指定使用者 | ✅ | ✅ | ❌ |
-| `/admin/release` 解除叫號鎖定 | ✅ | ✅ | ❌ |
+| `/admin/release [位置編號]` 依位置解除叫號鎖定 | ✅ | ✅ | ❌ |
 | `/admin/ping` 手動提醒下一位 | ✅ | ✅ | ❌ |
 | `/admin/ping [id]` 手動提醒指定使用者 | ✅ | ✅ | ❌ |
 | `/admin/status` 完整狀態 | ✅ | ✅ | ❌ |

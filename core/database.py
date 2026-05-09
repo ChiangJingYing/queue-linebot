@@ -409,6 +409,65 @@ class DatabaseManager:
             ).fetchall()
             return [QueueEntry(**dict(r)) for r in rows]
 
+    def find_called_user_by_location(self, location: str) -> Optional[QueueEntry]:
+        """Find a called-but-not-released queue entry by the user's location."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT q.* FROM queues q "
+                "JOIN user_profiles up ON q.user_id = up.user_id "
+                "WHERE q.served = 1 AND q.served_time IS NOT NULL "
+                "AND q.release_time IS NULL AND q.cancel_time IS NULL "
+                "AND up.location = ? "
+                "ORDER BY q.served_time ASC LIMIT 1",
+                (location,),
+            ).fetchone()
+            if row is None:
+                return None
+            return QueueEntry(**dict(row))
+
+    def find_user_profile_by_location(self, location: str) -> Optional["UserProfile"]:
+        """Find a registered user profile by location."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM user_profiles WHERE location = ? LIMIT 1",
+                (location,),
+            ).fetchone()
+            if row is None:
+                return None
+            return UserProfile(**dict(row))
+
+    def force_release_queue(self, user_id: str) -> Optional[QueueEntry]:
+        """Force release the most recent active queue entry for a user, regardless of served state.
+
+        Unlike release_queue(), this does NOT require served=1. It will set release_time on
+        whatever the most recent non-cancelled, non-released entry is. Also ensures served=1
+        and served_time is set so the entry is treated as completed.
+        """
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM queues WHERE user_id = ? "
+                "AND release_time IS NULL AND cancel_time IS NULL "
+                "ORDER BY id DESC LIMIT 1",
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            now = now_in_taipei().isoformat()
+            conn.execute(
+                "UPDATE queues SET release_time = ?, served = 1, served_time = COALESCE(served_time, ?) WHERE id = ?",
+                (now, now, row["id"]),
+            )
+            conn.commit()
+            return QueueEntry(
+                id=row["id"],
+                user_id=row["user_id"],
+                queue_type=row["queue_type"],
+                queue_number=row["queue_number"],
+                join_time=row["join_time"],
+                served_time=row["served_time"] or now,
+                served=True,
+            )
+
     def skip_queue(self, user_id: str) -> Optional[QueueEntry]:
         """Skip (cancel) user's queue without serving."""
         return self.cancel_queue(user_id)

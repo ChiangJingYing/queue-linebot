@@ -808,6 +808,7 @@ class TelegramCommandService:
             queue_manager=self.queue_manager,
             target_user_id=args[0] if args else None,
             announcement_service=self.announcement_service,
+            admin_user_id=user_id,
         )
 
         if result["status"] != "served":
@@ -816,6 +817,8 @@ class TelegramCommandService:
 
         target_user_id = result["target_user_id"]
         target_display_name = result["display_name"]
+        release_key = result.get("location") or target_user_id
+        auto_note = f"（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
         if self.notification_service is not None:
             self.notification_service.broadcast_serve_event(
                 admin_user_id=user_id,
@@ -828,28 +831,29 @@ class TelegramCommandService:
             )
         return {
             "status": "success",
-            "message": f"✅ 已叫號：{target_display_name}（請於完成後解除鎖定）",
+            "message": f"✅ 已叫號：{target_display_name}{auto_note}（請於完成後解除鎖定）",
             "reply_markup": {
                 "inline_keyboard": [
-                    [{"text": "解除鎖定", "callback_data": f"/admin/release {target_user_id}"}]
+                    [{"text": "解除鎖定", "callback_data": f"/admin/release {release_key}"}]
                 ]
             }
         }
 
     def _handle_admin_release(self, *, user_id: str, args: list[str]) -> dict:
-        """處理 Telegram admin 解除叫號鎖定。"""
+        """處理 Telegram admin 解除叫號鎖定（依位置編號）。"""
         if not self.db.is_admin(user_id):
             return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
 
         if not args:
-            return {"status": "error", "message": "用法：/admin/release [user_id]"}
+            return {"status": "error", "message": "用法：/admin/release [位置編號]"}
 
-        target_id = args[0]
-        result = release_user(queue_manager=self.queue_manager, user_id=target_id)
+        location = args[0]
+        result = release_user(queue_manager=self.queue_manager, location=location)
         if result["status"] != "released":
             return {"status": "error", "message": f"❌ 錯誤：{result['message']}"}
 
-        target_display_name = self.db.get_display_name(target_id)
+        target_id = result["user_id"]
+        target_display_name = result["display_name"]
         self._broadcast_simple_event(
             category="admin_action",
             title="Demo完成通知",
