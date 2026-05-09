@@ -92,7 +92,7 @@ class TelegramCommandService:
         "舉手": "/join",
         "放棄": "/cancel",
         "看狀態": "/status",
-        "看紀錄": "/history",
+        "看紀錄": "/hostory",
         "設定資料": "/register",
         "排隊紀錄": "/history",
     }
@@ -185,7 +185,7 @@ class TelegramCommandService:
         command, args = validate_command(normalized_text)
         if command == "/menu":
             result = self._handle_menu(user_id=user_id)
-        elif command == "/history":
+        elif command == "/hostory":
             result = self._handle_user_history(user_id=user_id)
         elif command == "/register":
             result = self._handle_register(user_id=user_id, args=args)
