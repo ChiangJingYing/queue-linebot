@@ -22,6 +22,7 @@ class QueueEntry:
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     reminder_position: int | None = None
     reminder_sent: bool = False
+    release_time: str | None = None
 
 
 @dataclass

@@ -49,6 +49,7 @@ from services.admin_flow import (
     clear_vip_queue,
     get_admin_join_status,
     ping_user,
+    release_user,
     set_admin_join_enabled,
     toggle_admin_join,
     toggle_vip,
@@ -218,6 +219,8 @@ class TelegramCommandService:
             result = self._handle_admin_ping(user_id=user_id, args=args)
         elif command == "/admin/serve":
             result = self._handle_admin_serve(user_id=user_id, args=args, raw_text=raw_text)
+        elif command == "/admin/release":
+            result = self._handle_admin_release(user_id=user_id, args=args)
         elif command == "/admin/skip":
             result = self._handle_admin_skip(user_id=user_id, args=args, raw_text=raw_text)
         elif command == "/admin/vip":
@@ -803,14 +806,18 @@ class TelegramCommandService:
             queue_manager=self.queue_manager,
             target_user_id=args[0] if args else None,
             announcement_service=self.announcement_service,
+            admin_user_id=user_id,
         )
 
         if result["status"] != "served":
             self._broadcast_error_event(user_id=user_id, command_text=raw_text, error_message=result["message"])
-            return {"status": "error", "message": f"❌ 錯誤：{result['message']}"}
+            auto_note = f"\n（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
+            return {"status": "error", "message": f"❌ 錯誤：{result['message']}{auto_note if auto_note else ''}"}
 
         target_user_id = result["target_user_id"]
         target_display_name = result["display_name"]
+        release_key = result.get("location") or target_user_id
+        auto_note = f"\n（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
         if self.notification_service is not None:
             self.notification_service.broadcast_serve_event(
                 admin_user_id=user_id,
@@ -821,7 +828,39 @@ class TelegramCommandService:
                 at_text=now_in_taipei().strftime("%Y-%m-%d %H:%M:%S"),
                 platform="Telegram",
             )
-        return {"status": "success", "message": f"✅ 已叫號：{target_display_name}"}
+        return {
+            "status": "success",
+            "message": f"✅ 已叫號：{target_display_name}{auto_note}",
+            "reply_markup": {
+                "inline_keyboard": [
+                    [{"text": "解除鎖定", "callback_data": f"/admin/release {release_key}"}]
+                ]
+            }
+        }
+
+    def _handle_admin_release(self, *, user_id: str, args: list[str]) -> dict:
+        """處理 Telegram admin 解除叫號鎖定（依位置編號）。"""
+        if not self.db.is_admin(user_id):
+            return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
+
+        if not args:
+            return {"status": "error", "message": "用法：/admin/release [位置編號]"}
+
+        location = args[0]
+        result = release_user(queue_manager=self.queue_manager, location=location)
+        if result["status"] != "released":
+            return {"status": "error", "message": f"❌ 錯誤：{result['message']}"}
+
+        target_id = result["user_id"]
+        target_display_name = result["display_name"]
+        self._broadcast_simple_event(
+            category="admin_action",
+            title="Demo完成通知",
+            actor_label=f"管理員：{self._format_profile_label(user_id)}（{user_id}）",
+            target_label=f"對象：{target_display_name}（{target_id}）",
+            detail_lines=[f"號碼：#{result['queue_number']}"],
+        )
+        return {"status": "success", "message": f"✅ 已解除 {target_display_name} 的叫號鎖定"}
 
     def _handle_admin_skip(self, *, user_id: str, args: list[str], raw_text: str) -> dict:
         if not self.db.is_admin(user_id):

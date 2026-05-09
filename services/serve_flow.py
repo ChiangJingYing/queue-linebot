@@ -18,6 +18,7 @@ def serve_user(
     queue_manager: QueueManager,
     target_user_id: str | None = None,
     announcement_service: object | None = None,
+    admin_user_id: str | None = None,
 ) -> dict:
     """叫下一位或指定使用者，並補齊上層常用欄位。
 
@@ -28,12 +29,15 @@ def serve_user(
       不負責使用者私訊。
 
     這裡會統一：
-    - 呼叫 queue manager 的 serve 動作
-    - 取得顯示名稱
+    - 呼叫 queue manager 的 serve 動作（含自動 release 前一次叫號）
+    - 取得顯示名稱與位置編號
     - 觸發 dashboard / 語音公告（若有）
     - 回傳 enriched 結果給 LINE / Telegram / Discord handler
     """
-    result = queue_manager.serve_specific(target_user_id) if target_user_id else queue_manager.serve_next()
+    if target_user_id:
+        result = queue_manager.serve_specific(target_user_id, admin_user_id=admin_user_id)
+    else:
+        result = queue_manager.serve_next(admin_user_id=admin_user_id)
     if result.get("status") != "served":
         return result
 
@@ -43,6 +47,9 @@ def serve_user(
         queue_manager=queue_manager,
         user_id=served_user_id,
     )
+
+    profile = queue_manager.db.get_user_profile(served_user_id)
+    location = (profile.location if profile and profile.location else "") or served_user_id
 
     if announcement_service is not None:
         try:
@@ -54,4 +61,5 @@ def serve_user(
     enriched["target_user_id"] = served_user_id
     enriched["display_name"] = display_name
     enriched["announcement_display_name"] = announcement_display_name
+    enriched["location"] = location
     return enriched

@@ -636,7 +636,7 @@ def test_admin_serve_cooldown_expires_and_next_serve_succeeds(tmp_path):
     second = handler.handle_event(make_event("/admin/serve", user_id="admin"))
 
     assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
-    assert second[0]["text"] == "✅ 已叫號：B23456789（A-2）"
+    assert second[0]["text"] == "✅ 已叫號：B23456789（A-2）\n（已自動解除 B12345678（A-1） 的鎖定）"
     assert qm.get_queue() == []
 
 
@@ -665,9 +665,9 @@ class BlockingQueueManager(QueueManager):
         super().__init__(db)
         self.gate = gate
 
-    def serve_next(self) -> dict:
+    def serve_next(self, admin_user_id=None) -> dict:
         self.gate.wait(timeout=2)
-        return super().serve_next()
+        return super().serve_next(admin_user_id=admin_user_id)
 
 
 
@@ -717,7 +717,7 @@ def test_admin_serve_specific_uses_display_name_and_location(tmp_path):
 
     reply = handler.handle_event(make_event("/admin/serve alice", user_id="admin"))
 
-    assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert reply[0]["text"] == "✅ 已叫號：B12345678（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
 
 
 class FakeAnnouncementService:
@@ -803,7 +803,7 @@ def test_admin_serve_specific_creates_dashboard_announcement_with_display_name(t
 
     reply = handler.handle_event(make_event("/admin/serve alice", user_id="admin"))
 
-    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）"
+    assert reply[0]["text"] == "✅ 已叫號：110316888（A-1）（叫號完成後請點擊下方按鈕解除鎖定）"
     assert announcement_service.calls == [("called_guest", "110316888")]
 
 
@@ -939,3 +939,35 @@ def test_admin_ping_next_user(tmp_path):
     reply = handler.handle_event(make_event("/admin/ping", user_id="admin"))
 
     assert "已提醒 王小明（alice）" in reply[0]["text"]
+
+def test_handle_status_when_user_is_called_shows_queue_count(tmp_path):
+    db = DatabaseManager(str(tmp_path / "status-demo.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.join("alice", "regular")
+    qm.serve_next()
+
+    reply = handler.handle_event(make_event("/status", user_id="alice"))
+    assert reply[0]["text"] == "📊 目前有 0 人在排隊中"
+
+def test_handle_admin_release_immediately_releases_user(tmp_path):
+    db = DatabaseManager(str(tmp_path / "admin-release.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.join("alice", "regular")
+    qm.serve_next()
+
+    reply = handler.handle_event(make_event("/admin/release A-1", user_id="admin"))
+    assert "✅ 已解除 B12345678（A-1） 的叫號鎖定" in reply[0]["text"]
+    assert qm.get_user_position("alice") is None
+
+
+def test_handle_admin_release_with_unknown_location_returns_error(tmp_path):
+    db = DatabaseManager(str(tmp_path / "admin-release-unknown.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["admin"])
+
+    reply = handler.handle_event(make_event("/admin/release Z-9", user_id="admin"))
+    assert "Z-9" in reply[0]["text"]

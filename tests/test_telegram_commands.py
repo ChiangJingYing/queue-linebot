@@ -782,3 +782,32 @@ class TestTelegramCommandService:
 
         assert result["status"] == "error"
         assert "未授權" in result["message"]
+
+    def test_admin_release_immediately_releases_user_and_broadcasts(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+        db_manager.set_admin_notification_preference("admin_a", "admin_action", True)
+        
+        sent = []
+        def sender(user_id: str, text: str) -> None:
+            sent.append((user_id, text))
+            
+        service = TelegramCommandService(db=db_manager, telegram_sender=sender)
+        service.queue_manager.join("alice", "regular")
+        service.queue_manager.serve_next()
+        
+        result = service.handle_text(user_id="admin_a", text="/admin/release A-1")
+        
+        assert result["status"] == "success"
+        assert "已解除" in result["message"]
+        assert service.queue_manager.get_user_position("alice") is None
+        assert any("Demo完成通知" in text for uid, text in sent)
+
+    def test_admin_release_unknown_location_returns_error_message(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        service = TelegramCommandService(db=db_manager)
+
+        result = service.handle_text(user_id="admin_a", text="/admin/release Z-9")
+
+        assert result["status"] == "error"
+        assert "Z-9" in result["message"]

@@ -65,7 +65,10 @@ def cancel_user(*, queue_manager, user_id: str) -> dict:
 
 
 def get_user_status(*, queue_manager, user_id: str) -> dict:
-    """回傳使用者當前排隊位置或全隊列總人數。"""
+    """回傳使用者當前排隊位置或全隊列總人數。
+
+    叫號鎖定狀態不阻擋查詢，仍正常顯示整體排隊情況。
+    """
     position = queue_manager.get_user_position(user_id)
     if position is None:
         total_count = len(queue_manager.get_queue())
@@ -144,6 +147,7 @@ def build_help_message(
             "**管理員指令（/admin/ 開頭）：**",
             "/admin/serve - 叫下一位",
             "/admin/serve [id] - 叫指定使用者",
+            "/admin/release [id] - 解除被叫號者的鎖定（讓其可重新排隊）",
             "/admin/ping - 手動提醒下一位",
             "/admin/ping [id] - 手動提醒指定使用者",
             "/admin/status - 完整狀態",

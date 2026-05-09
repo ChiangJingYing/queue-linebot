@@ -119,3 +119,14 @@ def ping_user(*, queue_manager, target_id: str | None = None) -> dict:
 def clear_all_queue(*, queue_manager, keep_admin_user_ids: set[str]) -> dict:
     """清空全部隊列，但保留指定 admin 使用者資料。"""
     return queue_manager.clear_all_queue(keep_admin_user_ids=keep_admin_user_ids)
+
+
+def release_user(*, queue_manager, location: str) -> dict:
+    """依位置編號強制解除使用者鎖定。只需確認 register 紀錄存在即可執行。"""
+    profile = queue_manager.db.find_user_profile_by_location(location)
+    if profile is None:
+        return {"status": "error", "message": f"找不到位置 {location} 的登記紀錄。"}
+    result = queue_manager.force_release_served(profile.user_id)
+    result["user_id"] = profile.user_id
+    result["display_name"] = queue_manager.db.get_display_name(profile.user_id)
+    return result

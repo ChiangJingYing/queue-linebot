@@ -45,6 +45,8 @@ class QueueManager:
         self.db = db or DatabaseManager()
         #: 可選通知出口；由外部 runtime / service 注入，不由 QueueManager 自行建立。
         self.notifier = notifier
+        #: 追蹤各 admin 目前正在服務的使用者：{admin_user_id: called_user_id}
+        self._admin_serve_sessions: dict[str, str] = {}
 
     # -- join --
 
@@ -66,6 +68,11 @@ class QueueManager:
 
         existing = self.db.get_active_queue_entry(valid_id)
         if existing is not None:
+            if existing.served:
+                return {
+                    "status": "error",
+                    "message": f"你正在 Demo 中（號碼 #{existing.queue_number}），請 Demo 完後再加入。",
+                }
             return {
                 "status": "error",
                 "message": f"你已在排隊中（號碼 #{existing.queue_number}），請勿重複加入。",
@@ -121,17 +128,36 @@ class QueueManager:
 
     # -- serve --
 
-    def serve_next(self) -> dict:
+    def _auto_release_previous(self, admin_user_id: str) -> str | None:
+        """若 admin 有前一個未解除的叫號，自動靜默 release 並回傳其顯示名稱。"""
+        previous_user_id = self._admin_serve_sessions.get(admin_user_id)
+        if not previous_user_id:
+            return None
+        released = self.db.release_queue(previous_user_id)
+        if released is not None:
+            self.db.log_event("release", previous_user_id, released.queue_type, "自動解除（admin 重新叫號）")
+            self._admin_serve_sessions = {
+                k: v for k, v in self._admin_serve_sessions.items() if v != previous_user_id
+            }
+            return self.db.get_display_name(previous_user_id)
+        # 已被其他方式 release，清掉 session 即可
+        del self._admin_serve_sessions[admin_user_id]
+        return None
+
+    def serve_next(self, admin_user_id: str | None = None) -> dict:
         """叫號目前隊列最前面的使用者，必要時觸發 notifier。
 
         成功 serve 後會：
-        1. 更新隊列資料狀態
-        2. 寫入 ``serve`` event log
-        3. 若 ``self.notifier`` 存在，呼叫 ``notify_served(user_id, queue_number)``（私訊通知被叫號者）
+        1. 若 admin_user_id 有前一個未解除叫號，自動靜默 release
+        2. 更新隊列資料狀態
+        3. 寫入 ``serve`` event log
+        4. 若 ``self.notifier`` 存在，呼叫 ``notify_served(user_id, queue_number)``
         """
+        auto_released = self._auto_release_previous(admin_user_id) if admin_user_id else None
+
         all_q = self.db.get_all_queue()
         if not all_q:
-            return {"status": "error", "message": "目前隊列是空的。"}
+            return {"status": "error", "message": "目前隊列是空的。", "auto_released_display_name": auto_released}
 
         head = all_q[0]
         served = self.db.serve_queue(head.user_id)
@@ -139,13 +165,20 @@ class QueueManager:
             return {"status": "error", "message": "叫號失敗，請稍後再試。"}
 
         self.db.log_event("serve", head.user_id, head.queue_type)
+        if admin_user_id:
+            self._admin_serve_sessions[admin_user_id] = head.user_id
 
         if self.notifier:
             self.notifier.notify_served(head.user_id, served.queue_number)
 
-        return {"status": "served", "id": head.user_id, "queue_number": served.queue_number}
+        return {
+            "status": "served",
+            "id": head.user_id,
+            "queue_number": served.queue_number,
+            "auto_released_display_name": auto_released,
+        }
 
-    def serve_specific(self, user_id: str) -> dict:
+    def serve_specific(self, user_id: str, admin_user_id: str | None = None) -> dict:
         """叫指定使用者的號，前提是該使用者目前仍在有效隊列中。
 
         與 ``serve_next()`` 相同，成功後若有 ``self.notifier``，
@@ -155,16 +188,25 @@ class QueueManager:
         if valid_id is None:
             return {"status": "error", "message": "使用者 ID 格式不正確。"}
 
+        auto_released = self._auto_release_previous(admin_user_id) if admin_user_id else None
+
         served = self.db.serve_queue(valid_id)
         if served is None:
             return {"status": "error", "message": "該使用者目前不在隊列中。"}
 
         self.db.log_event("serve", valid_id, served.queue_type)
+        if admin_user_id:
+            self._admin_serve_sessions[admin_user_id] = valid_id
 
         if self.notifier:
             self.notifier.notify_served(valid_id, served.queue_number)
 
-        return {"status": "served", "id": valid_id, "queue_number": served.queue_number}
+        return {
+            "status": "served",
+            "id": valid_id,
+            "queue_number": served.queue_number,
+            "auto_released_display_name": auto_released,
+        }
 
     # -- skip --
 
@@ -210,6 +252,55 @@ class QueueManager:
             self.notifier.notify_skip(valid_id)
 
         return {"status": "skipped", "id": valid_id, "queue_number": skipped.queue_number}
+
+    # -- release (解除叫號鎖定) --
+
+    def release_served(self, user_id: str) -> dict:
+        """解除指定使用者的叫號鎖定，使其可再次加入隊列。
+
+        當管理員完成服務後，呼叫此方法解除使用者的「已叫號待解除」狀態，
+        讓使用者可以重新加入隊列。
+        """
+        valid_id = validate_user_id(user_id)
+        if valid_id is None:
+            return {"status": "error", "message": "使用者 ID 格式不正確。"}
+
+        released = self.db.release_queue(valid_id)
+        if released is None:
+            return {"status": "error", "message": "該使用者目前沒有待解除的叫號記錄。"}
+
+        self.db.log_event("release", valid_id, released.queue_type, "管理員解除叫號鎖定")
+        self._admin_serve_sessions = {
+            k: v for k, v in self._admin_serve_sessions.items() if v != valid_id
+        }
+        return {"status": "released", "id": valid_id, "queue_number": released.queue_number}
+
+    def force_release_served(self, user_id: str) -> dict:
+        """強制解除使用者的隊列鎖定，不驗證 served 狀態，只確認有 register 紀錄。
+
+        用於 admin release 命令：只要該 user_id 存在 register 紀錄，
+        就直接對最近一筆未 release 的 queue entry 寫入 release_time。
+        若無 queue entry，仍視為成功（無需解除）。
+        """
+        released = self.db.force_release_queue(user_id)
+        if released is not None:
+            self.db.log_event("release", user_id, released.queue_type, "管理員強制解除鎖定")
+        self._admin_serve_sessions = {
+            k: v for k, v in self._admin_serve_sessions.items() if v != user_id
+        }
+        queue_number = released.queue_number if released else None
+        return {"status": "released", "id": user_id, "queue_number": queue_number}
+
+    def get_called_entry(self, user_id: str):
+        """回傳使用者目前「已叫號待解除」的記錄；若不存在則為 ``None``。"""
+        valid_id = validate_user_id(user_id)
+        if valid_id is None:
+            return None
+        return self.db.get_called_entry(valid_id)
+
+    def get_called_queue(self) -> list:
+        """回傳所有目前「已叫號待解除」的使用者列表。"""
+        return self.db.get_called_queue()
 
     # -- status --
 
