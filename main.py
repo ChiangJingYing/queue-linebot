@@ -40,6 +40,7 @@ config = load_config()
 line_bot_config = config.get("line_bot", {})
 telegram_bot_config = config.get("telegram_bot", {})
 discord_bot_config = config.get("discord_bot", {})
+queue_config = config.get("queue", {}) if isinstance(config.get("queue"), dict) else {}
 
 CHANNEL_SECRET = line_bot_config.get("channel_secret", "")
 CHANNEL_ACCESS_TOKEN = line_bot_config.get("channel_access_token", "")
@@ -321,6 +322,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         new_order_idle_seconds=int(tts_config.get("new_order_idle_seconds", 300)),
         new_order_announcement_text=str(tts_config.get("new_order_announcement_text", "您有新訂單")),
         telegram_sender=_send_telegram_text,
+        special_serve_rules=queue_config.get("special_serve_rules"),
     )
     telegram_command_service = TelegramCommandService(
         db=db_manager,
@@ -328,6 +330,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         telegram_sender=_send_telegram_text,
         location_options=LOCATION_OPTIONS,
         announcement_service=dashboard_announcement_service,
+        special_serve_rules=queue_config.get("special_serve_rules"),
     )
     discord_command_service = DiscordCommandService(
         db=db_manager,

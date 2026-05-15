@@ -458,6 +458,116 @@ class TestTelegramCommandService:
         assert result["status"] == "success"
         assert announcement_service.calls == ["B12345678"]
 
+    def test_admin_serve_next_uses_special_rule_to_skip_target_and_notify_admin(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("target_user", "114106135", location="A-1", verified=True, role="user")
+        db_manager.upsert_user_profile("next_user", "114106999", location="A-2", verified=True, role="user")
+        sent = []
+
+        def sender(user_id: str, text: str) -> None:
+            sent.append((user_id, text))
+
+        service = TelegramCommandService(
+            db=db_manager,
+            telegram_sender=sender,
+            special_serve_rules={
+                "enabled": True,
+                "skip_message": "skip-msg",
+                "admins": {"admin_a": {"targets": ["114106135"]}},
+            },
+        )
+        service.queue_manager.join("target_user", "regular")
+        service.queue_manager.join("next_user", "regular")
+
+        result = service.handle_text(user_id="admin_a", text="/admin/serve")
+
+        assert result["status"] == "success"
+        assert result["message"] == "✅ 已叫號：114106999（A-2）"
+        assert ("admin_a", "skip-msg") in sent
+        assert service.queue_manager.get_user_position("target_user") == 1
+        assert service.queue_manager.get_user_position("next_user") is None
+
+    def test_admin_serve_next_only_target_replies_without_serving_and_auto_releases_previous(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("first_user", "114106999", location="A-1", verified=True, role="user")
+        db_manager.upsert_user_profile("target_user", "114106135", location="A-2", verified=True, role="user")
+        sent = []
+
+        def sender(user_id: str, text: str) -> None:
+            sent.append((user_id, text))
+
+        service = TelegramCommandService(
+            db=db_manager,
+            telegram_sender=sender,
+            special_serve_rules={
+                "enabled": True,
+                "no_next_reply": "busy-msg",
+                "admins": {"admin_a": {"targets": ["114106135"]}},
+            },
+        )
+        service.queue_manager.join("first_user", "regular")
+        service.queue_manager.join("target_user", "regular")
+
+        first = service.handle_text(user_id="admin_a", text="/admin/serve")
+        sent.clear()
+        second = service.handle_text(user_id="admin_a", text="/admin/serve")
+
+        assert first["status"] == "success"
+        assert second["status"] == "error"
+        assert second["message"] == "⚠️ busy-msg\n（已自動解除 114106999（A-1） 的鎖定）"
+        assert sent == []
+        assert service.queue_manager.get_called_entry("first_user") is None
+        assert service.queue_manager.get_user_position("target_user") == 1
+
+    def test_admin_serve_specific_bypasses_special_rule_skip_and_calls_requested_user(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("target_user", "114106135", location="A-1", verified=True, role="user")
+        db_manager.upsert_user_profile("next_user", "114106999", location="A-2", verified=True, role="user")
+        sent = []
+
+        def sender(user_id: str, text: str) -> None:
+            sent.append((user_id, text))
+
+        service = TelegramCommandService(
+            db=db_manager,
+            telegram_sender=sender,
+            special_serve_rules={
+                "enabled": True,
+                "skip_message": "skip-msg",
+                "admins": {"admin_a": {"targets": ["114106135"]}},
+            },
+        )
+        service.queue_manager.join("target_user", "regular")
+        service.queue_manager.join("next_user", "regular")
+
+        result = service.handle_text(user_id="admin_a", text="/admin/serve next_user")
+
+        assert result["status"] == "success"
+        assert result["message"] == "✅ 已叫號：114106999（A-2）"
+        assert ("admin_a", "skip-msg") not in sent
+        assert service.queue_manager.get_user_position("target_user") == 1
+        assert service.queue_manager.get_user_position("next_user") is None
+
+    def test_admin_serve_specific_bypasses_special_rule_block_when_only_target_waits(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("target_user", "114106135", location="A-1", verified=True, role="user")
+
+        service = TelegramCommandService(
+            db=db_manager,
+            special_serve_rules={
+                "enabled": True,
+                "no_next_reply": "busy-msg",
+                "admins": {"admin_a": {"targets": ["114106135"]}},
+            },
+        )
+        service.queue_manager.join("target_user", "regular")
+
+        result = service.handle_text(user_id="admin_a", text="/admin/serve target_user")
+
+        assert result["status"] == "success"
+        assert result["message"] == "✅ 已叫號：114106135（A-1）"
+        assert service.queue_manager.get_user_position("target_user") is None
+
     def test_admin_serve_specific_broadcasts_called_user(self, db_manager):
         db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
         db_manager.upsert_user_profile("admin_b", "管理員乙", verified=True, role="admin")

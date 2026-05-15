@@ -22,6 +22,7 @@ from core.queue_manager import QueueManager
 from core.validators import validate_command
 from services.notifier import Notifier
 from services.pending_state_store import MemoryPendingStateStore
+from services.special_serve_rules import normalize_special_serve_rules
 from services.telegram_admin_notifications import TelegramAdminNotificationService
 from services.vip_service import VipService
 
@@ -50,6 +51,7 @@ class LineBotHandler(
         new_order_announcement_text: str = "您有新訂單",
         admin_serve_cooldown_seconds: int = 3,
         telegram_sender=None,
+        special_serve_rules: dict | None = None,
     ) -> None:
         """建立 LINE handler 與其所有共用依賴。"""
         self.channel_secret = channel_secret
@@ -88,6 +90,8 @@ class LineBotHandler(
         self._last_admin_serve_at = 0.0
         #: 最近一次成功叫號對象名稱，用於冷卻提示文案。
         self._last_admin_serve_label = ""
+        #: Config-driven special serve rules shared with Telegram admin serve flow.
+        self.special_serve_rules = normalize_special_serve_rules(special_serve_rules)
         #: 廣播給 Telegram admin 訂閱者的後台通知 service。
         self.notification_service = (
             TelegramAdminNotificationService(db=self.queue_manager.db, sender=telegram_sender)

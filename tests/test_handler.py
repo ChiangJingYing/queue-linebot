@@ -523,6 +523,70 @@ def test_admin_serve_next_broadcasts_line_platform_to_telegram_admins(tmp_path, 
     assert "B12345678（A-1）（alice）" in sent[0][1]
 
 
+def test_admin_serve_next_uses_special_rule_to_skip_target_and_push_admin(tmp_path):
+    db = DatabaseManager(str(tmp_path / "handler-special-skip.db"))
+    qm = QueueManager(db)
+    db.upsert_user_profile("admin", "LINE 管理員", verified=True, role="admin")
+    qm.register_name("target_user", "114106135", location="A-1")
+    qm.register_name("next_user", "114106999", location="A-2")
+    qm.join("target_user", "regular")
+    qm.join("next_user", "regular")
+
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+        admin_serve_cooldown_seconds=0,
+        special_serve_rules={
+            "enabled": True,
+            "skip_message": "skip-msg",
+            "admins": {"admin": {"targets": ["114106135"]}},
+        },
+    )
+    pushed = []
+    handler.notifier.push = lambda user_id, message: pushed.append((user_id, message)) or "ok"
+
+    reply = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert reply[0]["text"] == "✅ 已叫號：114106999（A-2）"
+    assert pushed == [("admin", "skip-msg")]
+    assert qm.get_user_position("target_user") == 1
+    assert qm.get_user_position("next_user") is None
+
+
+def test_admin_serve_next_only_target_replies_without_pushing_and_auto_releases_previous(tmp_path):
+    db = DatabaseManager(str(tmp_path / "handler-special-only-target.db"))
+    qm = QueueManager(db)
+    db.upsert_user_profile("admin", "LINE 管理員", verified=True, role="admin")
+    qm.register_name("first_user", "114106999", location="A-1")
+    qm.register_name("target_user", "114106135", location="A-2")
+    qm.join("first_user", "regular")
+    qm.join("target_user", "regular")
+
+    handler = LineBotHandler(
+        queue_manager=qm,
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+        admin_serve_cooldown_seconds=0,
+        special_serve_rules={
+            "enabled": True,
+            "no_next_reply": "busy-msg",
+            "admins": {"admin": {"targets": ["114106135"]}},
+        },
+    )
+    pushed = []
+    handler.notifier.push = lambda user_id, message: pushed.append((user_id, message)) or "ok"
+
+    first = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+    second = handler.handle_event(make_event("/admin/serve", user_id="admin"))
+
+    assert first[0]["text"] == "✅ 已叫號：114106999（A-1）"
+    assert second[0]["text"] == "⚠️ busy-msg\n（已自動解除 114106999（A-1） 的鎖定）"
+    assert pushed == []
+    assert qm.get_called_entry("first_user") is None
+    assert qm.get_user_position("target_user") == 1
+
+
 def test_admin_clear_broadcasts_line_platform_to_telegram_admins(tmp_path):
     db = DatabaseManager(str(tmp_path / "handler-admin-clear-notify.db"))
     qm = QueueManager(db)

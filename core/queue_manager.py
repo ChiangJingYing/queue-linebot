@@ -144,6 +144,12 @@ class QueueManager:
         del self._admin_serve_sessions[admin_user_id]
         return None
 
+    def auto_release_previous_for_admin(self, admin_user_id: str | None) -> str | None:
+        """公開 auto-release helper，供平台層在不叫號時也可解除前一位鎖定。"""
+        if not admin_user_id:
+            return None
+        return self._auto_release_previous(admin_user_id)
+
     def serve_next(self, admin_user_id: str | None = None) -> dict:
         """叫號目前隊列最前面的使用者，必要時觸發 notifier。
 
@@ -578,4 +584,3 @@ class QueueManager:
     def get_max_capacity(self) -> int:
         """讀取一般隊列人數上限。"""
         return self.db.get_queue_max_capacity()
-

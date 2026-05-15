@@ -50,6 +50,7 @@
 ### 管理員功能
 
 - 叫號與叫號鎖定機制（被叫號者需等待管理員解除鎖定，才可重新排隊）
+- 特殊叫號規則（可配置特定 admin 遇到特定學號時改叫下一位或暫不叫號）
 - 手動提醒
 - 切換排隊開關
 - 查看統計資訊
@@ -528,6 +529,39 @@ NEW_ORDER_ANNOUNCEMENT_TEXT=您有新訂單
 ---
 
 ## queue_config.yaml 設定說明
+
+### `queue.special_serve_rules`
+
+可用於配置「特定 admin 在 `/admin/serve` 時，若隊首命中特定學號則改叫下一位」的正式規則。
+
+範例：
+
+```yaml
+queue:
+  special_serve_rules:
+    enabled: true
+    match_field: display_name
+    skip_message: "警告此人會哭😭，已為您跳過"
+    no_next_reply: "警告此人會哭😭，我想幫你跳過，但後面沒人啦\n裝忙一下唄"
+    admins:
+      U02c90a1b735115e6396ca4f05df30932:
+        targets:
+          - "114106135"
+      "5524536015":
+        targets:
+          - "114106102"
+          - "114106135"
+```
+
+規則說明：
+
+- `enabled`: 是否啟用此功能
+- `match_field`: 目前只支援 `display_name`
+- `admins`: 共用 admin id 命名空間；LINE `U...` 與 Telegram 數字 id 可同時存在
+- `targets`: 此 admin 命中時要特殊處理的學號清單
+- 隊首命中且後面有人時：會改叫下一位，並通知 admin
+- 隊首命中且只有一人時：不叫號，只回覆 admin 提示訊息
+- `/admin/serve [id]` 不套用此規則，只影響 `/admin/serve`
 
 建議將非敏感設定放在：
 - `config/queue_config.yaml`

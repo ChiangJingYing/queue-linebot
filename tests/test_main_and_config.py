@@ -700,6 +700,31 @@ def test_load_config_overrides_location_options_without_merging_defaults(tmp_pat
     assert config["registration"]["location_options"] == {"1": ["1", "2"], "2": ["4"]}
 
 
+def test_load_config_reads_special_serve_rules_from_queue_section(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        (
+            "queue:\n"
+            "  special_serve_rules:\n"
+            "    enabled: true\n"
+            "    admins:\n"
+            "      admin_a:\n"
+            "        targets:\n"
+            "          - '114106135'\n"
+            "          - '114106102'\n"
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(str(config_path))
+
+    assert config["queue"]["special_serve_rules"]["enabled"] is True
+    assert config["queue"]["special_serve_rules"]["admins"]["admin_a"]["targets"] == [
+        "114106135",
+        "114106102",
+    ]
+
+
 def test_dashboard_renders_all_configured_cells_and_statuses(tmp_path):
     qm = _setup_runtime(tmp_path, location_options={"1": ["1", "2"], "2": ["1", "4"]})
     qm.register_name("alice", "王小明", location="1-1")

@@ -80,6 +80,13 @@ def get_defaults() -> dict:
             "max_capacity": 50,
             "timeout_minutes": 30,
             "timeout_action": "remove",
+            "special_serve_rules": {
+                "enabled": False,
+                "match_field": "display_name",
+                "skip_message": "警告此人會哭😭，已為您跳過",
+                "no_next_reply": "警告此人會哭😭，我想幫你跳過，但後面沒人啦\n裝忙一下唄",
+                "admins": {},
+            },
         },
         "vip": {
             "enabled": True,

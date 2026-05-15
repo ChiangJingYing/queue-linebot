@@ -7,6 +7,22 @@ queue:
   max_capacity: 50
   timeout_minutes: 30
   timeout_action: remove
+  # 特殊叫號規則：
+  # - 只作用在 /admin/serve（叫下一位）
+  # - 目前 target 以 user_profiles.display_name 精準匹配
+  # - 同一個 admin 可配置多個 target
+  # - LINE 與 Telegram 共用同一份 admin_id -> targets 規則表
+  special_serve_rules:
+    enabled: true
+    match_field: display_name
+    skip_message: "警告此人會哭😭，已為您跳過"
+    no_next_reply: "警告此人會哭😭，我想幫你跳過，但後面沒人啦\n裝忙一下唄"
+    admins: 
+      U02c90a1b735115e6396ca4f05df30932:
+        targets:
+          - "114106135" # 彭
+          - "114106102" # 呂
+
 
 vip:
   enabled: true

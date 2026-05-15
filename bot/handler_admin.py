@@ -29,6 +29,7 @@ from services.admin_flow import (
     toggle_vip,
 )
 from services.serve_flow import serve_user
+from services.special_serve_rules import resolve_special_serve_decision
 
 
 class HandlerAdminMixin:
@@ -267,10 +268,34 @@ class HandlerAdminMixin:
             if guard_message:
                 return self._reply(reply_token, guard_message)
 
-            result = serve_user(queue_manager=self.queue_manager, announcement_service=self.announcement_service, admin_user_id=user_id)
+            decision = resolve_special_serve_decision(
+                rules=self.special_serve_rules,
+                queue_manager=self.queue_manager,
+                admin_user_id=user_id,
+            )
+            if decision["status"] == "block":
+                auto_released_display_name = self.queue_manager.auto_release_previous_for_admin(user_id)
+                auto_note = (
+                    f"\n（已自動解除 {auto_released_display_name} 的鎖定）"
+                    if auto_released_display_name
+                    else ""
+                )
+                return self._reply(
+                    reply_token,
+                    f"⚠️ {decision['admin_message']}{auto_note}",
+                )
+
+            result = serve_user(
+                queue_manager=self.queue_manager,
+                target_user_id=decision["target_user_id"],
+                announcement_service=self.announcement_service,
+                admin_user_id=user_id,
+            )
             if result["status"] == "served":
                 display_name = result["display_name"]
                 self._record_admin_serve_success(display_name)
+                if decision["status"] == "skip_to_next" and decision["admin_message"]:
+                    self.notifier.push(user_id, decision["admin_message"])
                 self._broadcast_serve_event(
                     admin_user_id=user_id,
                     admin_display_name=self.queue_manager.db.get_display_name(user_id),
