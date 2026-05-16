@@ -626,10 +626,11 @@ def _build_dashboard_payload() -> dict:
         "registered": "已註冊",
         "queued": "排隊中",
         "served": "已叫號",
+        "locked": "已鎖定",
     }
     profiles = db_manager.get_all_user_profiles()
 
-    blink_window = 90  # seconds after serve until blink stops
+    blink_window = 30  # seconds after serve until blink stops and lock state takes over
     now = datetime.now(TAIPEI_TZ)
 
     for profile in profiles:
@@ -660,9 +661,13 @@ def _build_dashboard_payload() -> dict:
             )
             if served_after_registration:
                 serve_dt = _parse_timestamp(latest.served_time)
-                if serve_dt and (now - serve_dt).total_seconds() <= blink_window:
+                is_still_locked = latest.release_time is None
+                if serve_dt and is_still_locked and (now - serve_dt).total_seconds() <= blink_window:
                     cell["status"] = "served"
                     cell["recently_served"] = True
+                elif is_still_locked:
+                    cell["status"] = "locked"
+                    cell["recently_served"] = False
                 else:
                     cell["status"] = "registered"
                     cell["recently_served"] = False

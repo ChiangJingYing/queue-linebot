@@ -5,17 +5,16 @@ ALICE_LOCATION = "1-1"
 BOB_LOCATION = "2-1"
 
 
-def test_dashboard_data_reverts_served_user_to_registered_after_blink_window(client, db_manager):
+def test_dashboard_data_marks_called_user_as_locked_after_blink_window(client, db_manager):
     db_manager.upsert_user_profile("alice", "B12345678", location=ALICE_LOCATION, role="user")
     entry = db_manager.join_queue("alice", "regular")
     db_manager.serve_queue("alice")
 
-    old_join = (datetime.now() - timedelta(minutes=10)).isoformat()
     old_served = (datetime.now() - timedelta(seconds=120)).isoformat()
     with db_manager._connection() as conn:
         conn.execute(
-            "UPDATE queues SET join_time = ?, served_time = ? WHERE id = ?",
-            (old_join, old_served, entry.id or 1),
+            "UPDATE queues SET served_time = ? WHERE id = ?",
+            (old_served, entry.id or 1),
         )
         conn.commit()
 
@@ -25,7 +24,7 @@ def test_dashboard_data_reverts_served_user_to_registered_after_blink_window(cli
 
     row, col = ALICE_LOCATION.split("-")
     cell = payload["grid"][row][col]
-    assert cell["status"] == "registered"
+    assert cell["status"] == "locked"
     assert cell.get("recently_served") is False
 
 
@@ -42,6 +41,30 @@ def test_dashboard_data_keeps_recent_served_user_blinking(client, db_manager):
     cell = payload["grid"][row][col]
     assert cell["status"] == "served"
     assert cell.get("recently_served") is True
+
+
+def test_dashboard_data_reverts_released_user_to_registered_after_blink_window(client, db_manager):
+    db_manager.upsert_user_profile("alice", "B12345678", location=ALICE_LOCATION, role="user")
+    entry = db_manager.join_queue("alice", "regular")
+    db_manager.serve_queue("alice")
+
+    old_served = (datetime.now() - timedelta(seconds=120)).isoformat()
+    old_release = (datetime.now() - timedelta(seconds=60)).isoformat()
+    with db_manager._connection() as conn:
+        conn.execute(
+            "UPDATE queues SET served_time = ?, release_time = ? WHERE id = ?",
+            (old_served, old_release, entry.id or 1),
+        )
+        conn.commit()
+
+    response = client.get("/dashboard/data")
+    assert response.status_code == 200
+    payload = response.json()
+
+    row, col = ALICE_LOCATION.split("-")
+    cell = payload["grid"][row][col]
+    assert cell["status"] == "registered"
+    assert cell.get("recently_served") is False
 
 
 def test_dashboard_data_includes_active_queue_list(client, db_manager):
