@@ -12,11 +12,13 @@ from __future__ import annotations
 from datetime import datetime
 import json
 from pathlib import Path
+import time
 
 from core.database import DatabaseManager
 from core.queue_manager import QueueManager
 from core.time_utils import format_display_time, now_in_taipei
 from core.validators import validate_command
+from services.admin_serve_guard import AdminServeGuard
 from services.action_schema import (
     TELEGRAM_ADMIN_OPEN_NOTIFY_SETTINGS,
     TELEGRAM_ADMIN_SWITCH_PAGE1,
@@ -120,6 +122,8 @@ class TelegramCommandService:
         location_options: dict[str, list[str]] | None = None,
         announcement_service=None,
         special_serve_rules: dict | None = None,
+        admin_serve_cooldown_seconds: int = 3,
+        admin_serve_guard: AdminServeGuard | None = None,
     ) -> None:
         """建立 Telegram command service 與其依賴。
 
@@ -135,6 +139,12 @@ class TelegramCommandService:
         self.vip_service = VipService(db) if isinstance(db, DatabaseManager) else None
         self.location_options = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
         self.special_serve_rules = normalize_special_serve_rules(special_serve_rules)
+        self.admin_serve_guard = admin_serve_guard or AdminServeGuard(
+            cooldown_seconds=admin_serve_cooldown_seconds,
+            clock=time.monotonic,
+        )
+        self.admin_serve_guard.set_cooldown_seconds(admin_serve_cooldown_seconds)
+        self._admin_serve_lock = self.admin_serve_guard.lock
         #: 保存 Telegram register/cancel 多步驟互動的暫存狀態。
         self.pending_state_store = ConfigPendingStateStore(db, namespace="telegram")
         #: 廣播給 Telegram admin 訂閱者的後台通知 service。
@@ -146,6 +156,20 @@ class TelegramCommandService:
             if self.queue_manager is not None and getattr(self.queue_manager, "notifier", None) is None:
                 #: 真正送被叫號者私訊通知的 notifier 會掛在 queue_manager 上。
                 self.queue_manager.notifier = Notifier(telegram_sender=telegram_sender, db=db)
+
+    @property
+    def _admin_serve_cooldown_clock(self):
+        return self.admin_serve_guard.clock
+
+    @_admin_serve_cooldown_clock.setter
+    def _admin_serve_cooldown_clock(self, value) -> None:
+        self.admin_serve_guard.clock = value
+
+    def _admin_serve_guard_message(self) -> str | None:
+        return self.admin_serve_guard.cooldown_message()
+
+    def _record_admin_serve_success(self, display_name: str) -> None:
+        self.admin_serve_guard.record_success(display_name)
 
     def handle_text(self, *, user_id: str, text: str) -> dict:
         """處理 Telegram 收到的文字或 callback payload。
@@ -805,59 +829,69 @@ class TelegramCommandService:
             admin_profile.display_name if admin_profile and admin_profile.display_name else user_id
         )
 
-        decision = {"status": "disabled", "target_user_id": None, "admin_message": None}
-        if not args:
-            decision = resolve_special_serve_decision(
-                rules=self.special_serve_rules,
-                queue_manager=self.queue_manager,
-                admin_user_id=user_id,
-            )
-            if decision["status"] == "block":
-                auto_released_display_name = self.queue_manager.auto_release_previous_for_admin(user_id)
-                auto_note = (
-                    f"\n（已自動解除 {auto_released_display_name} 的鎖定）"
-                    if auto_released_display_name
-                    else ""
+        if not self.admin_serve_guard.try_acquire():
+            return {"status": "error", "message": "⚠️ 叫號進行中，請勿重複操作。"}
+        try:
+            decision = {"status": "disabled", "target_user_id": None, "admin_message": None}
+            if not args:
+                decision = resolve_special_serve_decision(
+                    rules=self.special_serve_rules,
+                    queue_manager=self.queue_manager,
+                    admin_user_id=user_id,
                 )
-                return {"status": "error", "message": f"⚠️ {decision['admin_message']}{auto_note}"}
+                if decision["status"] == "block":
+                    auto_released_display_name = self.queue_manager.auto_release_previous_for_admin(user_id)
+                    auto_note = (
+                        f"\n（已自動解除 {auto_released_display_name} 的鎖定）"
+                        if auto_released_display_name
+                        else ""
+                    )
+                    return {"status": "error", "message": f"⚠️ {decision['admin_message']}{auto_note}"}
 
-        result = serve_user(
-            queue_manager=self.queue_manager,
-            target_user_id=args[0] if args else decision["target_user_id"],
-            announcement_service=self.announcement_service,
-            admin_user_id=user_id,
-        )
+            guard_message = self._admin_serve_guard_message()
+            if guard_message:
+                return {"status": "error", "message": guard_message}
 
-        if result["status"] != "served":
-            self._broadcast_error_event(user_id=user_id, command_text=raw_text, error_message=result["message"])
-            auto_note = f"\n（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
-            return {"status": "error", "message": f"❌ 錯誤：{result['message']}{auto_note if auto_note else ''}"}
-
-        target_user_id = result["target_user_id"]
-        target_display_name = result["display_name"]
-        release_key = result.get("location") or target_user_id
-        auto_note = f"\n（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
-        if decision["status"] == "skip_to_next" and decision["admin_message"] and getattr(self.queue_manager, "notifier", None) is not None:
-            self.queue_manager.notifier.notify_user(user_id, decision["admin_message"])
-        if self.notification_service is not None:
-            self.notification_service.broadcast_serve_event(
+            result = serve_user(
+                queue_manager=self.queue_manager,
+                target_user_id=args[0] if args else decision["target_user_id"],
+                announcement_service=self.announcement_service,
                 admin_user_id=user_id,
-                admin_display_name=admin_display_name,
-                target_user_id=target_user_id,
-                target_display_name=target_display_name,
-                command_text=raw_text,
-                at_text=now_in_taipei().strftime("%Y-%m-%d %H:%M:%S"),
-                platform="Telegram",
             )
-        return {
-            "status": "success",
-            "message": f"✅ 已叫號：{target_display_name}{auto_note}",
-            "reply_markup": {
-                "inline_keyboard": [
-                    [{"text": "解除鎖定", "callback_data": f"/admin/release {release_key}"}]
-                ]
+
+            if result["status"] != "served":
+                self._broadcast_error_event(user_id=user_id, command_text=raw_text, error_message=result["message"])
+                auto_note = f"\n（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
+                return {"status": "error", "message": f"❌ 錯誤：{result['message']}{auto_note if auto_note else ''}"}
+
+            target_user_id = result["target_user_id"]
+            target_display_name = result["display_name"]
+            release_key = result.get("location") or target_user_id
+            auto_note = f"\n（已自動解除 {result['auto_released_display_name']} 的鎖定）" if result.get("auto_released_display_name") else ""
+            self._record_admin_serve_success(target_display_name)
+            if decision["status"] == "skip_to_next" and decision["admin_message"] and getattr(self.queue_manager, "notifier", None) is not None:
+                self.queue_manager.notifier.notify_user(user_id, decision["admin_message"])
+            if self.notification_service is not None:
+                self.notification_service.broadcast_serve_event(
+                    admin_user_id=user_id,
+                    admin_display_name=admin_display_name,
+                    target_user_id=target_user_id,
+                    target_display_name=target_display_name,
+                    command_text=raw_text,
+                    at_text=now_in_taipei().strftime("%Y-%m-%d %H:%M:%S"),
+                    platform="Telegram",
+                )
+            return {
+                "status": "success",
+                "message": f"✅ 已叫號：{target_display_name}{auto_note}",
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [{"text": "解除鎖定", "callback_data": f"/admin/release {release_key}"}]
+                    ]
+                }
             }
-        }
+        finally:
+            self.admin_serve_guard.release()
 
     def _handle_admin_release(self, *, user_id: str, args: list[str]) -> dict:
         """處理 Telegram admin 解除叫號鎖定（依位置編號）。"""

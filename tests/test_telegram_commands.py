@@ -1,6 +1,11 @@
+from types import SimpleNamespace
+
 from services.telegram_admin_notifications import TELEGRAM_NOTIFICATION_CATEGORIES
 from services.telegram_commands import TelegramCommandService
 import services.telegram_commands as telegram_commands_module
+from bot.handler import LineBotHandler
+from core.queue_manager import QueueManager
+from services.vip_service import VipService
 
 
 class TestTelegramCommandService:
@@ -591,6 +596,92 @@ class TestTelegramCommandService:
         assert sent == [("admin_b", sent[0][1])]
         assert "/admin/serve bob" in sent[0][1]
         assert "B23456789（A-2）" in sent[0][1]
+
+    def test_admin_serve_next_is_blocked_during_cooldown(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+        db_manager.upsert_user_profile("bob", "B23456789", location="A-2", verified=True, role="user")
+        service = TelegramCommandService(db=db_manager, admin_serve_cooldown_seconds=3)
+        service._admin_serve_cooldown_clock = lambda: 100.0
+        service.queue_manager.join("alice", "regular")
+        service.queue_manager.join("bob", "regular")
+
+        first = service.handle_text(user_id="admin_a", text="/admin/serve")
+        service._admin_serve_cooldown_clock = lambda: 101.0
+        second = service.handle_text(user_id="admin_a", text="/admin/serve")
+
+        assert first["status"] == "success"
+        assert second["status"] == "error"
+        assert second["message"] == "⚠️ 剛剛已叫號：B12345678（A-1），請稍候再試，避免重複叫號。"
+        assert [entry.user_id for entry in service.queue_manager.get_queue()] == ["bob"]
+
+    def test_admin_serve_specific_shares_same_cooldown_guard(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+        db_manager.upsert_user_profile("bob", "B23456789", location="A-2", verified=True, role="user")
+        service = TelegramCommandService(db=db_manager, admin_serve_cooldown_seconds=3)
+        service._admin_serve_cooldown_clock = lambda: 200.0
+        service.queue_manager.join("alice", "regular")
+        service.queue_manager.join("bob", "regular")
+
+        first = service.handle_text(user_id="admin_a", text="/admin/serve")
+        service._admin_serve_cooldown_clock = lambda: 201.0
+        second = service.handle_text(user_id="admin_a", text="/admin/serve bob")
+
+        assert first["status"] == "success"
+        assert second["status"] == "error"
+        assert second["message"] == "⚠️ 剛剛已叫號：B12345678（A-1），請稍候再試，避免重複叫號。"
+        assert [entry.user_id for entry in service.queue_manager.get_queue()] == ["bob"]
+
+    def test_admin_serve_failure_does_not_start_cooldown(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        service = TelegramCommandService(db=db_manager, admin_serve_cooldown_seconds=3)
+        service._admin_serve_cooldown_clock = lambda: 300.0
+
+        first = service.handle_text(user_id="admin_a", text="/admin/serve")
+
+        db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+        service.queue_manager.join("alice", "regular")
+        service._admin_serve_cooldown_clock = lambda: 301.0
+        second = service.handle_text(user_id="admin_a", text="/admin/serve")
+
+        assert first["status"] == "error"
+        assert first["message"] == "❌ 錯誤：目前隊列是空的。"
+        assert second["status"] == "success"
+        assert second["message"] == "✅ 已叫號：B12345678（A-1）"
+
+    def test_admin_serve_cooldown_is_shared_with_line_handler(self, db_manager):
+        db_manager.upsert_user_profile("line_admin", "LINE 管理員", verified=True, role="admin")
+        db_manager.upsert_user_profile("tg_admin", "Telegram 管理員", verified=True, role="admin")
+        db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+        db_manager.upsert_user_profile("bob", "B23456789", location="A-2", verified=True, role="user")
+        queue_manager = QueueManager(db_manager)
+        handler = LineBotHandler(
+            queue_manager=queue_manager,
+            vip_service=VipService(db_manager),
+            admin_ids=["line_admin"],
+            admin_serve_cooldown_seconds=3,
+        )
+        service = TelegramCommandService(
+            db=db_manager,
+            queue_manager=queue_manager,
+            admin_serve_cooldown_seconds=3,
+            admin_serve_guard=handler.admin_serve_guard,
+        )
+        handler._admin_serve_cooldown_clock = lambda: 400.0
+        service._admin_serve_cooldown_clock = lambda: 401.0
+        queue_manager.join("alice", "regular")
+        queue_manager.join("bob", "regular")
+
+        first = handler.handle_event(SimpleNamespace(
+            message=SimpleNamespace(type="text", text="/admin/serve"),
+            source=SimpleNamespace(userId="line_admin"),
+            reply_token="line-reply",
+        ))
+        second = service.handle_text(user_id="tg_admin", text="/admin/serve")
+
+        assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+        assert second["message"] == "⚠️ 剛剛已叫號：B12345678（A-1），請稍候再試，避免重複叫號。"
 
     def test_admin_status_lists_regular_and_vip_queues(self, db_manager):
         db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")

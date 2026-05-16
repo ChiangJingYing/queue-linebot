@@ -47,7 +47,7 @@
           .board-overlay { position:absolute; inset:0; }
           .dot { width:18px; height:18px; border-radius:999px; margin:0 auto 6px; box-shadow:0 0 14px currentColor; display:inline-block; }
           .lamp { width:18px; height:18px; border-radius:999px; display:inline-block; box-shadow:0 0 14px currentColor; }
-          .dot.empty, .lamp.empty { background:#64748b; color:#64748b; } .dot.registered, .lamp.blue { background:#38bdf8; color:#38bdf8; } .dot.queued, .lamp.yellow { background:#facc15; color:#facc15; } .dot.served, .lamp.green { background:#22c55e; color:#22c55e; }
+          .dot.empty, .lamp.empty { background:#64748b; color:#64748b; } .dot.registered, .lamp.blue { background:#38bdf8; color:#38bdf8; } .dot.queued, .lamp.yellow { background:#facc15; color:#facc15; } .dot.served, .lamp.green { background:#22c55e; color:#22c55e; } .dot.locked, .lamp.red { background:#ef4444; color:#ef4444; }
           .blink { animation: blink-green 1.2s ease-in-out infinite; }
           @keyframes blink-green { 0%, 100% { box-shadow:0 0 14px #22c55e; opacity:1; } 50% { box-shadow:0 0 4px #22c55e; opacity:.35; } }
           .tag { background:rgba(15,23,42,.8); padding:6px 8px; border-radius:10px; font-size:12px; min-width:72px; }
@@ -65,6 +65,7 @@
             <span><i class="lamp blue"></i> 已註冊</span>
             <span><i class="lamp yellow"></i> 排隊中</span>
             <span><i class="lamp green"></i> 已叫號</span>
+            <span><i class="lamp red"></i> 已鎖定</span>
           </div>
           <div class="legend-actions">
             <label class="toggle-switch" for="announcement-audio-toggle">

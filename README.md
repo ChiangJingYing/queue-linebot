@@ -553,6 +553,7 @@ NEW_ORDER_ANNOUNCEMENT_TEXT=您有新訂單
 
 ```yaml
 queue:
+  admin_serve_cooldown_seconds: 3
   special_serve_rules:
     enabled: true
     match_field: display_name
@@ -570,6 +571,7 @@ queue:
 
 規則說明：
 
+- `admin_serve_cooldown_seconds`: LINE 與 Telegram 管理員叫號共用的冷卻秒數
 - `enabled`: 是否啟用此功能
 - `match_field`: 目前只支援 `display_name`
 - `admins`: 共用 admin id 命名空間；LINE `U...` 與 Telegram 數字 id 可同時存在
