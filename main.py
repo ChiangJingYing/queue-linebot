@@ -38,6 +38,7 @@ from services.telegram_commands import TelegramCommandService
 from services.discord_commands import DiscordCommandService
 from services.vip_service import VipService
 from services.dashboard_announcement import DashboardAnnouncementService, GoogleCloudTTSService
+from services.line_profile_lookup import fetch_line_profile_display_name
 from services.web_ui_settings import (
     HOT_RELOADABLE_SECTIONS,
     ConfigValidationError,
@@ -278,9 +279,37 @@ def _editable_settings_payload() -> dict:
         "meta": {
             "configPath": os.fspath(CONFIG_FILE_PATH),
             "hotReloadableSections": HOT_RELOADABLE_SECTIONS,
-            "adminOptions": db_manager.get_all_admins() if db_manager is not None else [],
+            "adminOptions": _resolve_admin_options(),
         },
     }
+
+
+def _fetch_line_profile_display_name(user_id: str) -> str:
+    return fetch_line_profile_display_name(channel_access_token=CHANNEL_ACCESS_TOKEN, user_id=user_id)
+
+
+def _resolve_admin_options() -> list[dict[str, str]]:
+    if db_manager is None:
+        return []
+
+    options: list[dict[str, str]] = []
+    for admin in db_manager.get_all_admins():
+        user_id = str(admin.get("user_id") or "").strip()
+        display_name = str(admin.get("display_name") or "").strip()
+        if not user_id:
+            continue
+        line_display_name = _fetch_line_profile_display_name(user_id)
+        preferred_name = line_display_name or display_name
+        label = f"{preferred_name} ({user_id})" if preferred_name else user_id
+        options.append(
+            {
+                "user_id": user_id,
+                "display_name": display_name,
+                "line_display_name": line_display_name,
+                "label": label,
+            }
+        )
+    return options
 
 
 def _schedule_process_restart(*, delay_seconds: float = 0.25) -> None:
@@ -367,6 +396,7 @@ def _apply_runtime_config(next_config: dict) -> None:
         telegram_command_service = TelegramCommandService(
             db=db_manager,
             queue_manager=queue_manager,
+            channel_access_token=CHANNEL_ACCESS_TOKEN,
             telegram_sender=_send_telegram_text,
             location_options=LOCATION_OPTIONS,
             announcement_service=dashboard_announcement_service,
@@ -491,6 +521,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     telegram_command_service = TelegramCommandService(
         db=db_manager,
         queue_manager=queue_manager,
+        channel_access_token=CHANNEL_ACCESS_TOKEN,
         telegram_sender=_send_telegram_text,
         location_options=LOCATION_OPTIONS,
         announcement_service=dashboard_announcement_service,
@@ -890,7 +921,7 @@ def save_dashboard_settings(request: Request, payload: dict) -> dict:
         "meta": {
             "configPath": os.fspath(CONFIG_FILE_PATH),
             "hotReloadableSections": HOT_RELOADABLE_SECTIONS,
-            "adminOptions": db_manager.get_all_admins() if db_manager is not None else [],
+            "adminOptions": _resolve_admin_options(),
         },
     }
 
@@ -914,7 +945,7 @@ def save_dashboard_settings_raw(request: Request, payload: dict) -> dict:
         "meta": {
             "configPath": os.fspath(CONFIG_FILE_PATH),
             "hotReloadableSections": HOT_RELOADABLE_SECTIONS,
-            "adminOptions": db_manager.get_all_admins() if db_manager is not None else [],
+            "adminOptions": _resolve_admin_options(),
         },
     }
 

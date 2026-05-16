@@ -1,6 +1,7 @@
 from services.telegram_admin_notifications import TELEGRAM_NOTIFICATION_CATEGORIES
 from services.telegram_commands import TelegramCommandService
 import services.telegram_commands as telegram_commands_module
+from unittest.mock import patch
 
 
 class TestTelegramCommandService:
@@ -254,6 +255,51 @@ class TestTelegramCommandService:
 
         assert result["status"] == "error"
         assert "用法" in result["message"]
+
+    def test_admin_apply_list_routes_to_admin_subcommand(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "Admin A", verified=True, role="admin")
+        db_manager.upsert_user_profile("tg_user_1", "B12345678", verified=True, role="user")
+        db_manager.add_admin_application("tg_user_1", "王小明")
+        service = TelegramCommandService(db=db_manager, channel_access_token="line-token")
+
+        with patch.object(telegram_commands_module, "fetch_line_profile_display_name", return_value="LINE Alice"):
+            result = service.handle_text(user_id="admin_a", text="/admin/apply list")
+
+        assert result["status"] == "success"
+        assert "Admin 申請列表" in result["message"]
+        assert "LINE Alice" in result["message"]
+        assert "B12345678" not in result["message"]
+        assert "王小明" not in result["message"]
+
+    def test_admin_apply_list_rejects_non_admin(self, db_manager):
+        db_manager.add_admin_application("tg_user_1", "王小明")
+        service = TelegramCommandService(db=db_manager)
+
+        result = service.handle_text(user_id="tg_user_2", text="/admin/apply list")
+
+        assert result["status"] == "error"
+        assert "未授權" in result["message"]
+
+    def test_admin_apply_approve_routes_to_admin_subcommand(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "Admin A", verified=True, role="admin")
+        db_manager.add_admin_application("tg_user_1", "王小明")
+        service = TelegramCommandService(db=db_manager)
+
+        result = service.handle_text(user_id="admin_a", text="/admin/apply approve tg_user_1")
+
+        assert result["status"] == "success"
+        assert "已批准" in result["message"]
+        assert db_manager.is_admin("tg_user_1") is True
+
+    def test_admin_apply_reject_routes_to_admin_subcommand(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "Admin A", verified=True, role="admin")
+        db_manager.add_admin_application("tg_user_1", "王小明")
+        service = TelegramCommandService(db=db_manager)
+
+        result = service.handle_text(user_id="admin_a", text="/admin/apply reject tg_user_1")
+
+        assert result["status"] == "success"
+        assert "已拒絕" in result["message"]
 
     def test_admin_notify_single_category_on(self, db_manager):
         db_manager.upsert_user_profile("admin_a", "Admin A", verified=True, role="admin")

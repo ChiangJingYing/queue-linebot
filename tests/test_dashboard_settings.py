@@ -236,7 +236,14 @@ def test_dashboard_settings_supports_unset_queue_values_and_admin_options(tmp_pa
 
     assert data.status_code == 200
     payload = data.json()
-    assert payload["meta"]["adminOptions"] == [{"user_id": "admin-1", "display_name": "Alice Admin"}]
+    assert payload["meta"]["adminOptions"] == [
+        {
+            "user_id": "admin-1",
+            "display_name": "Alice Admin",
+            "line_display_name": "",
+            "label": "Alice Admin (admin-1)",
+        }
+    ]
     assert payload["config"]["queue"]["max_capacity"] is None
     assert "timeout_minutes" not in payload["config"]["queue"]
     assert "timeout_action" not in payload["config"]["queue"]
@@ -244,13 +251,53 @@ def test_dashboard_settings_supports_unset_queue_values_and_admin_options(tmp_pa
     assert save.json()["config"]["queue"]["max_capacity"] is None
     assert "timeout_minutes" not in save.json()["config"]["queue"]
     assert "timeout_action" not in save.json()["config"]["queue"]
-    assert save.json()["meta"]["adminOptions"] == [{"user_id": "admin-1", "display_name": "Alice Admin"}]
+    assert save.json()["meta"]["adminOptions"] == [
+        {
+            "user_id": "admin-1",
+            "display_name": "Alice Admin",
+            "line_display_name": "",
+            "label": "Alice Admin (admin-1)",
+        }
+    ]
     assert main.queue_manager is not None
     assert main.queue_manager.get_max_capacity() is None
     written = config_path.read_text(encoding="utf-8")
     assert "max_capacity:" not in written
     assert "timeout_minutes:" not in written
     assert "timeout_action:" not in written
+
+
+def test_dashboard_settings_prefers_live_line_display_name_for_admin_options(tmp_path, monkeypatch):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    assert main.db_manager is not None
+    main.db_manager.upsert_user_profile("admin-1", "Stored Admin", verified=True, role="admin")
+    main.db_manager.upsert_user_profile("admin-2", "", verified=True, role="admin")
+    monkeypatch.setattr(main, "_fetch_line_profile_display_name", lambda user_id: {
+        "admin-1": "LINE Alice",
+        "admin-2": "LINE Bob",
+    }.get(user_id, ""))
+
+    client = TestClient(main.app)
+
+    response = client.get("/settings/data")
+
+    assert response.status_code == 200
+    admin_options = sorted(response.json()["meta"]["adminOptions"], key=lambda item: item["user_id"])
+
+    assert admin_options == [
+        {
+            "user_id": "admin-1",
+            "display_name": "Stored Admin",
+            "line_display_name": "LINE Alice",
+            "label": "LINE Alice (admin-1)",
+        },
+        {
+            "user_id": "admin-2",
+            "display_name": "",
+            "line_display_name": "LINE Bob",
+            "label": "LINE Bob (admin-2)",
+        },
+    ]
 
 
 def test_dashboard_settings_raw_save_updates_yaml_and_runtime(tmp_path):

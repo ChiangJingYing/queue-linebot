@@ -393,6 +393,29 @@
         }
       }
 
+      function findAdminOption(userId) {
+        const normalizedUserId = String(userId || '').trim();
+        if (!normalizedUserId) return null;
+        const adminOptions = (state.meta && Array.isArray(state.meta.adminOptions)) ? state.meta.adminOptions : [];
+        return adminOptions.find((option) => String(option.user_id || '').trim() === normalizedUserId) || null;
+      }
+
+      function describeAdminOption(userId) {
+        const option = findAdminOption(userId);
+        if (!option) {
+          return '可直接輸入，也可從資料庫中的 admin 清單挑選。若 LINE profile 可讀取，會優先顯示 LINE display name。';
+        }
+        const liveName = String(option.line_display_name || '').trim();
+        const storedName = String(option.display_name || '').trim();
+        if (liveName) {
+          return `LINE display name：${liveName}`;
+        }
+        if (storedName) {
+          return `資料庫 display name：${storedName}`;
+        }
+        return '此 admin 目前沒有可用的 display name，會以 user_id 顯示。';
+      }
+
       function renderSpecialRules() {
         specialRulesList.innerHTML = '';
         state.specialAdmins.forEach((item, index) => {
@@ -406,7 +429,7 @@
           adminInput.value = item.admin_id || '';
           const adminHelp = document.createElement('p');
           adminHelp.className = 'field-help';
-          adminHelp.textContent = '可直接輸入，也可從資料庫中的 admin 清單挑選。';
+          adminHelp.textContent = describeAdminOption(item.admin_id);
           adminLabel.appendChild(adminInput);
           adminLabel.appendChild(adminHelp);
           card.appendChild(adminLabel);
@@ -439,6 +462,7 @@
 
           adminInput.addEventListener('input', (event) => {
             state.specialAdmins[index].admin_id = event.target.value;
+            adminHelp.textContent = describeAdminOption(event.target.value);
             refreshDirtyState();
           });
           renderTags(targetContainer, item.targets || [], (value) => () => {
@@ -468,6 +492,8 @@
         for (const option of adminOptions || []) {
           const item = document.createElement('option');
           item.value = option.user_id;
+          item.label = option.label || option.display_name || option.user_id;
+          item.textContent = option.label || option.display_name || option.user_id;
           adminIdOptions.appendChild(item);
         }
       }

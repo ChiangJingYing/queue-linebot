@@ -1,5 +1,7 @@
 """Tests for admin application system."""
 
+from unittest.mock import patch
+
 import pytest
 
 
@@ -144,10 +146,58 @@ class TestAdminApplyHandler:
         """Apply list should show pending applications."""
         handler.queue_manager.db.add_admin_application("Uuser123", "John")
         handler.queue_manager.db.add_admin_application("Uuser456", "Jane")
+        handler.queue_manager.db.upsert_user_profile("Uuser123", "B12345678", verified=True, role="user")
         result = handler._handle_admin_apply_list(reply_token="replytoken", user_id="Uadmin001")
         assert len(result) == 1
         text = result[0]["text"]
-        assert "John" in text
+        assert "B12345678" in text
+        assert "John" not in text
+
+    def test_apply_list_falls_back_to_user_id_when_profile_name_missing(self, handler):
+        handler.queue_manager.db.add_admin_application("Uuser123", "John")
+
+        result = handler._handle_admin_apply_list(reply_token="replytoken", user_id="Uadmin001")
+
+        assert len(result) == 1
+        text = result[0]["text"]
+        assert "Uuser123 (Uuser123)" in text
+
+    def test_apply_list_prefers_line_profile_name_over_user_profile(self, handler):
+        handler.queue_manager.db.add_admin_application("Uuser123", "John")
+        handler.queue_manager.db.upsert_user_profile("Uuser123", "B12345678", verified=True, role="user")
+        handler.channel_access_token = "line-token"
+
+        with patch("bot.handler_admin.fetch_line_profile_display_name", return_value="LINE Alice"):
+            result = handler._handle_admin_apply_list(reply_token="replytoken", user_id="Uadmin001")
+
+        assert len(result) == 1
+        text = result[0]["text"]
+        assert "LINE Alice" in text
+        assert "B12345678" not in text
+
+    def test_apply_list_uses_line_profile_name_when_pending_user_has_no_profile(self, handler):
+        handler.queue_manager.db.add_admin_application("Uuser123", "John")
+        handler.channel_access_token = "line-token"
+
+        with patch("bot.handler_admin.fetch_line_profile_display_name", return_value="LINE Alice"):
+            result = handler._handle_admin_apply_list(reply_token="replytoken", user_id="Uadmin001")
+
+        assert len(result) == 1
+        text = result[0]["text"]
+        assert "LINE Alice" in text
+        assert "Uuser123 (Uuser123)" not in text
+
+    def test_apply_list_falls_back_to_user_profile_when_line_profile_missing(self, handler):
+        handler.queue_manager.db.add_admin_application("Uuser123", "John")
+        handler.queue_manager.db.upsert_user_profile("Uuser123", "B12345678", verified=True, role="user")
+        handler.channel_access_token = "line-token"
+
+        with patch("bot.handler_admin.fetch_line_profile_display_name", return_value=""):
+            result = handler._handle_admin_apply_list(reply_token="replytoken", user_id="Uadmin001")
+
+        assert len(result) == 1
+        text = result[0]["text"]
+        assert "B12345678" in text
 
     def test_apply_approve(self, handler):
         """Approving an application."""
@@ -221,5 +271,3 @@ class TestAdminApplyHandler:
         handler.queue_manager.db.approve_admin_application("new_admin", "Uadmin001")
 
         assert handler._is_admin("new_admin") is True
-
-

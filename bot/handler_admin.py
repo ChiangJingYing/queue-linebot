@@ -28,6 +28,7 @@ from services.admin_flow import (
     toggle_admin_join,
     toggle_vip,
 )
+from services.line_profile_lookup import fetch_line_profile_display_name
 from services.serve_flow import serve_user
 from services.special_serve_rules import resolve_special_serve_decision
 
@@ -130,7 +131,7 @@ class HandlerAdminMixin:
 
     def _handle_admin_apply_list(self, reply_token: str = "", user_id: str | None = None, page: int = 1) -> list:
         """列出待審核的 admin 申請，並附上 quick reply 操作。"""
-        pending = self.queue_manager.db.get_pending_applications()
+        pending = self.queue_manager.db.get_pending_applications_for_review(self._resolve_line_display_name_for_review)
         if not pending:
             return self._reply(reply_token, "📋 Admin 申請列表\n─────────────\n目前沒有待審核的申請。")
 
@@ -150,7 +151,7 @@ class HandlerAdminMixin:
 
         items = []
         for app in page_apps:
-            label = f"{app['user_id']} ({app['display_name']})"
+            label = f"{app['user_id']} ({app['resolved_display_name']})"
             items.append({
                 "type": "action",
                 "action": {
@@ -169,9 +170,15 @@ class HandlerAdminMixin:
 
         msg = f"📋 Admin 申請列表（第 {page}/{total_pages} 頁）\n─────────────\n"
         for i, app in enumerate(page_apps, 1):
-            msg += f"{i}. {app['user_id']} ({app['display_name']})\n"
+            msg += f"{i}. {app['user_id']} ({app['resolved_display_name']})\n"
 
         return self._reply(reply_token, msg, quick_options=items)
+
+    def _resolve_line_display_name_for_review(self, user_id: str) -> str:
+        return fetch_line_profile_display_name(
+            channel_access_token=getattr(self, "channel_access_token", ""),
+            user_id=user_id,
+        )
 
     def _handle_admin_apply_approve(self, user_id: str | None = None, target_id: str = "", reply_token: str = "") -> list:
         """批准指定使用者的 admin 申請。"""

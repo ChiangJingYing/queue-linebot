@@ -707,6 +707,31 @@ class DatabaseManager:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_pending_applications_for_review(self, line_display_name_resolver=None) -> list[dict]:
+        """Get pending admin applications with display names resolved for review UIs."""
+        pending = self.get_pending_applications()
+        items: list[dict] = []
+        for app in pending:
+            user_id = str(app.get("user_id") or "").strip()
+            line_display_name = ""
+            if callable(line_display_name_resolver) and user_id:
+                try:
+                    line_display_name = str(line_display_name_resolver(user_id) or "").strip()
+                except Exception:
+                    line_display_name = ""
+            profile = self.get_user_profile(user_id) if user_id else None
+            profile_display_name = str(getattr(profile, "display_name", "") or "").strip()
+            resolved_display_name = line_display_name or profile_display_name or user_id
+            items.append(
+                {
+                    **app,
+                    "line_display_name": line_display_name,
+                    "profile_display_name": profile_display_name,
+                    "resolved_display_name": resolved_display_name,
+                }
+            )
+        return items
+
     def get_pending_count(self) -> int:
         """Count pending admin applications."""
         with self._connection() as conn:

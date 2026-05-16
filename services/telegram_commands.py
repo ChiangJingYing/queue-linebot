@@ -60,6 +60,7 @@ from services.interaction_presenters import (
     build_telegram_choice_markup,
     build_telegram_reply_keyboard_markup,
 )
+from services.line_profile_lookup import fetch_line_profile_display_name
 from services.pending_state_store import ConfigPendingStateStore
 from services.register_flow import advance_register_flow
 from services.register_service import complete_registration
@@ -116,6 +117,7 @@ class TelegramCommandService:
         *,
         db,
         queue_manager: QueueManager | None = None,
+        channel_access_token: str = "",
         telegram_sender=None,
         location_options: dict[str, list[str]] | None = None,
         announcement_service=None,
@@ -130,6 +132,7 @@ class TelegramCommandService:
         - QueueManager notifier（若尚未注入）
         """
         self.db = db
+        self.channel_access_token = channel_access_token
         #: Telegram command 層共用的隊列核心；admin serve/join/cancel 皆會經過它。
         self.queue_manager = queue_manager or (QueueManager(db) if isinstance(db, DatabaseManager) else None)
         self.vip_service = VipService(db) if isinstance(db, DatabaseManager) else None
@@ -203,7 +206,7 @@ class TelegramCommandService:
         elif command == "/help":
             result = self._handle_help(user_id=user_id)
         elif command == "/admin/apply":
-            result = self._handle_admin_apply(user_id=user_id, args=args)
+            result = self._handle_admin_apply_command(user_id=user_id, args=args)
         elif command == "/admin/notify":
             result = self._handle_admin_notify(user_id=user_id, args=args)
         elif command == "/admin/join":
@@ -319,6 +322,54 @@ class TelegramCommandService:
         if result["status"] == "duplicate":
             return {"status": "error", "message": "⚠️ 你已提交過申請，請勿重複送出。"}
         return {"status": "error", "message": f"❌ 錯誤：{result['message']}"}
+
+    def _handle_admin_apply_command(self, *, user_id: str, args: list[str]) -> dict:
+        if not args:
+            return self._handle_admin_apply(user_id=user_id, args=args)
+
+        sub_cmd = args[0].lower()
+        if sub_cmd == "list":
+            return self._handle_admin_apply_list(user_id=user_id)
+        if sub_cmd == "approve":
+            if len(args) < 2:
+                return {"status": "error", "message": "用法：/admin/apply approve [user_id]"}
+            return self._handle_admin_apply_approve(user_id=user_id, target_id=args[1])
+        if sub_cmd == "reject":
+            if len(args) < 2:
+                return {"status": "error", "message": "用法：/admin/apply reject [user_id]"}
+            return self._handle_admin_apply_reject(user_id=user_id, target_id=args[1])
+        return self._handle_admin_apply(user_id=user_id, args=args)
+
+    def _handle_admin_apply_list(self, *, user_id: str) -> dict:
+        if not self.db.is_admin(user_id):
+            return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
+
+        pending = self.db.get_pending_applications_for_review(self._resolve_line_display_name_for_review)
+        if not pending:
+            return {"status": "success", "message": "📋 Admin 申請列表\n─────────────\n目前沒有待審核的申請。"}
+
+        lines = ["📋 Admin 申請列表", "─────────────"]
+        for index, app in enumerate(pending, start=1):
+            lines.append(f"{index}. {app['user_id']} ({app['resolved_display_name']})")
+        return {"status": "success", "message": "\n".join(lines)}
+
+    def _handle_admin_apply_approve(self, *, user_id: str, target_id: str) -> dict:
+        if not self.db.is_admin(user_id):
+            return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
+
+        result = self.db.approve_admin_application(target_id, user_id)
+        if result["status"] == "success":
+            return {"status": "success", "message": f"✅ 已批准 {target_id} 的 admin 申請。"}
+        return {"status": "error", "message": f"❌ 找不到 {target_id} 的待審核申請。"}
+
+    def _handle_admin_apply_reject(self, *, user_id: str, target_id: str) -> dict:
+        if not self.db.is_admin(user_id):
+            return {"status": "error", "message": "❌ 未授權，僅限管理員使用。"}
+
+        result = self.db.reject_admin_application(target_id, user_id)
+        if result["status"] == "success":
+            return {"status": "success", "message": f"✅ 已拒絕 {target_id} 的 admin 申請。"}
+        return {"status": "error", "message": f"❌ 找不到 {target_id} 的待審核申請（已處理或不存在）。"}
 
     def _handle_admin_notify(self, *, user_id: str, args: list[str]) -> dict:
         """處理 Telegram admin 推播偏好查詢與開關。"""
@@ -953,3 +1004,9 @@ class TelegramCommandService:
 
     def _format_profile_label(self, user_id: str) -> str:
         return self.db.get_display_name(user_id)
+
+    def _resolve_line_display_name_for_review(self, user_id: str) -> str:
+        return fetch_line_profile_display_name(
+            channel_access_token=self.channel_access_token,
+            user_id=user_id,
+        )
