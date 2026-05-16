@@ -1,0 +1,810 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>系統設定</title>
+    <style>
+      :root {
+        --bg: #f3f4f6;
+        --card: #ffffff;
+        --text: #111827;
+        --muted: #6b7280;
+        --border: #d1d5db;
+        --primary: #0f766e;
+        --danger: #b91c1c;
+        --warning: #92400e;
+        --switch-bg: #dbeafe;
+        --switch-text: #1e3a8a;
+        --switch-active: #1d4ed8;
+        --switch-active-text: #ffffff;
+        --input-bg: #ffffff;
+        --tag-bg: #d1fae5;
+        --tag-text: #065f46;
+        --card-alt: #f9fafb;
+        --toast-bg: #111827;
+        --toast-text: #ffffff;
+        --secondary-button-bg: #e5e7eb;
+        --secondary-button-text: #111827;
+        --link-chip-bg: #ecfeff;
+        --link-chip-text: #115e59;
+        --link-chip-border: #99f6e4;
+      }
+      body[data-theme="dark"] {
+        --bg: #020617;
+        --card: #0f172a;
+        --text: #e5e7eb;
+        --muted: #94a3b8;
+        --border: #334155;
+        --primary: #2dd4bf;
+        --danger: #f87171;
+        --warning: #f59e0b;
+        --switch-bg: #0b1220;
+        --switch-text: #cbd5e1;
+        --switch-active: #0f766e;
+        --switch-active-text: #ecfeff;
+        --input-bg: #020617;
+        --tag-bg: #134e4a;
+        --tag-text: #ccfbf1;
+        --card-alt: #111827;
+        --toast-bg: #e5e7eb;
+        --toast-text: #111827;
+        --secondary-button-bg: #334155;
+        --secondary-button-text: #e5e7eb;
+        --link-chip-bg: #0f2d33;
+        --link-chip-text: #99f6e4;
+        --link-chip-border: #134e4a;
+      }
+      body { margin: 0; font-family: "Noto Sans TC", "PingFang TC", sans-serif; background: linear-gradient(180deg, #ecfeff 0%, var(--bg) 48%, #e5e7eb 100%); color: var(--text); }
+      body[data-theme="dark"] { background: linear-gradient(180deg, #02131b 0%, var(--bg) 48%, #020617 100%); }
+      .page { max-width: 1180px; margin: 0 auto; padding: 24px; }
+      .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+      .topbar-links { display: flex; gap: 14px; flex-wrap: wrap; }
+      .topbar-links a {
+        color: var(--link-chip-text);
+        text-decoration: none;
+        font-weight: 800;
+        background: var(--link-chip-bg);
+        border: 1px solid var(--link-chip-border);
+        border-radius: 999px;
+        padding: 10px 14px;
+        display: inline-flex;
+        align-items: center;
+      }
+      .topbar-links a:hover {
+        filter: brightness(0.98);
+      }
+      .summary { color: var(--muted); margin: 0; }
+      form { display: grid; gap: 18px; }
+      .section { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 18px; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08); }
+      .section h2 { margin: 0 0 6px; font-size: 20px; }
+      .section-note { color: var(--muted); margin: 0 0 14px; font-size: 14px; }
+      .section-note strong { color: var(--warning); }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+      label { display: grid; gap: 6px; font-weight: 700; font-size: 14px; }
+      input, select, textarea, button { font: inherit; }
+      input, select, textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--input-bg); color: var(--text); }
+      textarea { min-height: 86px; resize: vertical; }
+      .checkbox-row { display: flex; align-items: center; gap: 10px; padding-top: 28px; }
+      .checkbox-row input { width: 18px; height: 18px; margin: 0; }
+      .checkbox-row span { font-weight: 700; font-size: 14px; }
+      .field-help { margin: 4px 0 0; color: var(--muted); font-size: 12px; font-weight: 500; line-height: 1.45; }
+      .list-editor { display: grid; gap: 12px; }
+      .card-list { display: grid; gap: 12px; }
+      .mini-card { border: 1px solid var(--border); border-radius: 14px; background: var(--card-alt); padding: 14px; display: grid; gap: 10px; }
+      .inline-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+      .tag-list { display: flex; gap: 8px; flex-wrap: wrap; min-height: 34px; align-items: center; }
+      .tag { display: inline-flex; align-items: center; gap: 6px; background: var(--tag-bg); color: var(--tag-text); border-radius: 999px; padding: 6px 10px; font-size: 13px; font-weight: 700; }
+      .tag button { border: none; background: transparent; color: inherit; padding: 0; width: auto; cursor: pointer; }
+      .toolbar { position: sticky; bottom: 0; display: flex; gap: 12px; justify-content: flex-end; padding: 16px 0 4px; }
+      .theme-switch { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+      .mode-switch, .theme-toggle { display: inline-flex; gap: 8px; background: var(--switch-bg); padding: 6px; border-radius: 14px; }
+      .mode-button, .theme-button { background: transparent; color: var(--switch-text); }
+      .mode-button.active, .theme-button.active { background: var(--switch-active); color: var(--switch-active-text); }
+      .mode-panel[hidden] { display: none; }
+      button { border: none; border-radius: 12px; padding: 11px 16px; font-weight: 800; cursor: pointer; }
+      .primary { background: var(--primary); color: white; }
+      .secondary { background: var(--secondary-button-bg); color: var(--secondary-button-text); }
+      .danger { background: #fee2e2; color: var(--danger); }
+      .add-button { background: #ccfbf1; color: #115e59; }
+      .meta-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+      .pill { border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 800; }
+      .pill.hot { background: #dcfce7; color: #166534; }
+      .pill.restart { background: #fef3c7; color: #92400e; }
+      .restart-panel { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .warning-button { background: #f59e0b; color: #1f2937; }
+      #toast { position: fixed; right: 20px; bottom: 20px; display: none; background: var(--toast-bg); color: var(--toast-text); padding: 12px 14px; border-radius: 12px; }
+      #error-box { display: none; border: 1px solid #fecaca; background: #fff1f2; color: #9f1239; border-radius: 14px; padding: 12px 14px; }
+      @media (max-width: 640px) {
+        .page { padding: 16px; }
+        .toolbar { position: static; padding-top: 4px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="topbar">
+        <div>
+          <h1>系統設定</h1>
+        </div>
+        <div class="topbar-links">
+          <a href="/dashboard">回 Dashboard</a>
+          <a href="/dashboard/config">編輯座位版面</a>
+        </div>
+      </div>
+
+      <div class="theme-switch">
+        <div class="mode-switch">
+          <button type="button" id="mode-visual" class="mode-button active">可視化編輯</button>
+          <button type="button" id="mode-raw" class="mode-button">原文編輯</button>
+        </div>
+        <div class="theme-toggle" id="theme-toggle" style="margin-left:auto">
+          <button type="button" id="theme-light" class="theme-button">淺色</button>
+          <button type="button" id="theme-dark" class="theme-button">深色</button>
+        </div>
+      </div>
+
+      <div id="error-box"></div>
+
+      <section class="section">
+        <div class="restart-panel">
+          <div>
+            <h2>重新啟動</h2>
+            <p class="section-note">`Server`、`Logging` 等標示為重啟後生效的設定，儲存後請手動重新啟動容器。</p>
+          </div>
+          <button type="button" id="restart-app" class="warning-button">重新啟動容器</button>
+        </div>
+      </section>
+
+      <form id="settings-form" class="mode-panel">
+        <section class="section">
+          <h2>Server</h2>
+          <p class="section-note"><strong>重啟後生效</strong>。修改服務監聽位址與 debug 旗標。若部署在 Docker Compose，改這裡只會影響容器內程式監聽的 port；對外 port mapping 仍需另外修改 compose 並重建容器。</p>
+          <div class="grid">
+            <label>Host<input id="server-host" /></label>
+            <label>Port<input id="server-port" type="number" min="1" max="65535" /></label>
+            <div class="checkbox-row"><input id="server-debug" type="checkbox" /><span>Debug</span></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>Queue</h2>
+          <p class="section-note"><strong>立即生效</strong>。隊列容量</p>
+          <div class="grid">
+            <label>Max Capacity<input id="queue-max-capacity" type="number" min="1" placeholder="留空代表不限制容量" /><p class="field-help">留空時不限制一般隊列人數。</p></label>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>Special Serve Rules</h2>
+          <p class="section-note"><strong>立即生效</strong>。特殊叫號設定</p>
+          <div class="grid">
+            <div class="checkbox-row"><input id="special-enabled" type="checkbox" /><span>Enabled</span></div>
+            <label>Match Field
+              <select id="special-match-field">
+                <option value="display_name">display_name</option>
+              </select>
+            </label>
+          </div>
+          <div class="grid">
+            <label>Skip Message<textarea id="special-skip-message"></textarea></label>
+            <label>No Next Reply<textarea id="special-no-next-reply"></textarea></label>
+          </div>
+          <div class="list-editor">
+            <div class="inline-actions">
+              <button type="button" class="add-button" id="add-special-rule">新增 Admin 規則</button>
+            </div>
+            <div id="special-rules-list" class="card-list"></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>VIP</h2>
+          <p class="section-note"><strong>立即生效</strong>。VIP 開關與 Buy Me a Coffee 設定。</p>
+          <div class="grid">
+            <div class="checkbox-row"><input id="vip-enabled" type="checkbox" /><span>Enabled</span></div>
+            <label>Coffee Price<input id="vip-coffee-price" type="number" min="0" /></label>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>Registration</h2>
+          <p class="section-note"><strong>立即生效</strong>。用列/欄管理器維護 `location_options`。</p>
+          <div class="inline-actions">
+            <button type="button" class="add-button" id="add-location-row">新增 Row</button>
+          </div>
+          <div id="location-rows" class="card-list"></div>
+        </section>
+
+        <section class="section">
+          <h2>Logging</h2>
+          <p class="section-note"><strong>重啟後生效</strong>。日誌記錄等級與檔案路徑。</p>
+          <div class="grid">
+            <label>Level
+              <select id="logging-level">
+                <option value="CRITICAL">CRITICAL</option>
+                <option value="ERROR">ERROR</option>
+                <option value="WARNING">WARNING</option>
+                <option value="INFO">INFO</option>
+                <option value="DEBUG">DEBUG</option>
+              </select>
+            </label>
+            <label>Log File<input id="logging-log-file" /></label>
+            <label>Max Size MB<input id="logging-max-size-mb" type="number" min="1" /></label>
+            <label>Backup Count<input id="logging-backup-count" type="number" min="0" /></label>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>Web UI</h2>
+          <p class="section-note"><strong>立即生效</strong></p>
+          <div class="grid">
+            <div>
+              <div class="checkbox-row"><input id="web-ui-protect-read-routes" type="checkbox" /><span>Protect Read Routes</span></div>
+              <p class="field-help">開啟後，瀏覽 `/dashboard`、`/dashboard/config`、`/dashboard/data` 等讀取頁面也需要先登入。</p>
+            </div>
+            <div>
+              <div class="checkbox-row"><input id="web-ui-allow-query-token" type="checkbox" /><span>Allow Query Token</span></div>
+              <p class="field-help">允許透過 URL query string 帶 `token` 進入後台頁面。通常只建議在內部或暫時分享場景使用。</p>
+            </div>
+            <label>Session Cookie Name<input id="web-ui-session-cookie-name" /><p class="field-help">登入成功後，後台 session 會寫入這個 cookie 名稱。</p></label>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>LINE</h2>
+          <p class="section-note"><strong>立即生效</strong></p>
+          <div class="grid">
+            <div>
+              <div class="checkbox-row"><input id="line-bot-push-on-served" type="checkbox" /><span>Push On Served</span></div>
+              <p class="field-help">關閉後，LINE 使用者被叫號時不會額外收到 push，但一般 webhook reply 與 rich menu 行為仍正常。</p>
+            </div>
+          </div>
+        </section>
+
+        <div class="toolbar">
+          <button type="button" class="secondary" id="reload-settings">重新載入</button>
+          <button type="submit" class="primary">儲存設定</button>
+        </div>
+      </form>
+
+      <form id="raw-editor-form" class="mode-panel" hidden>
+        <section class="section">
+          <h2>原文編輯</h2>
+          <p class="section-note"><strong>立即生效</strong>。直接編輯 `config/queue_config.yaml` 原文；儲存時會驗證 YAML 格式並套用最新設定。</p>
+          <label>YAML
+            <textarea id="raw-yaml-editor" style="min-height:420px;font-family: ui-monospace, SFMono-Regular, Menlo, monospace;"></textarea>
+          </label>
+        </section>
+        <div class="toolbar">
+          <button type="button" class="secondary" id="reload-raw-settings">重新載入</button>
+          <button type="submit" class="primary">儲存原文</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="toast"></div>
+    <datalist id="admin-id-options"></datalist>
+
+    <script>
+      {auth_bootstrap}
+      const state = {
+        config: null,
+        meta: null,
+        specialAdmins: [],
+        locationRows: [],
+        isLoaded: false,
+        lastSavedVisualSnapshot: '',
+        lastSavedRawSnapshot: '',
+      };
+      const errorBox = document.getElementById('error-box');
+      const toast = document.getElementById('toast');
+      const specialRulesList = document.getElementById('special-rules-list');
+      const locationRows = document.getElementById('location-rows');
+      const adminIdOptions = document.getElementById('admin-id-options');
+      const visualForm = document.getElementById('settings-form');
+      const rawForm = document.getElementById('raw-editor-form');
+      const modeVisualButton = document.getElementById('mode-visual');
+      const modeRawButton = document.getElementById('mode-raw');
+      const themeLightButton = document.getElementById('theme-light');
+      const themeDarkButton = document.getElementById('theme-dark');
+      const restartButton = document.getElementById('restart-app');
+      const THEME_STORAGE_KEY = 'queue_admin_theme';
+      const UNSAVED_CHANGES_MESSAGE = '目前有尚未儲存的修改，確定要離開此頁面嗎？';
+
+      function showToast(message) {
+        toast.textContent = message;
+        toast.style.display = 'block';
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => {
+          toast.style.display = 'none';
+        }, 1800);
+      }
+
+      function showError(message) {
+        errorBox.textContent = message;
+        errorBox.style.display = 'block';
+      }
+
+      function clearError() {
+        errorBox.style.display = 'none';
+        errorBox.textContent = '';
+      }
+
+      function stableStringify(value) {
+        if (Array.isArray(value)) {
+          return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+        }
+        if (value && typeof value === 'object') {
+          return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+        }
+        return JSON.stringify(value);
+      }
+
+      function objectToAdminList(admins) {
+        return Object.entries(admins || {}).map(([adminId, value]) => ({
+          admin_id: adminId,
+          targets: Array.isArray(value && value.targets) ? value.targets : [],
+        }));
+      }
+
+      function objectToLocationRows(locationOptions) {
+        return Object.entries(locationOptions || {}).map(([row, columns]) => ({
+          row,
+          columns: Array.isArray(columns) ? columns : [],
+        }));
+      }
+
+      function adminListToObject(admins) {
+        const result = {};
+        for (const item of admins) {
+          const adminId = String(item.admin_id || '').trim();
+          if (!adminId) continue;
+          result[adminId] = {
+            targets: Array.from(new Set((item.targets || []).map((target) => String(target || '').trim()).filter(Boolean))),
+          };
+        }
+        return result;
+      }
+
+      function locationRowsToObject(rows) {
+        const result = {};
+        for (const item of rows) {
+          const row = String(item.row || '').trim();
+          if (!row) continue;
+          result[row] = Array.from(new Set((item.columns || []).map((column) => String(column || '').trim()).filter(Boolean)));
+        }
+        return result;
+      }
+
+      function renderTags(container, values, onRemove) {
+        container.innerHTML = '';
+        for (const value of values) {
+          const tag = document.createElement('span');
+          tag.className = 'tag';
+          const label = document.createElement('span');
+          label.textContent = value;
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.textContent = 'x';
+          button.addEventListener('click', onRemove(value));
+          tag.appendChild(label);
+          tag.appendChild(button);
+          container.appendChild(tag);
+        }
+      }
+
+      function renderSpecialRules() {
+        specialRulesList.innerHTML = '';
+        state.specialAdmins.forEach((item, index) => {
+          const card = document.createElement('div');
+          card.className = 'mini-card';
+          const adminLabel = document.createElement('label');
+          adminLabel.appendChild(document.createTextNode('Admin ID'));
+          const adminInput = document.createElement('input');
+          adminInput.setAttribute('data-role', 'admin-id');
+          adminInput.setAttribute('list', 'admin-id-options');
+          adminInput.value = item.admin_id || '';
+          const adminHelp = document.createElement('p');
+          adminHelp.className = 'field-help';
+          adminHelp.textContent = '可直接輸入，也可從資料庫中的 admin 清單挑選。';
+          adminLabel.appendChild(adminInput);
+          adminLabel.appendChild(adminHelp);
+          card.appendChild(adminLabel);
+
+          const targetsWrapper = document.createElement('div');
+          const targetContainer = document.createElement('div');
+          targetContainer.className = 'tag-list';
+          targetContainer.setAttribute('data-role', 'targets');
+          const inlineActions = document.createElement('div');
+          inlineActions.className = 'inline-actions';
+          const targetInput = document.createElement('input');
+          targetInput.setAttribute('data-role', 'target-input');
+          targetInput.placeholder = '新增 target';
+          const addTargetButton = document.createElement('button');
+          addTargetButton.type = 'button';
+          addTargetButton.className = 'add-button';
+          addTargetButton.setAttribute('data-role', 'add-target');
+          addTargetButton.textContent = '加入 target';
+          const removeRuleButton = document.createElement('button');
+          removeRuleButton.type = 'button';
+          removeRuleButton.className = 'danger';
+          removeRuleButton.setAttribute('data-role', 'remove-rule');
+          removeRuleButton.textContent = '刪除此 admin';
+          inlineActions.appendChild(targetInput);
+          inlineActions.appendChild(addTargetButton);
+          inlineActions.appendChild(removeRuleButton);
+          targetsWrapper.appendChild(targetContainer);
+          targetsWrapper.appendChild(inlineActions);
+          card.appendChild(targetsWrapper);
+
+          adminInput.addEventListener('input', (event) => {
+            state.specialAdmins[index].admin_id = event.target.value;
+            refreshDirtyState();
+          });
+          renderTags(targetContainer, item.targets || [], (value) => () => {
+            state.specialAdmins[index].targets = (state.specialAdmins[index].targets || []).filter((target) => target !== value);
+            renderSpecialRules();
+            refreshDirtyState();
+          });
+          addTargetButton.addEventListener('click', () => {
+            const value = String(targetInput.value || '').trim();
+            if (!value) return;
+            state.specialAdmins[index].targets = Array.from(new Set([...(state.specialAdmins[index].targets || []), value]));
+            targetInput.value = '';
+            renderSpecialRules();
+            refreshDirtyState();
+          });
+          removeRuleButton.addEventListener('click', () => {
+            state.specialAdmins = state.specialAdmins.filter((_, rowIndex) => rowIndex !== index);
+            renderSpecialRules();
+            refreshDirtyState();
+          });
+          specialRulesList.appendChild(card);
+        });
+      }
+
+      function renderAdminOptions(adminOptions) {
+        adminIdOptions.innerHTML = '';
+        for (const option of adminOptions || []) {
+          const item = document.createElement('option');
+          item.value = option.user_id;
+          adminIdOptions.appendChild(item);
+        }
+      }
+
+      function renderLocationRows() {
+        locationRows.innerHTML = '';
+        state.locationRows.forEach((item, index) => {
+          const card = document.createElement('div');
+          card.className = 'mini-card';
+          const rowLabel = document.createElement('label');
+          rowLabel.appendChild(document.createTextNode('Row'));
+          const rowInput = document.createElement('input');
+          rowInput.setAttribute('data-role', 'row-name');
+          rowInput.value = item.row || '';
+          rowLabel.appendChild(rowInput);
+          card.appendChild(rowLabel);
+
+          const columnsWrapper = document.createElement('div');
+          const columnContainer = document.createElement('div');
+          columnContainer.className = 'tag-list';
+          columnContainer.setAttribute('data-role', 'columns');
+          const inlineActions = document.createElement('div');
+          inlineActions.className = 'inline-actions';
+          const columnInput = document.createElement('input');
+          columnInput.setAttribute('data-role', 'column-input');
+          columnInput.placeholder = '新增欄位';
+          const addColumnButton = document.createElement('button');
+          addColumnButton.type = 'button';
+          addColumnButton.className = 'add-button';
+          addColumnButton.setAttribute('data-role', 'add-column');
+          addColumnButton.textContent = '加入欄位';
+          const removeRowButton = document.createElement('button');
+          removeRowButton.type = 'button';
+          removeRowButton.className = 'danger';
+          removeRowButton.setAttribute('data-role', 'remove-row');
+          removeRowButton.textContent = '刪除此 row';
+          inlineActions.appendChild(columnInput);
+          inlineActions.appendChild(addColumnButton);
+          inlineActions.appendChild(removeRowButton);
+          columnsWrapper.appendChild(columnContainer);
+          columnsWrapper.appendChild(inlineActions);
+          card.appendChild(columnsWrapper);
+
+          rowInput.addEventListener('input', (event) => {
+            state.locationRows[index].row = event.target.value;
+            refreshDirtyState();
+          });
+          renderTags(columnContainer, item.columns || [], (value) => () => {
+            state.locationRows[index].columns = (state.locationRows[index].columns || []).filter((column) => column !== value);
+            renderLocationRows();
+            refreshDirtyState();
+          });
+          addColumnButton.addEventListener('click', () => {
+            const value = String(columnInput.value || '').trim();
+            if (!value) return;
+            state.locationRows[index].columns = Array.from(new Set([...(state.locationRows[index].columns || []), value]));
+            columnInput.value = '';
+            renderLocationRows();
+            refreshDirtyState();
+          });
+          removeRowButton.addEventListener('click', () => {
+            state.locationRows = state.locationRows.filter((_, rowIndex) => rowIndex !== index);
+            renderLocationRows();
+            refreshDirtyState();
+          });
+          locationRows.appendChild(card);
+        });
+      }
+
+      function setCheckbox(id, value) {
+        document.getElementById(id).checked = !!value;
+      }
+
+      function setInput(id, value) {
+        document.getElementById(id).value = value ?? '';
+      }
+
+      function setMode(mode) {
+        const isRaw = mode === 'raw';
+        visualForm.hidden = isRaw;
+        rawForm.hidden = !isRaw;
+        modeVisualButton.classList.toggle('active', !isRaw);
+        modeRawButton.classList.toggle('active', isRaw);
+      }
+
+      function setTheme(theme) {
+        const nextTheme = theme === 'dark' ? 'dark' : 'light';
+        document.body.dataset.theme = nextTheme;
+        themeLightButton.classList.toggle('active', nextTheme === 'light');
+        themeDarkButton.classList.toggle('active', nextTheme === 'dark');
+        try {
+          localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+        } catch (error) {
+        }
+      }
+
+      function loadTheme() {
+        let storedTheme = '';
+        try {
+          storedTheme = localStorage.getItem(THEME_STORAGE_KEY) || '';
+        } catch (error) {
+        }
+        setTheme(storedTheme === 'dark' ? 'dark' : 'light');
+      }
+
+      function populateForm(config, meta) {
+        state.config = config;
+        state.meta = meta;
+        state.specialAdmins = objectToAdminList(config.queue.special_serve_rules.admins);
+        state.locationRows = objectToLocationRows(config.registration.location_options);
+        renderAdminOptions(meta.adminOptions || []);
+
+        setInput('server-host', config.server.host);
+        setInput('server-port', config.server.port);
+        setCheckbox('server-debug', config.server.debug);
+        setInput('queue-max-capacity', config.queue.max_capacity);
+        setCheckbox('special-enabled', config.queue.special_serve_rules.enabled);
+        setInput('special-match-field', config.queue.special_serve_rules.match_field);
+        setInput('special-skip-message', config.queue.special_serve_rules.skip_message);
+        setInput('special-no-next-reply', config.queue.special_serve_rules.no_next_reply);
+        setCheckbox('vip-enabled', config.vip.enabled);
+        setInput('vip-coffee-price', config.vip.coffee_price);
+        setInput('logging-level', config.logging.level);
+        setInput('logging-log-file', config.logging.log_file);
+        setInput('logging-max-size-mb', config.logging.max_size_mb);
+        setInput('logging-backup-count', config.logging.backup_count);
+        setCheckbox('web-ui-protect-read-routes', config.web_ui.protect_read_routes);
+        setCheckbox('web-ui-allow-query-token', config.web_ui.allow_query_token);
+        setInput('web-ui-session-cookie-name', config.web_ui.session_cookie_name);
+        setCheckbox('line-bot-push-on-served', config.line_bot.push_on_served);
+
+        renderSpecialRules();
+        renderLocationRows();
+        refreshDirtyState();
+      }
+
+      function populateRawEditor(rawYaml) {
+        document.getElementById('raw-yaml-editor').value = rawYaml || '';
+        refreshDirtyState();
+      }
+
+      function parseOptionalNumber(id) {
+        const raw = document.getElementById(id).value.trim();
+        if (!raw) return null;
+        return Number(raw);
+      }
+
+      function collectPayload() {
+        return {
+          server: {
+            host: document.getElementById('server-host').value,
+            port: Number(document.getElementById('server-port').value),
+            debug: document.getElementById('server-debug').checked,
+          },
+          queue: {
+            max_capacity: parseOptionalNumber('queue-max-capacity'),
+            special_serve_rules: {
+              enabled: document.getElementById('special-enabled').checked,
+              match_field: document.getElementById('special-match-field').value,
+              skip_message: document.getElementById('special-skip-message').value,
+              no_next_reply: document.getElementById('special-no-next-reply').value,
+              admins: state.specialAdmins.map((item) => ({ admin_id: item.admin_id, targets: item.targets || [] })),
+            },
+          },
+          vip: {
+            enabled: document.getElementById('vip-enabled').checked,
+            coffee_price: Number(document.getElementById('vip-coffee-price').value),
+          },
+          registration: {
+            location_options: state.locationRows.map((item) => ({ row: item.row, columns: item.columns || [] })),
+          },
+          logging: {
+            level: document.getElementById('logging-level').value,
+            log_file: document.getElementById('logging-log-file').value,
+            max_size_mb: Number(document.getElementById('logging-max-size-mb').value),
+            backup_count: Number(document.getElementById('logging-backup-count').value),
+          },
+          web_ui: {
+            protect_read_routes: document.getElementById('web-ui-protect-read-routes').checked,
+            allow_query_token: document.getElementById('web-ui-allow-query-token').checked,
+            session_cookie_name: document.getElementById('web-ui-session-cookie-name').value,
+          },
+          line_bot: {
+            push_on_served: document.getElementById('line-bot-push-on-served').checked,
+          },
+        };
+      }
+
+      function getVisualSnapshot() {
+        return stableStringify(collectPayload());
+      }
+
+      function getRawSnapshot() {
+        return String(document.getElementById('raw-yaml-editor').value || '');
+      }
+
+      function hasUnsavedChanges() {
+        if (!state.isLoaded) return false;
+        return getVisualSnapshot() !== (state.lastSavedVisualSnapshot || '') || getRawSnapshot() !== (state.lastSavedRawSnapshot || '');
+      }
+
+      function refreshDirtyState() {
+        document.body.dataset.dirty = hasUnsavedChanges() ? 'true' : 'false';
+      }
+
+      function markSavedState() {
+        state.lastSavedVisualSnapshot = getVisualSnapshot();
+        state.lastSavedRawSnapshot = getRawSnapshot();
+        state.isLoaded = true;
+        refreshDirtyState();
+      }
+
+      function confirmDiscardChanges(message = UNSAVED_CHANGES_MESSAGE) {
+        if (!hasUnsavedChanges()) return true;
+        return window.confirm(message);
+      }
+
+      async function loadSettings() {
+        clearError();
+        const response = await fetch(withAuthUrl('/settings/data'), withAuthHeaders());
+        if (!response.ok) {
+          showError('載入設定失敗');
+          return;
+        }
+        const payload = await response.json();
+        populateForm(payload.config, payload.meta);
+        populateRawEditor(payload.rawYaml);
+        markSavedState();
+      }
+
+      modeVisualButton.addEventListener('click', () => setMode('visual'));
+      modeRawButton.addEventListener('click', () => setMode('raw'));
+      themeLightButton.addEventListener('click', () => setTheme('light'));
+      themeDarkButton.addEventListener('click', () => setTheme('dark'));
+
+      document.getElementById('add-special-rule').addEventListener('click', () => {
+        state.specialAdmins = [...state.specialAdmins, { admin_id: '', targets: [] }];
+        renderSpecialRules();
+        refreshDirtyState();
+      });
+
+      document.getElementById('add-location-row').addEventListener('click', () => {
+        state.locationRows = [...state.locationRows, { row: '', columns: [] }];
+        renderLocationRows();
+        refreshDirtyState();
+      });
+
+      document.getElementById('reload-settings').addEventListener('click', () => {
+        if (!confirmDiscardChanges('重新載入會捨棄尚未儲存的修改，確定要繼續嗎？')) return;
+        loadSettings();
+      });
+
+      document.getElementById('reload-raw-settings').addEventListener('click', () => {
+        if (!confirmDiscardChanges('重新載入會捨棄尚未儲存的修改，確定要繼續嗎？')) return;
+        loadSettings();
+      });
+
+      visualForm.addEventListener('input', refreshDirtyState);
+      visualForm.addEventListener('change', refreshDirtyState);
+      rawForm.addEventListener('input', refreshDirtyState);
+      rawForm.addEventListener('change', refreshDirtyState);
+
+      window.addEventListener('beforeunload', (event) => {
+        if (!hasUnsavedChanges()) return;
+        event.preventDefault();
+        event.returnValue = '';
+      });
+
+      document.querySelectorAll('.topbar a').forEach((link) => {
+        link.addEventListener('click', (event) => {
+          if (confirmDiscardChanges()) return;
+          event.preventDefault();
+        });
+      });
+
+      document.getElementById('settings-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        clearError();
+        const response = await fetch(
+          withAuthUrl('/settings'),
+          withAuthHeaders({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(collectPayload()),
+          }),
+        );
+        const payload = await response.json();
+        if (!response.ok) {
+          showError(payload.detail || '儲存失敗');
+          return;
+        }
+        populateForm(payload.config, payload.meta);
+        populateRawEditor(payload.rawYaml);
+        markSavedState();
+        showToast('設定已儲存');
+      });
+
+      document.getElementById('raw-editor-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        clearError();
+        const response = await fetch(
+          withAuthUrl('/settings/raw'),
+          withAuthHeaders({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rawYaml: document.getElementById('raw-yaml-editor').value }),
+          }),
+        );
+        const payload = await response.json();
+        if (!response.ok) {
+          showError(payload.detail || '儲存失敗');
+          return;
+        }
+        populateForm(payload.config, payload.meta);
+        populateRawEditor(payload.rawYaml);
+        markSavedState();
+        showToast('原文設定已儲存');
+      });
+
+      restartButton.addEventListener('click', async () => {
+        if (!confirmDiscardChanges('重新啟動前還有未儲存的修改。若現在重啟，這些變更會遺失。確定要繼續嗎？')) return;
+        if (!window.confirm('確定要重新啟動容器嗎？')) return;
+        clearError();
+        const response = await fetch(
+          withAuthUrl('/settings/restart'),
+          withAuthHeaders({ method: 'POST' }),
+        );
+        const payload = await response.json();
+        if (!response.ok) {
+          showError(payload.detail || '重新啟動失敗');
+          return;
+        }
+        showToast('已送出重新啟動要求');
+      });
+
+      loadTheme();
+      loadSettings();
+    </script>
+  </body>
+</html>

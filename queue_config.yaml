@@ -4,12 +4,9 @@ server:
   debug: false
 queue:
   max_capacity: 50
-  timeout_minutes: 30
-  timeout_action: remove
 vip:
   enabled: true
   coffee_price: 60
-  coffee_url: https://buymeacoffee.com/yourname
 registration:
   location_options:
     '1':

@@ -115,9 +115,9 @@ def test_dashboard_read_routes_require_token_when_protection_enabled(tmp_path):
     layout = client.get("/dashboard/layout")
 
     assert page.status_code in {302, 303}
-    assert page.headers["location"] == "/dashboard/login"
+    assert page.headers["location"] == "/dashboard/login?next=/dashboard"
     assert config_page.status_code in {302, 303}
-    assert config_page.headers["location"] == "/dashboard/login"
+    assert config_page.headers["location"] == "/dashboard/login?next=/dashboard/config"
     assert data.status_code == 401
     assert layout.status_code == 401
 
@@ -143,7 +143,7 @@ def test_query_token_is_rejected_when_disabled(tmp_path):
     response = client.get(f"/dashboard?token={ADMIN_TOKEN}", follow_redirects=False)
 
     assert response.status_code in {302, 303}
-    assert response.headers["location"] == "/dashboard/login"
+    assert response.headers["location"] == f"/dashboard/login?next=/dashboard%3Ftoken={ADMIN_TOKEN}"
 
 
 def test_query_token_is_accepted_when_enabled(tmp_path):
@@ -182,6 +182,16 @@ def test_dashboard_login_page_renders_form(tmp_path):
     assert "<form" in response.text.lower()
 
 
+def test_dashboard_login_page_preserves_next_path(tmp_path):
+    client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
+
+    response = client.get("/dashboard/login?next=/settings")
+
+    assert response.status_code == 200
+    assert 'name="next"' in response.text
+    assert 'value="/settings"' in response.text
+
+
 def test_dashboard_login_sets_session_cookie_and_redirects(tmp_path):
     client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
 
@@ -201,6 +211,19 @@ def test_dashboard_login_sets_session_cookie_and_redirects(tmp_path):
     assert cookie_value != ADMIN_TOKEN
 
 
+def test_dashboard_login_redirects_to_requested_dashboard_path(tmp_path):
+    client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
+
+    response = client.post(
+        "/dashboard/login",
+        data={"token": ADMIN_TOKEN, "next": "/settings"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code in {302, 303}
+    assert response.headers["location"] == "/settings"
+
+
 def test_tampered_dashboard_session_cookie_is_rejected(tmp_path):
     client = _configure_web_ui_auth(tmp_path, protect_read_routes=True)
     cookie_name = main.config["web_ui"]["session_cookie_name"]
@@ -209,7 +232,7 @@ def test_tampered_dashboard_session_cookie_is_rejected(tmp_path):
     data = client.get("/dashboard/data", cookies={cookie_name: "tampered-cookie"})
 
     assert page.status_code in {302, 303}
-    assert page.headers["location"] == "/dashboard/login"
+    assert page.headers["location"] == "/dashboard/login?next=/dashboard"
     assert data.status_code == 401
 
 
@@ -218,7 +241,27 @@ def test_dashboard_login_rejects_wrong_token(tmp_path):
 
     response = client.post("/dashboard/login", data={"token": "wrong-token"})
 
-    assert response.status_code == 401
+    assert response.status_code == 200
+    assert "登入失敗" in response.text
+    assert "<form" in response.text.lower()
+
+
+def test_unknown_get_route_redirects_to_dashboard(tmp_path):
+    client = _configure_web_ui_auth(tmp_path, protect_read_routes=False)
+
+    response = client.get("/not-found-page", follow_redirects=False)
+
+    assert response.status_code in {302, 303, 307}
+    assert response.headers["location"] == "/dashboard"
+
+
+def test_root_redirects_to_dashboard(tmp_path):
+    client = _configure_web_ui_auth(tmp_path, protect_read_routes=False)
+
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code in {302, 303, 307}
+    assert response.headers["location"] == "/dashboard"
 
 
 def test_dashboard_cookie_session_can_access_protected_read_routes(tmp_path):

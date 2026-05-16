@@ -91,7 +91,7 @@ class QueueManager:
 
         if queue_type == "regular":
             max_cap = self.db.get_queue_max_capacity()
-            if len(self.db.get_regular_queue()) > max_cap:
+            if max_cap is not None and len(self.db.get_regular_queue()) > max_cap:
                 self.db.cancel_queue(valid_id)
                 return {"status": "error", "message": "隊列已滿，請稍後再試。"}
 
@@ -576,11 +576,11 @@ class QueueManager:
         """讀取目前是否允許新使用者加入隊列。"""
         return self.db.is_queue_enabled()
 
-    def set_max_capacity(self, n: int) -> dict:
+    def set_max_capacity(self, n: int | None) -> dict:
         """設定一般隊列人數上限。"""
-        self.db.set_config("queue_max_capacity", str(n))
+        self.db.set_config("queue_max_capacity", "" if n is None else str(n))
         return {"status": "ok", "max_capacity": n}
 
-    def get_max_capacity(self) -> int:
+    def get_max_capacity(self) -> int | None:
         """讀取一般隊列人數上限。"""
         return self.db.get_queue_max_capacity()

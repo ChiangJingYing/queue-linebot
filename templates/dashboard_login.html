@@ -11,13 +11,16 @@
           input { background:#020617; color:#e2e8f0; }
           button { background:#2563eb; color:white; border:none; font-weight:700; cursor:pointer; }
           p { color:#94a3b8; }
+          .error { color:#fecaca; background:#7f1d1d; border:1px solid #b91c1c; padding:10px 12px; border-radius:10px; }
         </style>
       </head>
       <body>
         <div class="card">
           <h1>Dashboard Login</h1>
           <p>Enter admin token to continue.</p>
+          {error_message_block}
           <form method="post" action="/dashboard/login">
+            <input name="next" type="hidden" value="{next_path}" />
             <label for="token">Admin Token</label>
             <input id="token" name="token" type="password" autocomplete="current-password" />
             <button type="submit">Login</button>

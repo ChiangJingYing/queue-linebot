@@ -10,20 +10,26 @@ import hmac
 import json
 import logging
 import mimetypes
+import os
+import signal
+import threading
 import urllib.error
 import urllib.request
+from html import escape
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 from contextlib import asynccontextmanager
 from hmac import compare_digest
 from typing import AsyncGenerator
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.exceptions import StarletteHTTPException
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from bot.handler import LineBotHandler
-from config import load_config
+from config import _resolve_config_path, load_config
 from core.database import DatabaseManager
 from core.queue_manager import QueueManager
 from core.time_utils import TAIPEI_TZ, format_display_time, parse_timestamp
@@ -32,11 +38,19 @@ from services.telegram_commands import TelegramCommandService
 from services.discord_commands import DiscordCommandService
 from services.vip_service import VipService
 from services.dashboard_announcement import DashboardAnnouncementService, GoogleCloudTTSService
+from services.web_ui_settings import (
+    HOT_RELOADABLE_SECTIONS,
+    ConfigValidationError,
+    QueueConfigStore,
+    editable_config_defaults,
+    normalize_editable_config,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-config = load_config()
+CONFIG_FILE_PATH = _resolve_config_path()
+config = load_config(str(CONFIG_FILE_PATH))
 line_bot_config = config.get("line_bot", {})
 telegram_bot_config = config.get("telegram_bot", {})
 discord_bot_config = config.get("discord_bot", {})
@@ -63,8 +77,24 @@ def _read_template(name: str) -> str:
     return (TEMPLATES_DIR / name).read_text(encoding="utf-8")
 
 
-def _render_dashboard_login_page() -> str:
-    return _read_template("dashboard_login.html")
+def _render_dashboard_login_page(*, error_message: str = "", next_path: str = "/dashboard") -> str:
+    template = _read_template("dashboard_login.html")
+    return (
+        template
+        .replace("{error_message_block}", error_message)
+        .replace("{next_path}", escape(next_path, quote=True))
+    )
+
+
+def _normalize_dashboard_next_path(next_path: str | None) -> str:
+    candidate = str(next_path or "").strip()
+    if candidate.startswith("//"):
+        return "/dashboard"
+    if candidate.startswith("/dashboard") or candidate.startswith("/settings"):
+        return candidate
+    if candidate in {"/", ""}:
+        return "/dashboard"
+    return "/dashboard"
 
 
 def _render_dashboard_config_page(*, layout: dict, all_locations: list[str], auth_bootstrap: str) -> str:
@@ -78,6 +108,11 @@ def _render_dashboard_config_page(*, layout: dict, all_locations: list[str], aut
     for needle, value in replacements.items():
         template = template.replace(needle, value)
     return template
+
+
+def _render_dashboard_settings_page(*, auth_bootstrap: str) -> str:
+    template = _read_template("dashboard_settings.html")
+    return template.replace("{auth_bootstrap}", auth_bootstrap)
 
 
 def _render_dashboard_page(*, payload: dict, layout: dict, auth_bootstrap: str, markers_html: str) -> str:
@@ -176,7 +211,10 @@ def _require_web_ui_auth(request: Request, *, protect_reads: bool = True, html_r
     if _is_valid_web_ui_token(request):
         return
     if html_redirect:
-        raise HTTPException(status_code=303, detail="Redirect", headers={"Location": "/dashboard/login"})
+        next_path = quote(str(request.url.path or "/dashboard"), safe="/")
+        if request.url.query:
+            next_path = f"{next_path}%3F{quote(str(request.url.query), safe='=&')}"
+        raise HTTPException(status_code=303, detail="Redirect", headers={"Location": f"/dashboard/login?next={next_path}"})
     raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -213,6 +251,132 @@ def _web_ui_bootstrap_script(request: Request) -> str:
         "            return next.toString();\n"
         "          }\n"
     )
+
+
+def _config_store() -> QueueConfigStore:
+    return QueueConfigStore(CONFIG_FILE_PATH)
+
+
+def _server_bind_config() -> tuple[str, int]:
+    server_config = config.get("server", {}) if isinstance(config.get("server"), dict) else {}
+    host = str(server_config.get("host") or "0.0.0.0").strip() or "0.0.0.0"
+    try:
+        port = int(server_config.get("port") or 8000)
+    except (TypeError, ValueError):
+        port = 8000
+    if port < 1 or port > 65535:
+        port = 8000
+    return host, port
+
+
+def _editable_settings_payload() -> dict:
+    store = _config_store()
+    return {
+        "config": store.load_editable(),
+        "rawYaml": store.load_text(),
+        "defaults": editable_config_defaults(),
+        "meta": {
+            "configPath": os.fspath(CONFIG_FILE_PATH),
+            "hotReloadableSections": HOT_RELOADABLE_SECTIONS,
+            "adminOptions": db_manager.get_all_admins() if db_manager is not None else [],
+        },
+    }
+
+
+def _schedule_process_restart(*, delay_seconds: float = 0.25) -> None:
+    def _restart_process() -> None:
+        logger.warning("Settings UI requested process restart via SIGTERM")
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    timer = threading.Timer(delay_seconds, _restart_process)
+    timer.daemon = True
+    timer.start()
+
+
+def _runtime_location_options() -> dict[str, list[str]]:
+    current_config = config.get("registration", {})
+    if isinstance(current_config, dict) and isinstance(current_config.get("location_options"), dict):
+        return current_config["location_options"]
+    return {"A": ["1", "2"], "B": ["1", "2"]}
+
+
+def _runtime_queue_config() -> dict:
+    current_queue_config = config.get("queue", {})
+    queue_settings = dict(current_queue_config) if isinstance(current_queue_config, dict) else {}
+    raw_queue = _config_store().load_raw().get("queue")
+    if isinstance(raw_queue, dict):
+        for key in ("max_capacity", "timeout_minutes", "timeout_action"):
+            if key not in raw_queue:
+                queue_settings[key] = None
+    return queue_settings
+
+
+def _runtime_line_bot_config() -> dict:
+    current_line_bot_config = config.get("line_bot", {})
+    return current_line_bot_config if isinstance(current_line_bot_config, dict) else {}
+
+
+def _apply_runtime_config(next_config: dict) -> None:
+    global config, line_bot_config, queue_config, LOCATION_OPTIONS, notifier, line_handler, telegram_command_service, discord_command_service
+
+    config = next_config
+    line_bot_config = _runtime_line_bot_config()
+    queue_config = _runtime_queue_config()
+    LOCATION_OPTIONS = _runtime_location_options()
+
+    if db_manager is None:
+        return
+
+    if queue_manager is not None:
+        queue_manager.set_max_capacity(queue_config.get("max_capacity"))
+        timeout_minutes = queue_config.get("timeout_minutes")
+        db_manager.set_config("queue_timeout_minutes", "" if timeout_minutes is None else str(int(timeout_minutes)))
+        db_manager.set_config("vip_enabled", "true" if bool(config.get("vip", {}).get("enabled", True)) else "false")
+        db_manager.set_config("coffee_price", str(int(config.get("vip", {}).get("coffee_price", 60))))
+
+    notifier = Notifier(
+        CHANNEL_SECRET,
+        CHANNEL_ACCESS_TOKEN,
+        ADMIN_RICH_MENU_PAGE2_ID,
+        discord_sender=_send_discord_text,
+        telegram_sender=_send_telegram_text,
+        db=db_manager,
+        line_push_on_served=bool(line_bot_config.get("push_on_served", True)),
+    )
+
+    if queue_manager is not None:
+        queue_manager.notifier = notifier
+
+    if queue_manager is not None and vip_service is not None:
+        line_handler = LineBotHandler(
+            channel_secret=CHANNEL_SECRET,
+            channel_access_token=CHANNEL_ACCESS_TOKEN,
+            queue_manager=queue_manager,
+            vip_service=vip_service,
+            admin_ids=ADMIN_IDS,
+            admin_rich_menu_id=ADMIN_RICH_MENU_ID,
+            admin_rich_menu_page2_id=ADMIN_RICH_MENU_PAGE2_ID,
+            user_rich_menu_id=USER_RICH_MENU_ID,
+            location_options=LOCATION_OPTIONS,
+            announcement_service=dashboard_announcement_service,
+            new_order_idle_seconds=int(config.get("tts", {}).get("new_order_idle_seconds", 300)),
+            new_order_announcement_text=str(config.get("tts", {}).get("new_order_announcement_text", "您有新訂單")),
+            telegram_sender=_send_telegram_text,
+            special_serve_rules=queue_config.get("special_serve_rules"),
+        )
+        telegram_command_service = TelegramCommandService(
+            db=db_manager,
+            queue_manager=queue_manager,
+            telegram_sender=_send_telegram_text,
+            location_options=LOCATION_OPTIONS,
+            announcement_service=dashboard_announcement_service,
+            special_serve_rules=queue_config.get("special_serve_rules"),
+        )
+        discord_command_service = DiscordCommandService(
+            db=db_manager,
+            location_options=LOCATION_OPTIONS,
+            telegram_sender=_send_telegram_text,
+        )
 
 
 db_manager: DatabaseManager | None = None
@@ -337,6 +501,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         location_options=LOCATION_OPTIONS,
         telegram_sender=_send_telegram_text,
     )
+    _apply_runtime_config(config)
 
     scheduler = BackgroundScheduler()
     scheduler.start()
@@ -354,9 +519,16 @@ app = FastAPI(
 )
 
 
+@app.exception_handler(404)
+def not_found_redirect_handler(request: Request, exc: StarletteHTTPException):
+    if request.method in {"GET", "HEAD"}:
+        return RedirectResponse(url="/dashboard", status_code=307)
+    return HTMLResponse(content="Not Found", status_code=404)
+
+
 @app.get("/")
 def health_check():
-    return {"status": "ok", "system": "queue-linebot"}
+    return RedirectResponse(url="/dashboard", status_code=307)
 
 
 @app.get("/health")
@@ -647,17 +819,25 @@ def dashboard_audio_asset(filename: str, request: Request):
 
 
 @app.get("/dashboard/login", response_class=HTMLResponse)
-def dashboard_login_page() -> str:
-    return _render_dashboard_login_page()
+def dashboard_login_page(request: Request) -> str:
+    next_path = _normalize_dashboard_next_path(request.query_params.get("next"))
+    return _render_dashboard_login_page(next_path=next_path)
 
 
 @app.post("/dashboard/login")
-def dashboard_login(token: str = Form(...)):
+def dashboard_login(token: str = Form(...), next_path: str = Form("/dashboard", alias="next")):
     configured_token = _configured_web_ui_token()
+    redirect_target = _normalize_dashboard_next_path(next_path)
     if not configured_token or not compare_digest(configured_token, token.strip()):
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        return HTMLResponse(
+            content=_render_dashboard_login_page(
+                error_message='<p class="error">登入失敗，請確認 admin token。</p>',
+                next_path=redirect_target,
+            ),
+            status_code=200,
+        )
 
-    response = RedirectResponse(url="/dashboard", status_code=303)
+    response = RedirectResponse(url=redirect_target, status_code=303)
     response.set_cookie(
         key=_session_cookie_name(),
         value=_sign_web_ui_session(configured_token),
@@ -672,6 +852,76 @@ def dashboard_logout():
     response = RedirectResponse(url="/dashboard/login", status_code=303)
     response.delete_cookie(_session_cookie_name())
     return response
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def dashboard_settings_page(request: Request) -> str:
+    _require_web_ui_auth(request, protect_reads=True, html_redirect=True)
+    return _render_dashboard_settings_page(auth_bootstrap=_web_ui_bootstrap_script(request))
+
+
+@app.get("/settings/data")
+def dashboard_settings_data(request: Request) -> dict:
+    _require_web_ui_auth(request, protect_reads=True)
+    return _editable_settings_payload()
+
+
+@app.post("/settings")
+def save_dashboard_settings(request: Request, payload: dict) -> dict:
+    _require_web_ui_auth(request)
+    try:
+        normalized = normalize_editable_config(payload)
+    except ConfigValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    saved = _config_store().save_editable(normalized)
+    next_config = load_config(str(CONFIG_FILE_PATH))
+    _apply_runtime_config(next_config)
+    return {
+        "status": "saved",
+        "config": saved["config"],
+        "rawYaml": saved["rawYaml"],
+        "defaults": editable_config_defaults(),
+        "meta": {
+            "configPath": os.fspath(CONFIG_FILE_PATH),
+            "hotReloadableSections": HOT_RELOADABLE_SECTIONS,
+            "adminOptions": db_manager.get_all_admins() if db_manager is not None else [],
+        },
+    }
+
+
+@app.post("/settings/raw")
+def save_dashboard_settings_raw(request: Request, payload: dict) -> dict:
+    _require_web_ui_auth(request)
+    raw_yaml = str(payload.get("rawYaml") or "")
+    try:
+        saved = _config_store().save_raw_text(raw_yaml)
+    except ConfigValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    next_config = load_config(str(CONFIG_FILE_PATH))
+    _apply_runtime_config(next_config)
+    return {
+        "status": "saved",
+        "config": saved["config"],
+        "rawYaml": saved["rawYaml"],
+        "defaults": editable_config_defaults(),
+        "meta": {
+            "configPath": os.fspath(CONFIG_FILE_PATH),
+            "hotReloadableSections": HOT_RELOADABLE_SECTIONS,
+            "adminOptions": db_manager.get_all_admins() if db_manager is not None else [],
+        },
+    }
+
+
+@app.post("/settings/restart")
+def restart_settings_runtime(request: Request) -> dict:
+    _require_web_ui_auth(request)
+    _schedule_process_restart()
+    return {
+        "status": "restarting",
+        "message": "Restart requested. The container should come back automatically if restart policy is enabled.",
+    }
 
 
 @app.get("/dashboard/config", response_class=HTMLResponse)
@@ -1264,4 +1514,5 @@ def _send_replies(reply_actions: list) -> int:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    host, port = _server_bind_config()
+    uvicorn.run(app, host=host, port=port)

@@ -60,9 +60,12 @@
 ### Web / Dashboard 功能
 
 - Dashboard 狀態頁
-- Dashboard 設定頁
+- `/settings` 系統設定頁
+- 系統設定頁支援可視化編輯 / 原文 YAML 編輯切換
+- 系統設定頁在有未儲存修改時會提示離頁警告
 - 圖片配置與座位版面儲存
 - 語音播報下一位與新訂單提示
+- 系統設定頁可送出容器重啟要求
 - Web UI token / session 驗證
 
 ### 平台支援
@@ -442,6 +445,12 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 - `env_file: .env`
 - 對外 port：`8000:8000`
 
+注意：
+
+- `config/queue_config.yaml` 的 `server.port` 只會影響應用程式在容器內監聽的 port。
+- 如果你是用 Docker Compose 部署，瀏覽器實際連到的對外 port 仍由 `docker-compose.yml` 的 `ports:` 決定。
+- 因此像 `8000:8000` 這種 mapping 下，就算在 `/settings` 把 `server.port` 改成 `8001`，單純重啟容器也不會把宿主機對外 port 自動改成 `8001`；你還需要修改 compose 為例如 `8001:8001`，再重新建立容器。
+
 掛載內容包含：
 - `./queue.db:/app/queue.db`
 - `./config/queue_config.yaml:/app/config/queue_config.yaml`
@@ -462,6 +471,12 @@ docker compose logs -f queue-linebot
 ```
 
 如果改到 Discord / Telegram webhook 流程，建議一定要搭配 log 一起看。
+
+### 關於 `/settings` 的重啟按鈕
+
+系統設定頁提供「重新啟動容器」按鈕，會呼叫後端 API 讓應用程式主動對自己送出 `SIGTERM`。在 Docker Compose 部署下，若 service 有設定 restart policy（例如目前的 `restart: unless-stopped`），容器就會自動重新啟動。
+
+若你把這份專案搬到其他容器平台，也要確認該平台的 restart policy / self-healing 行為已開啟，否則按下重啟後容器可能只會停住，不會自己回來。
 
 ---
 
@@ -575,13 +590,10 @@ server:
 
 queue:
   max_capacity: 50
-  timeout_minutes: 30
-  timeout_action: remove
 
 vip:
   enabled: true
   coffee_price: 60
-  coffee_url: https://buymeacoffee.com/yourname
 
 registration:
   location_options:
@@ -593,6 +605,16 @@ web_ui:
   allow_query_token: false
   session_cookie_name: queue_admin_session
 ```
+
+補充說明：
+
+- `queue.timeout_minutes` / `queue.timeout_action` 目前已不再使用，timeout 自動處理流程已移除。
+- `/coffee` 目前仍使用程式內硬編碼的 Buy Me a Coffee 連結，尚未從 `queue_config.yaml` 讀取 URL。
+- Web 設定頁目前路由為 `/settings`，不是 `/dashboard/settings`。
+- `/settings` 支援兩種編輯模式：
+  - 可視化編輯：適合一般日常修改
+  - 原文編輯：直接修改 `config/queue_config.yaml`
+- 標示為「立即生效」的欄位在儲存後會直接同步到執行中程序；標示為「重啟後生效」的欄位需在儲存後手動重啟容器。
 
 ### YAML 注意事項
 
@@ -796,6 +818,21 @@ Telegram admin 可用：
 ---
 
 ## Dashboard 與語音播報
+
+### Web UI 路由
+
+- `/`：導向 `/dashboard`
+- `/dashboard`：Dashboard 主畫面
+- `/dashboard/config`：Dashboard 版面配置頁
+- `/settings`：系統設定頁
+- `/dashboard/login`：後台登入頁
+
+`/settings` 頁面支援：
+
+- 可視化編輯與原文 YAML 編輯切換
+- 未儲存修改離頁警示
+- 重啟後生效設定的容器重啟按鈕
+- `config/queue_config.yaml` 的可視化編輯與原文回寫
 
 當管理員執行：
 

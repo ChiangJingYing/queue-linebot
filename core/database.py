@@ -219,15 +219,15 @@ class DatabaseManager:
             )
             conn.commit()
 
-    def get_queue_max_capacity(self) -> int:
+    def get_queue_max_capacity(self) -> int | None:
         """Get queue max capacity from config."""
         val = self.get_config("queue_max_capacity")
-        return int(val) if val else 50
+        return int(val) if val else None
 
-    def get_queue_timeout_minutes(self) -> int:
+    def get_queue_timeout_minutes(self) -> int | None:
         """Get timeout minutes from config."""
         val = self.get_config("queue_timeout_minutes")
-        return int(val) if val else 30
+        return int(val) if val else None
 
     def is_queue_enabled(self) -> bool:
         """Check if queue joining is enabled."""

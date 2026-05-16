@@ -29,7 +29,7 @@ def test_dashboard_login_to_logout_smoke_flow(tmp_path):
 
     unauth_dashboard = client.get("/dashboard", follow_redirects=False)
     assert unauth_dashboard.status_code in {302, 303}
-    assert unauth_dashboard.headers["location"] == "/dashboard/login"
+    assert unauth_dashboard.headers["location"] == "/dashboard/login?next=/dashboard"
 
     login = client.post("/dashboard/login", data={"token": ADMIN_TOKEN}, follow_redirects=False)
     assert login.status_code in {302, 303}
@@ -62,5 +62,5 @@ def test_dashboard_login_to_logout_smoke_flow(tmp_path):
     after_logout_dashboard = client.get("/dashboard", follow_redirects=False)
     after_logout_data = client.get("/dashboard/data")
     assert after_logout_dashboard.status_code in {302, 303}
-    assert after_logout_dashboard.headers["location"] == "/dashboard/login"
+    assert after_logout_dashboard.headers["location"] == "/dashboard/login?next=/dashboard"
     assert after_logout_data.status_code == 401

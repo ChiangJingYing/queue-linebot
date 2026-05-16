@@ -52,6 +52,13 @@ def load_config(path: str | None = None) -> dict:
         merged.setdefault("registration", {})
         merged["registration"]["location_options"] = registration["location_options"]
 
+    queue = loaded.get("queue") if isinstance(loaded.get("queue"), dict) else None
+    if queue:
+        merged.setdefault("queue", {})
+        for key in ("max_capacity", "timeout_minutes", "timeout_action"):
+            if key in queue and queue[key] is None:
+                merged["queue"][key] = None
+
     return merged
 
 
@@ -78,8 +85,6 @@ def get_defaults() -> dict:
         },
         "queue": {
             "max_capacity": 50,
-            "timeout_minutes": 30,
-            "timeout_action": "remove",
             "special_serve_rules": {
                 "enabled": False,
                 "match_field": "display_name",
@@ -91,7 +96,6 @@ def get_defaults() -> dict:
         "vip": {
             "enabled": True,
             "coffee_price": 60,
-            "coffee_url": "https://buymeacoffee.com/yourname",
         },
         "line_bot": {
             "channel_secret": os.getenv("LINE_CHANNEL_SECRET", ""),
