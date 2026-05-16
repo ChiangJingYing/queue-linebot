@@ -33,6 +33,7 @@ from config import _resolve_config_path, load_config
 from core.database import DatabaseManager
 from core.queue_manager import QueueManager
 from core.time_utils import TAIPEI_TZ, format_display_time, parse_timestamp
+from services.admin_serve_guard import AdminServeGuard
 from services.notifier import Notifier
 from services.telegram_commands import TelegramCommandService
 from services.discord_commands import DiscordCommandService
@@ -317,7 +318,7 @@ def _runtime_line_bot_config() -> dict:
 
 
 def _apply_runtime_config(next_config: dict) -> None:
-    global config, line_bot_config, queue_config, LOCATION_OPTIONS, notifier, line_handler, telegram_command_service, discord_command_service
+    global config, line_bot_config, queue_config, LOCATION_OPTIONS, notifier, line_handler, telegram_command_service, discord_command_service, admin_serve_guard
 
     config = next_config
     line_bot_config = _runtime_line_bot_config()
@@ -333,6 +334,12 @@ def _apply_runtime_config(next_config: dict) -> None:
         db_manager.set_config("queue_timeout_minutes", "" if timeout_minutes is None else str(int(timeout_minutes)))
         db_manager.set_config("vip_enabled", "true" if bool(config.get("vip", {}).get("enabled", True)) else "false")
         db_manager.set_config("coffee_price", str(int(config.get("vip", {}).get("coffee_price", 60))))
+
+    cooldown_seconds = int(queue_config.get("admin_serve_cooldown_seconds", 3))
+    if admin_serve_guard is None:
+        admin_serve_guard = AdminServeGuard(cooldown_seconds=cooldown_seconds)
+    else:
+        admin_serve_guard.set_cooldown_seconds(cooldown_seconds)
 
     notifier = Notifier(
         CHANNEL_SECRET,
@@ -361,6 +368,8 @@ def _apply_runtime_config(next_config: dict) -> None:
             announcement_service=dashboard_announcement_service,
             new_order_idle_seconds=int(config.get("tts", {}).get("new_order_idle_seconds", 300)),
             new_order_announcement_text=str(config.get("tts", {}).get("new_order_announcement_text", "您有新訂單")),
+            admin_serve_cooldown_seconds=cooldown_seconds,
+            admin_serve_guard=admin_serve_guard,
             telegram_sender=_send_telegram_text,
             special_serve_rules=queue_config.get("special_serve_rules"),
         )
@@ -371,6 +380,8 @@ def _apply_runtime_config(next_config: dict) -> None:
             location_options=LOCATION_OPTIONS,
             announcement_service=dashboard_announcement_service,
             special_serve_rules=queue_config.get("special_serve_rules"),
+            admin_serve_cooldown_seconds=cooldown_seconds,
+            admin_serve_guard=admin_serve_guard,
         )
         discord_command_service = DiscordCommandService(
             db=db_manager,
@@ -387,6 +398,7 @@ line_handler: LineBotHandler | None = None
 telegram_command_service: TelegramCommandService | None = None
 discord_command_service: DiscordCommandService | None = None
 dashboard_announcement_service: DashboardAnnouncementService | None = None
+admin_serve_guard: AdminServeGuard | None = None
 
 
 class DashboardLayoutStore:
@@ -442,7 +454,7 @@ dashboard_layout_store = DashboardLayoutStore()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Initialize DB and services on startup."""
-    global db_manager, queue_manager, vip_service, notifier, line_handler, telegram_command_service, discord_command_service, scheduler, dashboard_announcement_service
+    global db_manager, queue_manager, vip_service, notifier, line_handler, telegram_command_service, discord_command_service, scheduler, dashboard_announcement_service, admin_serve_guard
     from apscheduler.schedulers.background import BackgroundScheduler
 
     db_manager = DatabaseManager()
@@ -457,6 +469,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     )
     queue_manager = QueueManager(db_manager, notifier)
     vip_service = VipService(db_manager)
+    admin_serve_guard = AdminServeGuard(
+        cooldown_seconds=int(queue_config.get("admin_serve_cooldown_seconds", 3))
+    )
     tts_config = config.get("tts", {}) if isinstance(config.get("tts"), dict) else {}
     dashboard_announcement_service = DashboardAnnouncementService(
         root="dashboard_announcements",
@@ -485,6 +500,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         announcement_service=dashboard_announcement_service,
         new_order_idle_seconds=int(tts_config.get("new_order_idle_seconds", 300)),
         new_order_announcement_text=str(tts_config.get("new_order_announcement_text", "您有新訂單")),
+        admin_serve_cooldown_seconds=int(queue_config.get("admin_serve_cooldown_seconds", 3)),
+        admin_serve_guard=admin_serve_guard,
         telegram_sender=_send_telegram_text,
         special_serve_rules=queue_config.get("special_serve_rules"),
     )
@@ -495,6 +512,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         location_options=LOCATION_OPTIONS,
         announcement_service=dashboard_announcement_service,
         special_serve_rules=queue_config.get("special_serve_rules"),
+        admin_serve_cooldown_seconds=int(queue_config.get("admin_serve_cooldown_seconds", 3)),
+        admin_serve_guard=admin_serve_guard,
     )
     discord_command_service = DiscordCommandService(
         db=db_manager,

@@ -85,6 +85,7 @@ def get_defaults() -> dict:
         },
         "queue": {
             "max_capacity": 50,
+            "admin_serve_cooldown_seconds": 3,
             "special_serve_rules": {
                 "enabled": False,
                 "match_field": "display_name",

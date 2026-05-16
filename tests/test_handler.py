@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from types import SimpleNamespace
+import threading
 
 import bot.handler_admin as handler_admin_module
 
@@ -767,6 +768,89 @@ def test_admin_serve_concurrent_requests_only_serve_one_user(tmp_path):
     first_reply = dict(replies)["first"]
     assert first_reply[0]["text"] == "✅ 已叫號：B12345678（A-1）"
     assert second[0]["text"] == "⚠️ 叫號進行中，請勿重複操作。"
+    assert [entry.user_id for entry in qm.get_queue()] == ["bob"]
+
+
+def test_admin_serve_cooldown_is_shared_with_telegram_service(tmp_path):
+    from services.telegram_commands import TelegramCommandService
+
+    db = DatabaseManager(str(tmp_path / "serve-shared-cooldown.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["line_admin"], admin_serve_cooldown_seconds=3)
+    service = TelegramCommandService(
+        db=db,
+        queue_manager=qm,
+        admin_serve_cooldown_seconds=3,
+        admin_serve_guard=handler.admin_serve_guard,
+    )
+
+    db.upsert_user_profile("line_admin", "LINE 管理員", verified=True, role="admin")
+    db.upsert_user_profile("tg_admin", "Telegram 管理員", verified=True, role="admin")
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.register_name("bob", "B23456789", location="A-2")
+    qm.join("alice", "regular")
+    qm.join("bob", "regular")
+
+    handler._admin_serve_cooldown_clock = lambda: 100.0
+    service._admin_serve_cooldown_clock = lambda: 101.0
+
+    first = handler.handle_event(make_event("/admin/serve", user_id="line_admin"))
+    second = service.handle_text(user_id="tg_admin", text="/admin/serve")
+
+    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert second["message"] == "⚠️ 剛剛已叫號：B12345678（A-1），請稍候再試，避免重複叫號。"
+    assert [entry.user_id for entry in qm.get_queue()] == ["bob"]
+
+
+class SharedBlockingQueueManager(QueueManager):
+    def __init__(self, db, gate):
+        super().__init__(db)
+        self.gate = gate
+
+    def serve_next(self, admin_user_id=None) -> dict:
+        self.gate.wait(timeout=2)
+        return super().serve_next(admin_user_id=admin_user_id)
+
+
+def test_admin_serve_lock_is_shared_with_telegram_service(tmp_path):
+    from services.telegram_commands import TelegramCommandService
+
+    db = DatabaseManager(str(tmp_path / "serve-shared-lock.db"))
+    gate = threading.Event()
+    qm = SharedBlockingQueueManager(db, gate)
+    handler = LineBotHandler(queue_manager=qm, vip_service=VipService(db), admin_ids=["line_admin"], admin_serve_cooldown_seconds=0)
+    service = TelegramCommandService(
+        db=db,
+        queue_manager=qm,
+        admin_serve_cooldown_seconds=0,
+        admin_serve_guard=handler.admin_serve_guard,
+    )
+
+    db.upsert_user_profile("line_admin", "LINE 管理員", verified=True, role="admin")
+    db.upsert_user_profile("tg_admin", "Telegram 管理員", verified=True, role="admin")
+    qm.register_name("alice", "B12345678", location="A-1")
+    qm.register_name("bob", "B23456789", location="A-2")
+    qm.join("alice", "regular")
+    qm.join("bob", "regular")
+
+    replies = []
+
+    def run_line():
+        replies.append(("line", handler.handle_event(make_event("/admin/serve", user_id="line_admin", reply_token="r1"))))
+
+    worker = threading.Thread(target=run_line)
+    worker.start()
+
+    import time
+    time.sleep(0.05)
+
+    second = service.handle_text(user_id="tg_admin", text="/admin/serve")
+    gate.set()
+    worker.join(timeout=2)
+
+    first = dict(replies)["line"]
+    assert first[0]["text"] == "✅ 已叫號：B12345678（A-1）"
+    assert second["message"] == "⚠️ 叫號進行中，請勿重複操作。"
     assert [entry.user_id for entry in qm.get_queue()] == ["bob"]
 
 

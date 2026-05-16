@@ -187,6 +187,37 @@ def test_load_config_reads_telegram_settings_from_env(monkeypatch, tmp_path):
     assert config["telegram_bot"]["webhook_secret"] == "secret-xyz"
 
 
+def test_load_config_reads_admin_serve_cooldown_from_queue_section(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "queue:\n  admin_serve_cooldown_seconds: 7\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(str(config_path))
+
+    assert config["queue"]["admin_serve_cooldown_seconds"] == 7
+
+
+def test_apply_runtime_config_shares_admin_serve_guard_between_line_and_telegram(tmp_path):
+    _setup_runtime(tmp_path)
+    main.admin_serve_guard = None
+    next_config = dict(main.config)
+    next_config["queue"] = {
+        **(main.config.get("queue", {}) if isinstance(main.config.get("queue"), dict) else {}),
+        "admin_serve_cooldown_seconds": 6,
+    }
+
+    main._apply_runtime_config(next_config)
+
+    assert main.admin_serve_guard is not None
+    assert main.line_handler is not None
+    assert main.telegram_command_service is not None
+    assert main.line_handler.admin_serve_guard is main.admin_serve_guard
+    assert main.telegram_command_service.admin_serve_guard is main.admin_serve_guard
+    assert main.admin_serve_guard.cooldown_seconds == 6
+
+
 def test_load_config_reads_discord_settings_from_env(monkeypatch, tmp_path):
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "discord-bot-token")
     monkeypatch.setenv("DISCORD_APPLICATION_ID", "discord-app-id")

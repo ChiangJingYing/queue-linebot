@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import threading
 import time
 from datetime import datetime
 from typing import Optional
@@ -21,6 +20,7 @@ from bot.handler_support import HandlerSupportMixin
 from core.queue_manager import QueueManager
 from core.validators import validate_command
 from services.notifier import Notifier
+from services.admin_serve_guard import AdminServeGuard
 from services.pending_state_store import MemoryPendingStateStore
 from services.special_serve_rules import normalize_special_serve_rules
 from services.telegram_admin_notifications import TelegramAdminNotificationService
@@ -50,6 +50,7 @@ class LineBotHandler(
         new_order_idle_seconds: int = 300,
         new_order_announcement_text: str = "您有新訂單",
         admin_serve_cooldown_seconds: int = 3,
+        admin_serve_guard: AdminServeGuard | None = None,
         telegram_sender=None,
         special_serve_rules: dict | None = None,
     ) -> None:
@@ -81,15 +82,14 @@ class LineBotHandler(
         self._announce_new_order_on_next_join = False
         #: 暫存 register / cancel 等跨訊息多步驟流程狀態。
         self.pending_state_store = MemoryPendingStateStore()
-        #: 避免管理員重複點擊導致 serve 併發執行。
-        self._admin_serve_lock = threading.Lock()
-        #: serve 成功後的冷卻秒數，避免短時間重複叫號同一位。
-        self._admin_serve_cooldown_seconds = max(int(admin_serve_cooldown_seconds), 0)
-        self._admin_serve_cooldown_clock = time.monotonic
-        #: 最近一次成功叫號的 monotonic timestamp。
-        self._last_admin_serve_at = 0.0
-        #: 最近一次成功叫號對象名稱，用於冷卻提示文案。
-        self._last_admin_serve_label = ""
+        #: LINE 與 Telegram 共用的 admin serve guard。
+        self.admin_serve_guard = admin_serve_guard or AdminServeGuard(
+            cooldown_seconds=admin_serve_cooldown_seconds,
+            clock=time.monotonic,
+        )
+        self.admin_serve_guard.set_cooldown_seconds(admin_serve_cooldown_seconds)
+        #: 保留既有 lock 屬性名稱，避免舊測試與呼叫點失效。
+        self._admin_serve_lock = self.admin_serve_guard.lock
         #: Config-driven special serve rules shared with Telegram admin serve flow.
         self.special_serve_rules = normalize_special_serve_rules(special_serve_rules)
         #: 廣播給 Telegram admin 訂閱者的後台通知 service。
@@ -98,6 +98,14 @@ class LineBotHandler(
             if telegram_sender is not None
             else None
         )
+
+    @property
+    def _admin_serve_cooldown_clock(self):
+        return self.admin_serve_guard.clock
+
+    @_admin_serve_cooldown_clock.setter
+    def _admin_serve_cooldown_clock(self, value) -> None:
+        self.admin_serve_guard.clock = value
 
     def handle_event(self, event) -> list:
         """處理單一 LINE event。

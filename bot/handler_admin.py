@@ -198,18 +198,11 @@ class HandlerAdminMixin:
 
     def _admin_serve_guard_message(self) -> str | None:
         """檢查叫號冷卻是否仍在生效，避免重複叫號。"""
-        now = self._admin_serve_cooldown_clock()
-        cooldown_seconds = self._admin_serve_cooldown_seconds
-        if cooldown_seconds > 0 and self._last_admin_serve_at:
-            if now - self._last_admin_serve_at < cooldown_seconds:
-                label = self._last_admin_serve_label or "上一位使用者"
-                return f"⚠️ 剛剛已叫號：{label}，請稍候再試，避免重複叫號。"
-        return None
+        return self.admin_serve_guard.cooldown_message()
 
     def _record_admin_serve_success(self, display_name: str) -> None:
         """記錄最近一次成功叫號，用於冷卻判斷。"""
-        self._last_admin_serve_at = self._admin_serve_cooldown_clock()
-        self._last_admin_serve_label = display_name
+        self.admin_serve_guard.record_success(display_name)
 
     def _broadcast_simple_event(
         self,
@@ -261,13 +254,9 @@ class HandlerAdminMixin:
         - ``serve_user(..., announcement_service=...)``：更新 dashboard / 語音公告
         - ``QueueManager`` 內部 notifier：對被叫號者送出私訊通知（若已配置）
         """
-        if not self._admin_serve_lock.acquire(blocking=False):
+        if not self.admin_serve_guard.try_acquire():
             return self._reply(reply_token, "⚠️ 叫號進行中，請勿重複操作。")
         try:
-            guard_message = self._admin_serve_guard_message()
-            if guard_message:
-                return self._reply(reply_token, guard_message)
-
             decision = resolve_special_serve_decision(
                 rules=self.special_serve_rules,
                 queue_manager=self.queue_manager,
@@ -284,6 +273,10 @@ class HandlerAdminMixin:
                     reply_token,
                     f"⚠️ {decision['admin_message']}{auto_note}",
                 )
+
+            guard_message = self._admin_serve_guard_message()
+            if guard_message:
+                return self._reply(reply_token, guard_message)
 
             result = serve_user(
                 queue_manager=self.queue_manager,
@@ -312,7 +305,7 @@ class HandlerAdminMixin:
                 msg = f"❌ 錯誤：{result['message']}{auto_note if auto_note else ''}"
             return self._reply(reply_token, msg)
         finally:
-            self._admin_serve_lock.release()
+            self.admin_serve_guard.release()
 
     def _admin_serve(self, user_id: str, target_id: str, reply_token: str) -> list:
         """叫指定使用者，並處理冷卻與通知。
@@ -321,7 +314,7 @@ class HandlerAdminMixin:
         - ``announcement_service``：現場公告
         - ``queue_manager.notifier``：被叫號者私訊推播
         """
-        if not self._admin_serve_lock.acquire(blocking=False):
+        if not self.admin_serve_guard.try_acquire():
             return self._reply(reply_token, "⚠️ 叫號進行中，請勿重複操作。")
         try:
             guard_message = self._admin_serve_guard_message()
@@ -353,7 +346,7 @@ class HandlerAdminMixin:
                 msg = f"❌ 錯誤：{result['message']}{' ' + auto_note if auto_note else ''}"
             return self._reply(reply_token, msg)
         finally:
-            self._admin_serve_lock.release()
+            self.admin_serve_guard.release()
 
     def _handle_admin_release(self, user_id: str, args: list, reply_token: str) -> list:
         """解除指定位置使用者的叫號鎖定，讓其可再次排隊。"""
