@@ -28,6 +28,22 @@ registration:
     '5': ['1', '2', '3', '4', '5', '6', '7', '8']
     '6': ['1', '2', '3', '4', '5', '6', '7', '8']
     '7': ['1', '2', '3', '4', '5', '6', '7', '8']
+homework_demo:
+  enabled: true
+  spreadsheet_id: 1kdYS-6hvjXA0KMHzQ8mZSjZEjINHbtBTrnn58pCf-Kg
+  default_ta_limit: 8
+  ta_blacklists: {}
+  booking_year: 2026
+  slot_range: A1:F20
+  max_demo_per_student: 9999
+  min_gap_days: 1
+  same_ta_after_first_demo: true
+  cancel_deadline_hour: 21
+  sheet_names: []
+  ta_order: []
+  ta_display_names: {}
+  ta_limits: {}
+  booking_timezone: Asia/Taipei
 logging:
   level: INFO
   log_file: logs/queue_events.log

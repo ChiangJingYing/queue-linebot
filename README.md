@@ -38,6 +38,7 @@
 - 取消排隊
 - 查看目前排隊狀態
 - 查看個人排隊歷史
+- Homework Demo 登記／取消／查詢（LINE）
 - 顯示常用功能選單
 
 ### VIP 相關功能(尚未接入金流、開放使用）
@@ -72,7 +73,7 @@
 
 - Telegram webhook
 - Discord interactions
-- LINE Messaging API 指令與 quick reply 流程
+- LINE Messaging API 指令、quick reply 與 Flex Message 流程
 
 ---
 
@@ -539,11 +540,92 @@ DASHBOARD_ANNOUNCEMENT_TEMPLATE=來賓 {display_name} 請準備demo
 NEW_ORDER_IDLE_SECONDS=300
 NEW_ORDER_ANNOUNCEMENT_TEXT=您有新訂單
 # 或 NEW_ORDER_ANNOUNCEMENT_TEXT=/app/audio/new-order.mp3
+
+# Homework Demo Google Sheets 憑證
+GOOGLE_SERVICE_ACCOUNT_FILE=/absolute/path/to/google-service-account.json
 ```
+
+補充：
+
+- `GOOGLE_APPLICATION_CREDENTIALS` 目前主要是給 Google Cloud TTS 使用。
+- Homework Demo 的正式憑證設定流程是：
+  - 在 `/settings` 頁面上傳 Google service account JSON
+  - 或將 JSON 檔掛載進容器，並用 `GOOGLE_SERVICE_ACCOUNT_FILE` 指向容器內路徑
+- `/settings` 的「測試 Google Sheet 存取」會驗證容器內目前實際使用的憑證檔。
+- `GOOGLE_SERVICE_ACCOUNT_JSON` 若保留於環境中，應視為進階備援方式；目前 `/settings` 不管理這個入口。
 
 ---
 
 ## queue_config.yaml 設定說明
+
+### `homework_demo`
+
+可用於啟用學生作業 Demo 時段登記系統。這套流程目前只接在 LINE 端，支援：
+
+- `/homework` 登記時段
+- `/homework/register` 更新或覆蓋綁定資料
+- `/homework/cancel` 取消預約
+- `/homework/list` 查詢既有預約
+
+資料來源說明：
+
+- 第一次使用 `/homework`、`/homework/cancel`、`/homework/list` 時，會要求輸入一次 `<學號> <姓名>`，並和 LINE user id 綁定到獨立的 Homework 資料表
+- 若要修改綁定資料，可使用 `/homework/register` 重新輸入 `<學號> <姓名>`，會直接覆蓋 Homework 綁定資料庫，不會更動 Google Sheet
+- 完成綁定後，之後再使用 `/homework*` 指令會直接從資料庫讀取，不需要再次輸入學號姓名
+- 每位助教對應 Google Sheet 中的一個工作表
+- 工作表名稱即助教識別鍵
+- 預設以 `slot_range: A1:F20` 解析時段表
+- 儲存格內容格式為 `學號 姓名`
+
+建議設定範例：
+
+```yaml
+homework_demo:
+  enabled: true
+  spreadsheet_id: "your-google-sheet-id"
+  default_ta_limit: 8
+  ta_blacklists: {}
+  booking_year: 2026
+  slot_range: "A1:F20"
+  max_demo_per_student: 2
+  min_gap_days: 1
+  same_ta_after_first_demo: true
+  cancel_deadline_hour: 21
+```
+
+欄位說明：
+
+- `enabled`: 是否啟用 Homework Demo 流程
+- `spreadsheet_id`: Google Sheet 的 spreadsheet id
+- `default_ta_limit`: 未個別指定時，每位助教的預設 Demo 上限
+- `ta_blacklists`: 以學號為單位的黑名單；會顯示在卡片上，但禁止選擇
+- `booking_year`: `5/4` 這類日期標頭要套用的年份
+- `slot_range`: 有效登記區域，預設 `A1:F20`
+- `max_demo_per_student`: 每位學生最多 Demo 次數
+- `min_gap_days`: 保留作設定欄位；目前業務規則以「同一天不可 Demo 兩次」為主，不做 24 小時計算
+- `same_ta_after_first_demo`: 第二次起是否限制同助教
+- `cancel_deadline_hour`: 取消截止小時，代表預約日前一天 `HH:00`
+
+補充說明：
+
+- 會自動抓 Google Sheet 的所有子工作表，工作表名稱直接當助教名稱
+- 時區固定使用 `Asia/Taipei`
+- 所有助教統一使用 `default_ta_limit`，不再分別設定個別名額
+
+目前 Homework Demo 已實作的規則：
+
+- 學號必須為 9 碼數字，姓名可與學號相連或以空白分隔
+- 黑名單助教仍會顯示，但卡片會標示不可選
+- 助教名額已滿仍會顯示，但卡片會標示不可選
+- 同一學生同一天只能登記一次
+- 每位學生最多可 Demo `max_demo_per_student` 次
+- 同一學生不可在同一天 Demo 兩次；隔天可再次預約，不做 24 小時計算
+- 第二次起可限制為同一位助教
+- 取消需在預約日期前一天 `cancel_deadline_hour:00` 前完成
+
+若要實際接 Google Sheet，除了 `homework_demo` 設定外，也要設定：
+
+- `GOOGLE_SERVICE_ACCOUNT_FILE`
 
 ### `queue.special_serve_rules`
 
@@ -895,10 +977,14 @@ python scripts/upload_rich_menus.py \
 | `/cancel` 取消排隊 | ✅ | ✅ | ✅ |
 | `/status` 查看目前狀態 | ✅ | ✅ | ✅ |
 | `/history` 查看個人排隊歷史 | ✅ | ✅ | ✅ |
+| `/homework` Homework Demo 登記 | ✅ | ❌ | ❌ |
+| `/homework/register` Homework Demo 更新綁定 | ✅ | ❌ | ❌ |
+| `/homework/cancel` Homework Demo 取消 | ✅ | ❌ | ❌ |
+| `/homework/list` Homework Demo 查詢 | ✅ | ❌ | ❌ |
 | `/help` 查看說明 | ✅ | ✅ | ✅ |
 | `/menu` 顯示常用功能選單 | ❌ | ✅ | ✅ |
 | 可收到「輪到你了」叫號推播 | ✅（因爲付費功能暫不啟用 | ✅ | ✅ |
-| 註冊流程互動方式 | 文字輸入 + quick reply | 文字輸入 + inline keyboard / reply keyboard | modal + buttons |
+| 註冊流程互動方式 | 文字輸入 + quick reply / Flex Message | 文字輸入 + inline keyboard / reply keyboard | modal + buttons |
 | 取消排隊二次確認 | quick reply | inline keyboard | buttons |
 
 ### 管理員功能對照
@@ -931,6 +1017,7 @@ python scripts/upload_rich_menus.py \
 - Discord 目前只實作一般使用者 Discord DM 流程，入口集中在 `POST /api/discord/interactions` 與 `services/discord_commands.py`。
 - Telegram 目前同時支援一般使用者與管理員自助操作，命令與互動集中在 `services/telegram_commands.py`。
 - LINE 目前仍保有最完整的管理員命令覆蓋，主要分布在 `bot/handler_commands.py`、`bot/handler_registration.py`、`bot/handler_admin.py`。
+- Homework Demo 目前只在 LINE 端實作，主要分布在 `services/homework_demo.py`、`services/homework_demo_presenters.py`、`bot/handler_homework.py`。
 - `/join vip` 目前在 LINE 與 Telegram 可用；Discord 目前 README 應視為未支援，而不是推定未來一定會支援。
 - `/admin/skip` 目前只在 TelegramCommandService 中有實作與測試，LINE 與 Discord 不應在 README 誤寫成已支援。
 - `/admin/release [位置編號]` 只需該位置編號有對應的登記紀錄（user_profiles 中有 location 欄位），即可執行解除。**不需要**該使用者有有效的 queue entry 或已被標記為 `served`——若無 queue entry，仍視為成功（空操作）。
