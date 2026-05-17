@@ -39,6 +39,13 @@ from services.discord_commands import DiscordCommandService
 from services.vip_service import VipService
 from services.dashboard_announcement import DashboardAnnouncementService, GoogleCloudTTSService
 from services.line_profile_lookup import fetch_line_profile_display_name
+from services.homework_demo import (
+    HomeworkBookingService,
+    build_homework_gateway,
+    build_homework_demo_config,
+    extract_google_sheet_id,
+    google_sheets_dependencies_status,
+)
 from services.web_ui_settings import (
     HOT_RELOADABLE_SECTIONS,
     ConfigValidationError,
@@ -258,6 +265,57 @@ def _config_store() -> QueueConfigStore:
     return QueueConfigStore(CONFIG_FILE_PATH)
 
 
+def _homework_credentials_path() -> Path:
+    configured = str(os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "")).strip()
+    if configured:
+        return Path(configured)
+    return CONFIG_FILE_PATH.parent / "google-service-account.json"
+
+
+def _validate_homework_google_credentials_json(credentials_json: str) -> dict:
+    try:
+        payload = json.loads(str(credentials_json or ""))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Google service account JSON 格式錯誤") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Google service account JSON 格式錯誤")
+    required_keys = {"type", "client_email", "private_key", "token_uri"}
+    missing = [key for key in required_keys if not str(payload.get(key) or "").strip()]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Google service account JSON 缺少必要欄位：{', '.join(missing)}")
+    if str(payload.get("type") or "") != "service_account":
+        raise HTTPException(status_code=400, detail="Google service account JSON type 必須為 service_account")
+    return payload
+
+
+def _validate_homework_demo_access(homework_payload: dict) -> dict:
+    normalized_payload = dict(homework_payload or {})
+    spreadsheet_id = extract_google_sheet_id(str(normalized_payload.get("spreadsheet_id") or ""))
+    normalized_payload["spreadsheet_id"] = spreadsheet_id
+    if not normalized_payload.get("enabled"):
+        return {"spreadsheetId": spreadsheet_id, "sheetNames": []}
+    if not spreadsheet_id:
+        raise HTTPException(status_code=400, detail="Homework Demo 已啟用時必須提供 Google Sheet spreadsheet id 或 URL")
+    dependencies_ready, dependency_message = google_sheets_dependencies_status()
+    if not dependencies_ready:
+        raise HTTPException(status_code=400, detail=dependency_message)
+
+    credentials_path = _homework_credentials_path()
+    if not credentials_path.exists():
+        raise HTTPException(status_code=400, detail="尚未設定 Google service account JSON，請先在設定頁上傳")
+
+    homework_config = build_homework_demo_config(normalized_payload)
+    gateway = build_homework_gateway(homework_config)
+    try:
+        sheet_names = gateway.list_sheet_names(use_cache=False, force_refresh=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"無法存取 Google Sheet：{exc}") from exc
+    return {
+        "spreadsheetId": spreadsheet_id,
+        "sheetNames": sheet_names,
+    }
+
+
 def _server_bind_config() -> tuple[str, int]:
     server_config = config.get("server", {}) if isinstance(config.get("server"), dict) else {}
     host = str(server_config.get("host") or "0.0.0.0").strip() or "0.0.0.0"
@@ -276,11 +334,22 @@ def _editable_settings_payload() -> dict:
         "config": store.load_editable(),
         "rawYaml": store.load_text(),
         "defaults": editable_config_defaults(),
-        "meta": {
-            "configPath": os.fspath(CONFIG_FILE_PATH),
-            "hotReloadableSections": HOT_RELOADABLE_SECTIONS,
-            "adminOptions": _resolve_admin_options(),
-        },
+        "meta": _dashboard_settings_meta(),
+    }
+
+
+def _dashboard_settings_meta(*, homework_sheet_names: list[str] | None = None) -> dict:
+    credentials_path = _homework_credentials_path()
+    dependencies_ready, dependency_message = google_sheets_dependencies_status()
+    return {
+        "configPath": os.fspath(CONFIG_FILE_PATH),
+        "hotReloadableSections": HOT_RELOADABLE_SECTIONS,
+        "adminOptions": _resolve_admin_options(),
+        "homeworkCredentialsPath": os.fspath(credentials_path),
+        "homeworkCredentialsConfigured": credentials_path.exists(),
+        "homeworkGoogleApiReady": dependencies_ready,
+        "homeworkGoogleApiMessage": dependency_message,
+        "homeworkLastValidatedSheetNames": list(homework_sheet_names or []),
     }
 
 
@@ -377,6 +446,13 @@ def _apply_runtime_config(next_config: dict) -> None:
         queue_manager.notifier = notifier
 
     if queue_manager is not None and vip_service is not None:
+        homework_service = None
+        homework_config = build_homework_demo_config(config.get("homework_demo"))
+        if homework_config.enabled and (homework_config.sheet_names or homework_config.spreadsheet_id):
+            homework_service = HomeworkBookingService(
+                config=homework_config,
+                gateway=build_homework_gateway(homework_config),
+            )
         line_handler = LineBotHandler(
             channel_secret=CHANNEL_SECRET,
             channel_access_token=CHANNEL_ACCESS_TOKEN,
@@ -392,6 +468,7 @@ def _apply_runtime_config(next_config: dict) -> None:
             new_order_announcement_text=str(config.get("tts", {}).get("new_order_announcement_text", "您有新訂單")),
             telegram_sender=_send_telegram_text,
             special_serve_rules=queue_config.get("special_serve_rules"),
+            homework_booking_service=homework_service,
         )
         telegram_command_service = TelegramCommandService(
             db=db_manager,
@@ -502,6 +579,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         announcement_template=str(tts_config.get("announcement_template", "來賓 {display_name} 請準備demo")),
         new_order_announcement_text=str(tts_config.get("new_order_announcement_text", "您有新訂單")),
     )
+    homework_service = None
+    homework_config = build_homework_demo_config(config.get("homework_demo"))
+    if homework_config.enabled and (homework_config.sheet_names or homework_config.spreadsheet_id):
+        homework_service = HomeworkBookingService(
+            config=homework_config,
+            gateway=build_homework_gateway(homework_config),
+        )
     line_handler = LineBotHandler(
         channel_secret=CHANNEL_SECRET,
         channel_access_token=CHANNEL_ACCESS_TOKEN,
@@ -517,6 +601,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         new_order_announcement_text=str(tts_config.get("new_order_announcement_text", "您有新訂單")),
         telegram_sender=_send_telegram_text,
         special_serve_rules=queue_config.get("special_serve_rules"),
+        homework_booking_service=homework_service,
     )
     telegram_command_service = TelegramCommandService(
         db=db_manager,
@@ -910,19 +995,48 @@ def save_dashboard_settings(request: Request, payload: dict) -> dict:
     except ConfigValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    validation_result = _validate_homework_demo_access(normalized.get("homework_demo", {}))
+    normalized["homework_demo"]["spreadsheet_id"] = validation_result["spreadsheetId"]
+
     saved = _config_store().save_editable(normalized)
     next_config = load_config(str(CONFIG_FILE_PATH))
     _apply_runtime_config(next_config)
+    credentials_path = _homework_credentials_path()
     return {
         "status": "saved",
         "config": saved["config"],
         "rawYaml": saved["rawYaml"],
         "defaults": editable_config_defaults(),
-        "meta": {
-            "configPath": os.fspath(CONFIG_FILE_PATH),
-            "hotReloadableSections": HOT_RELOADABLE_SECTIONS,
-            "adminOptions": _resolve_admin_options(),
-        },
+        "meta": _dashboard_settings_meta(homework_sheet_names=validation_result["sheetNames"]),
+    }
+
+
+@app.post("/settings/homework/credentials")
+def save_homework_credentials(request: Request, payload: dict) -> dict:
+    _require_web_ui_auth(request)
+    credentials_json = str(payload.get("credentialsJson") or "")
+    parsed = _validate_homework_google_credentials_json(credentials_json)
+    credentials_path = _homework_credentials_path()
+    credentials_path.parent.mkdir(parents=True, exist_ok=True)
+    credentials_path.write_text(
+        json.dumps(parsed, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "status": "saved",
+        "message": "Google service account JSON 已更新",
+        "meta": _dashboard_settings_meta(),
+    }
+
+
+@app.post("/settings/homework/validate")
+def validate_homework_settings(request: Request, payload: dict) -> dict:
+    _require_web_ui_auth(request)
+    result = _validate_homework_demo_access(dict(payload or {}))
+    return {
+        "status": "ok",
+        "spreadsheetId": result["spreadsheetId"],
+        "sheetNames": result["sheetNames"],
     }
 
 
@@ -937,16 +1051,13 @@ def save_dashboard_settings_raw(request: Request, payload: dict) -> dict:
 
     next_config = load_config(str(CONFIG_FILE_PATH))
     _apply_runtime_config(next_config)
+    credentials_path = _homework_credentials_path()
     return {
         "status": "saved",
         "config": saved["config"],
         "rawYaml": saved["rawYaml"],
         "defaults": editable_config_defaults(),
-        "meta": {
-            "configPath": os.fspath(CONFIG_FILE_PATH),
-            "hotReloadableSections": HOT_RELOADABLE_SECTIONS,
-            "adminOptions": _resolve_admin_options(),
-        },
+        "meta": _dashboard_settings_meta(),
     }
 
 
@@ -1330,17 +1441,24 @@ def _verify_line_signature(signature: str, body: str, channel_secret: str) -> bo
 
 
 def _normalize_event(event: dict):
-    if event.get("type") != "message":
-        return None
-
-    message = event.get("message") or {}
-    if message.get("type") != "text":
-        return None
-
     source = event.get("source") or {}
     user_id = source.get("userId")
     reply_token = event.get("replyToken", "")
     if not user_id or not reply_token:
+        return None
+
+    text = ""
+    if event.get("type") == "message":
+        message = event.get("message") or {}
+        if message.get("type") != "text":
+            return None
+        text = str(message.get("text", ""))
+    elif event.get("type") == "postback":
+        postback = event.get("postback") or {}
+        text = str(postback.get("data") or "").strip()
+        if not text:
+            return None
+    else:
         return None
 
     class _Message:
@@ -1359,7 +1477,7 @@ def _normalize_event(event: dict):
             self.reply_token = reply_token
             self.replyToken = reply_token
 
-    return _Event(message.get("text", ""), user_id, reply_token)
+    return _Event(text, user_id, reply_token)
 
 
 def _normalize_telegram_update(payload: dict) -> dict | None:
@@ -1468,83 +1586,71 @@ def _send_replies(reply_actions: list) -> int:
     if not reply_actions:
         return 0
 
-    try:
-        from linebot.v3.messaging import (
-            ApiClient,
-            Configuration,
-            MessagingApi,
-            ReplyMessageRequest,
-            TextMessage,
-            QuickReply,
-            QuickReplyItem,
-            MessageAction,
-        )
-    except Exception:
-        logger.info("LINE SDK 無法使用或已損毀；已產生回覆動作但未送出")
-        return len(reply_actions)
-
     if not CHANNEL_ACCESS_TOKEN:
         logger.info("LINE access token 缺失；已產生回覆動作但未送出")
         return len(reply_actions)
 
     sent = 0
-    configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
-
-    with ApiClient(configuration) as api_client:
-        messaging_api = MessagingApi(api_client)
-        for action in reply_actions:
-            reply_token = getattr(action, "replyToken", None)
-            text = getattr(action, "text", None)
-            quick_options = []
-            if isinstance(action, dict):
-                reply_token = action.get("replyToken", reply_token)
-                text = action.get("text", text)
-                quick_options = action.get("quickReply", {}).get("items", [])
-
-            if not reply_token or text is None:
-                continue
-
-            message = TextMessage(text=text)
-            if quick_options:
-                try:
-                    qr_items = []
-                    for option in quick_options:
-                        if isinstance(option, dict):
-                            action_payload = option.get("action", option)
-                            label_raw = str(action_payload.get("label") or action_payload.get("text") or "操作")
-                            text_raw = str(action_payload.get("text") or action_payload.get("label") or "")
-                        else:
-                            label_raw = str(option)
-                            text_raw = str(option)
-
-                        # LINE quick reply label max length: 20
-                        label = label_raw if len(label_raw) <= 20 else f"{label_raw[:15]}..."
-
-                        qr_items.append(
-                            QuickReplyItem(
-                                action=MessageAction(
-                                    label=label,
-                                    text=text_raw,
-                                )
-                            )
-                        )
-
-                    message = TextMessage(
-                        text=text,
-                        quick_reply=QuickReply(items=qr_items),
-                    )
-                except Exception:
-                    message = TextMessage(text=text)
-
-            messaging_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=reply_token,
-                    messages=[message],
-                )
+    for action in reply_actions:
+        reply_token = getattr(action, "replyToken", None)
+        payload_messages = None
+        if isinstance(action, dict):
+            reply_token = action.get("replyToken", reply_token)
+            payload_messages = _line_message_payloads_from_action(action)
+        if not reply_token or not payload_messages:
+            continue
+        try:
+            payload = json.dumps({"replyToken": reply_token, "messages": payload_messages}, ensure_ascii=False).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.line.me/v2/bot/message/reply",
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {CHANNEL_ACCESS_TOKEN}",
+                },
+                method="POST",
             )
-            sent += 1
+            with urllib.request.urlopen(req, timeout=10) as response:
+                status = int(getattr(response, "status", 200))
+                if status >= 400:
+                    logger.warning("LINE reply_message failed status=%s", status)
+        except Exception as exc:
+            logger.warning("LINE reply_message error: %s", exc)
+        sent += 1
 
     return sent
+
+
+def _line_message_payloads_from_action(action: dict) -> list[dict]:
+    raw_messages = action.get("messages")
+    if isinstance(raw_messages, list) and raw_messages:
+        return raw_messages
+
+    text = action.get("text")
+    if text is None:
+        return []
+
+    message = {"type": "text", "text": str(text)}
+    quick_options = action.get("quickReply", {}).get("items", [])
+    if quick_options:
+        items = []
+        for option in quick_options:
+            action_payload = option.get("action", option) if isinstance(option, dict) else option
+            if not isinstance(action_payload, dict):
+                continue
+            items.append(
+                {
+                    "type": "action",
+                    "action": {
+                        "type": "message",
+                        "label": str(action_payload.get("label") or action_payload.get("text") or "操作"),
+                        "text": str(action_payload.get("text") or action_payload.get("label") or ""),
+                    },
+                }
+            )
+        if items:
+            message["quickReply"] = {"items": items}
+    return [message]
 
 
 if __name__ == "__main__":

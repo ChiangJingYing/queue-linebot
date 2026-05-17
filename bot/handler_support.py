@@ -37,6 +37,10 @@ class HandlerSupportMixin:
 
         return [{"replyToken": reply_token, "text": message}]
 
+    def _reply_messages(self, reply_token: str, messages: list[dict]) -> list:
+        """建立多訊息 reply action，例如 text + flex carousel。"""
+        return [{"replyToken": reply_token, "messages": messages}]
+
     def _sync_rich_menu(self, user_id: str) -> None:
         """依照目前 admin 身分同步 LINE rich menu。
 

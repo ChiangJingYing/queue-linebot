@@ -10,7 +10,14 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Iterable, List, Optional
 
-from .models import QueueEntry, VipPurchase, QueueEvent, UserProfile, AdminNotificationPreference
+from .models import (
+    AdminNotificationPreference,
+    HomeworkUserProfile,
+    QueueEntry,
+    QueueEvent,
+    UserProfile,
+    VipPurchase,
+)
 from .time_utils import now_in_taipei
 
 
@@ -80,6 +87,15 @@ class DatabaseManager:
                     location TEXT NOT NULL DEFAULT '',
                     verified INTEGER NOT NULL DEFAULT 0,
                     role TEXT NOT NULL DEFAULT 'user',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS homework_user_profiles (
+                    user_id TEXT PRIMARY KEY,
+                    student_id TEXT NOT NULL,
+                    student_name TEXT NOT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
@@ -584,6 +600,38 @@ class DatabaseManager:
                 return f"{profile.display_name}（{profile.location}）"
             return profile.display_name
         return user_id
+
+    def upsert_homework_user_profile(
+        self,
+        user_id: str,
+        student_id: str,
+        student_name: str,
+    ) -> HomeworkUserProfile:
+        """Create or update the homework-specific user binding."""
+        now = datetime.now().isoformat(timespec="microseconds")
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO homework_user_profiles (user_id, student_id, student_name, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET "
+                "student_id = excluded.student_id, "
+                "student_name = excluded.student_name, "
+                "updated_at = excluded.updated_at",
+                (user_id, student_id, student_name, now, now),
+            )
+            conn.commit()
+        profile = self.get_homework_user_profile(user_id)
+        assert profile is not None
+        return profile
+
+    def get_homework_user_profile(self, user_id: str) -> Optional[HomeworkUserProfile]:
+        """Get homework-specific profile by LINE user id."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM homework_user_profiles WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            return HomeworkUserProfile(**dict(row)) if row else None
 
     def get_verified_profiles(self) -> list[UserProfile]:
         """List verified user profiles."""

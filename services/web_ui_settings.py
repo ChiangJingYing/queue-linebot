@@ -16,6 +16,7 @@ HOT_RELOADABLE_SECTIONS = {
     "queue": True,
     "vip": True,
     "registration": True,
+    "homework_demo": True,
     "logging": False,
     "web_ui": True,
     "line_bot": True,
@@ -141,6 +142,39 @@ def _normalize_location_options(value: object) -> dict[str, list[str]]:
     return normalized
 
 
+def _normalize_string_map(value: object, path: str) -> dict[str, str]:
+    source = _ensure_dict(value, path)
+    return {
+        str(key).strip(): str(item).strip()
+        for key, item in source.items()
+        if str(key).strip()
+    }
+
+
+def _normalize_int_map(value: object, path: str, *, minimum: int | None = None) -> dict[str, int]:
+    source = _ensure_dict(value, path)
+    normalized: dict[str, int] = {}
+    for key, item in source.items():
+        normalized_key = str(key).strip()
+        if not normalized_key:
+            continue
+        normalized[normalized_key] = _as_int(item, f"{path}.{normalized_key}", minimum=minimum)
+    return normalized
+
+
+def _normalize_string_list_map(value: object, path: str) -> dict[str, list[str]]:
+    source = _ensure_dict(value, path)
+    normalized: dict[str, list[str]] = {}
+    for key, item in source.items():
+        normalized_key = str(key).strip()
+        if not normalized_key:
+            continue
+        if not isinstance(item, list):
+            raise ConfigValidationError(f"{path}.{normalized_key} 必須是陣列")
+        normalized[normalized_key] = _dedupe_strings(item)
+    return normalized
+
+
 def editable_config_defaults() -> dict:
     defaults = get_defaults()
     return build_editable_config(defaults)
@@ -188,6 +222,26 @@ def build_editable_config(loaded_config: dict) -> dict:
                 str(row): _dedupe_strings(columns if isinstance(columns, list) else [])
                 for row, columns in (merged["registration"]["location_options"] or {}).items()
             }
+        },
+        "homework_demo": {
+            "enabled": bool(merged["homework_demo"]["enabled"]),
+            "spreadsheet_id": str(merged["homework_demo"]["spreadsheet_id"]),
+            "default_ta_limit": (
+                int(merged["homework_demo"]["default_ta_limit"])
+                if merged["homework_demo"].get("default_ta_limit") is not None
+                else None
+            ),
+            "ta_blacklists": {
+                str(key): _dedupe_strings(value if isinstance(value, list) else [])
+                for key, value in (merged["homework_demo"].get("ta_blacklists", {}) or {}).items()
+                if str(key).strip()
+            },
+            "booking_year": int(merged["homework_demo"]["booking_year"]),
+            "slot_range": str(merged["homework_demo"]["slot_range"]),
+            "max_demo_per_student": int(merged["homework_demo"]["max_demo_per_student"]),
+            "min_gap_days": int(merged["homework_demo"]["min_gap_days"]),
+            "same_ta_after_first_demo": bool(merged["homework_demo"]["same_ta_after_first_demo"]),
+            "cancel_deadline_hour": int(merged["homework_demo"]["cancel_deadline_hour"]),
         },
         "logging": {
             "level": str(merged["logging"]["level"]),
@@ -238,6 +292,7 @@ def normalize_editable_config(payload: object) -> dict:
     queue = _ensure_dict(data.get("queue", {}), "queue")
     vip = _ensure_dict(data.get("vip", {}), "vip")
     registration = _ensure_dict(data.get("registration", {}), "registration")
+    homework_demo = _ensure_dict(data.get("homework_demo", {}), "homework_demo")
     logging_config = _ensure_dict(data.get("logging", {}), "logging")
     web_ui = _ensure_dict(data.get("web_ui", {}), "web_ui")
     line_bot = _ensure_dict(data.get("line_bot", {}), "line_bot")
@@ -273,6 +328,26 @@ def normalize_editable_config(payload: object) -> dict:
         },
         "registration": {
             "location_options": _normalize_location_options(registration.get("location_options", [])),
+        },
+        "homework_demo": {
+            "enabled": _as_bool(homework_demo.get("enabled", False)),
+            "spreadsheet_id": _as_string(homework_demo.get("spreadsheet_id", ""), "homework_demo.spreadsheet_id", allow_empty=True),
+            "sheet_names": [],
+            "ta_order": [],
+            "ta_display_names": {},
+            "default_ta_limit": (
+                None if homework_demo.get("default_ta_limit") in (None, "")
+                else _as_int(homework_demo.get("default_ta_limit"), "homework_demo.default_ta_limit", minimum=1)
+            ),
+            "ta_limits": {},
+            "ta_blacklists": _normalize_string_list_map(homework_demo.get("ta_blacklists", {}), "homework_demo.ta_blacklists"),
+            "booking_year": _as_int(homework_demo.get("booking_year", 2026), "homework_demo.booking_year", minimum=2000, maximum=9999),
+            "booking_timezone": "Asia/Taipei",
+            "slot_range": _as_string(homework_demo.get("slot_range", "A1:F20"), "homework_demo.slot_range"),
+            "max_demo_per_student": _as_int(homework_demo.get("max_demo_per_student", 2), "homework_demo.max_demo_per_student", minimum=1),
+            "min_gap_days": _as_int(homework_demo.get("min_gap_days", 1), "homework_demo.min_gap_days", minimum=0),
+            "same_ta_after_first_demo": _as_bool(homework_demo.get("same_ta_after_first_demo", True)),
+            "cancel_deadline_hour": _as_int(homework_demo.get("cancel_deadline_hour", 21), "homework_demo.cancel_deadline_hour", minimum=0, maximum=23),
         },
         "logging": {
             "level": log_level,
@@ -376,6 +451,12 @@ class QueueConfigStore:
         next_config["registration"] = {
             **current_registration,
             "location_options": editable_config["registration"]["location_options"],
+        }
+
+        current_homework_demo = current.get("homework_demo", {}) if isinstance(current.get("homework_demo"), dict) else {}
+        next_config["homework_demo"] = {
+            **current_homework_demo,
+            **editable_config["homework_demo"],
         }
 
         next_config["logging"] = {

@@ -1,6 +1,7 @@
 """Configuration for queue system."""
 
 from pathlib import Path
+from datetime import datetime
 import os
 import yaml
 
@@ -120,6 +121,30 @@ def get_defaults() -> dict:
                 "1": ["1", "2", "3"],
                 "2": ["1", "2", "3", "4"],
             },
+        },
+        "homework_demo": {
+            "enabled": False,
+            "spreadsheet_id": "",
+            "sheet_names": [],
+            "ta_order": [],
+            "ta_display_names": {},
+            "default_ta_limit": 8,
+            "ta_limits": {},
+            "ta_blacklists": {},
+            "booking_year": datetime.now().year,
+            "booking_timezone": "Asia/Taipei",
+            "slot_range": "A1:F20",
+            "max_demo_per_student": 2,
+            "min_gap_days": 1,
+            "same_ta_after_first_demo": True,
+            "cancel_deadline_hour": 21,
+            "header_row": 0,
+            "time_col": 0,
+            "date_start_col": 0,
+            "date_end_col": 0,
+            "slot_start_row": 0,
+            "slot_end_row": 0,
+            "fetch_range": "",
         },
         "logging": {
             "level": "INFO",

@@ -16,10 +16,12 @@ from typing import Optional
 
 from bot.handler_admin import HandlerAdminMixin
 from bot.handler_commands import HandlerCommandsMixin
+from bot.handler_homework import HandlerHomeworkMixin
 from bot.handler_registration import HandlerRegistrationMixin
 from bot.handler_support import HandlerSupportMixin
 from core.queue_manager import QueueManager
 from core.validators import validate_command
+from services.homework_demo import HomeworkBookingService
 from services.notifier import Notifier
 from services.pending_state_store import MemoryPendingStateStore
 from services.special_serve_rules import normalize_special_serve_rules
@@ -30,6 +32,7 @@ from services.vip_service import VipService
 class LineBotHandler(
     HandlerAdminMixin,
     HandlerCommandsMixin,
+    HandlerHomeworkMixin,
     HandlerRegistrationMixin,
     HandlerSupportMixin,
 ):
@@ -52,6 +55,7 @@ class LineBotHandler(
         admin_serve_cooldown_seconds: int = 3,
         telegram_sender=None,
         special_serve_rules: dict | None = None,
+        homework_booking_service: HomeworkBookingService | None = None,
     ) -> None:
         """建立 LINE handler 與其所有共用依賴。"""
         self.channel_secret = channel_secret
@@ -92,6 +96,7 @@ class LineBotHandler(
         self._last_admin_serve_label = ""
         #: Config-driven special serve rules shared with Telegram admin serve flow.
         self.special_serve_rules = normalize_special_serve_rules(special_serve_rules)
+        self.homework_booking_service = homework_booking_service
         #: 廣播給 Telegram admin 訂閱者的後台通知 service。
         self.notification_service = (
             TelegramAdminNotificationService(db=self.queue_manager.db, sender=telegram_sender)
@@ -118,6 +123,9 @@ class LineBotHandler(
         user_id = event.source.userId
         reply_token = getattr(event, "reply_token", getattr(event, "replyToken", ""))
 
+        if text.startswith("homework:") and self.homework_booking_service and self.homework_booking_service.is_enabled():
+            return self._capture_homework_input(user_id, text.strip(), reply_token)
+
         if text == "switch_page2":
             return self._handle_admin_page_switch(user_id, "page2", reply_token)
         if text == "switch_page1":
@@ -134,6 +142,8 @@ class LineBotHandler(
                 return self._capture_register_location_item(user_id, text.strip(), reply_token)
             if pending_action.get("type") == "cancel_when_closed":
                 return self._handle_cancel_confirmation(user_id, text.strip(), reply_token)
+            if str(pending_action.get("type") or "").startswith("homework_"):
+                return self._capture_homework_input(user_id, text.strip(), reply_token)
 
         admin_history_mode = False
         if command == "/history" and args and self._is_admin(user_id):
@@ -152,6 +162,14 @@ class LineBotHandler(
             return self._handle_help(user_id, reply_token)
         elif command == "/register":
             return self._handle_register(user_id, args, reply_token)
+        elif command == "/homework":
+            return self._handle_homework_register(user_id, reply_token)
+        elif command == "/homework/register":
+            return self._handle_homework_profile_update(user_id, reply_token)
+        elif command == "/homework/cancel":
+            return self._handle_homework_cancel(user_id, reply_token)
+        elif command == "/homework/list":
+            return self._handle_homework_list(user_id, reply_token)
         elif command == "/coffee":
             return self._handle_coffee(user_id, reply_token)
         elif command == "/admin/apply":
@@ -170,7 +188,7 @@ class LineBotHandler(
         if flow is not None:
             return self.pending_state_store.get(user_id=user_id, flow=flow)
 
-        for candidate_flow in ("register", "cancel"):
+        for candidate_flow in ("register", "cancel", "homework"):
             if state := self.pending_state_store.get(user_id=user_id, flow=candidate_flow):
                 return state
         return {}

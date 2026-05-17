@@ -84,3 +84,13 @@ class UserProfile:
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
+
+@dataclass
+class HomeworkUserProfile:
+    """Homework demo profile bound to a messaging-platform user id."""
+
+    user_id: str = ""
+    student_id: str = ""
+    student_name: str = ""
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())

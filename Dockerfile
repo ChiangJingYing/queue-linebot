@@ -1,6 +1,7 @@
 FROM python:3.12-slim
 
 ENV TZ=Asia/Taipei
+ENV PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
 

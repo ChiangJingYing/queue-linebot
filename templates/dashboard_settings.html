@@ -91,6 +91,46 @@
       .list-editor { display: grid; gap: 12px; }
       .card-list { display: grid; gap: 12px; }
       .mini-card { border: 1px solid var(--border); border-radius: 14px; background: var(--card-alt); padding: 14px; display: grid; gap: 10px; }
+      .subsection-grid { display: grid; gap: 14px; }
+      .subsection-card { border: 1px solid var(--border); border-radius: 16px; background: var(--card-alt); padding: 16px; display: grid; gap: 12px; }
+      .subsection-card h3 { margin: 0; font-size: 16px; }
+      .subsection-card p { margin: 0; }
+      .subsection-card.hero { background: linear-gradient(135deg, rgba(15, 118, 110, 0.08), rgba(255, 255, 255, 0.92)); }
+      body[data-theme="dark"] .subsection-card.hero { background: linear-gradient(135deg, rgba(45, 212, 191, 0.12), rgba(15, 23, 42, 0.96)); }
+      .subsection-card.compact { gap: 16px; }
+      .homework-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+      .homework-form-grid .full { grid-column: 1 / -1; }
+      .homework-inline-check { display: flex; align-items: center; gap: 10px; font-weight: 700; white-space: nowrap; min-height: 44px; }
+      .homework-inline-check input { width: 18px; height: 18px; margin: 0; flex: 0 0 auto; }
+      .setting-card { width: 100%; border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 10px 12px; display: grid; gap: 6px; min-height: 76px; box-sizing: border-box; }
+      .setting-card-title { font-size: 14px; font-weight: 700; white-space: nowrap; }
+      .setting-card-help { font-size: 12px; color: var(--muted); line-height: 1.45; }
+      .toggle-panel { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--card); }
+      .toggle-panel .toggle-copy { display: grid; gap: 4px; }
+      .toggle-panel .toggle-copy strong { font-size: 14px; }
+      .toggle-panel .toggle-copy span { font-size: 12px; color: var(--muted); }
+      .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .switch-control { position: relative; width: 48px; height: 28px; flex: 0 0 auto; }
+      .switch-control input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+      .switch-slider { position: absolute; inset: 0; border-radius: 999px; background: #cbd5e1; transition: background 0.2s ease; pointer-events: none; }
+      .switch-slider::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); transition: transform 0.2s ease; }
+      .switch-control input:checked + .switch-slider { background: var(--switch-active); }
+      .switch-control input:checked + .switch-slider::after { transform: translateX(20px); }
+      .switch-control input:focus-visible + .switch-slider { outline: 2px solid var(--primary); outline-offset: 2px; }
+      .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+      .status-tile { border: 1px solid var(--border); border-radius: 14px; background: var(--card); padding: 12px; display: grid; gap: 6px; }
+      .status-label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+      .status-value { font-size: 15px; font-weight: 800; line-height: 1.35; }
+      .status-value.good { color: #0f766e; }
+      .status-value.warn { color: var(--warning); }
+      .status-value.bad { color: var(--danger); }
+      .status-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .status-chip { border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 800; }
+      .status-chip.good { background: #d1fae5; color: #065f46; }
+      .status-chip.warn { background: #fef3c7; color: #92400e; }
+      .status-chip.bad { background: #fee2e2; color: #991b1b; }
+      .helper-list { display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
+      .helper-list strong { color: var(--text); }
       .inline-actions { display: flex; gap: 10px; flex-wrap: wrap; }
       .tag-list { display: flex; gap: 8px; flex-wrap: wrap; min-height: 34px; align-items: center; }
       .tag { display: inline-flex; align-items: center; gap: 6px; background: var(--tag-bg); color: var(--tag-text); border-radius: 999px; padding: 6px 10px; font-size: 13px; font-weight: 700; }
@@ -112,11 +152,14 @@
       .pill.restart { background: #fef3c7; color: #92400e; }
       .restart-panel { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
       .warning-button { background: #f59e0b; color: #1f2937; }
-      #toast { position: fixed; right: 20px; bottom: 20px; display: none; background: var(--toast-bg); color: var(--toast-text); padding: 12px 14px; border-radius: 12px; }
+      #toast { position: fixed; left: 50%; top: 20px; transform: translateX(-50%); display: none; background: var(--toast-bg); color: var(--toast-text); padding: 12px 14px; border-radius: 12px; max-width: min(420px, calc(100vw - 32px)); box-shadow: 0 14px 38px rgba(15, 23, 42, 0.18); z-index: 1000; text-align: center; }
       #error-box { display: none; border: 1px solid #fecaca; background: #fff1f2; color: #9f1239; border-radius: 14px; padding: 12px 14px; }
+      .field-error { margin-top: 6px; color: #be123c; font-size: 13px; font-weight: 700; line-height: 1.45; }
+      input.input-error, select.input-error, textarea.input-error { border-color: #f43f5e; box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.15); }
       @media (max-width: 640px) {
         .page { padding: 16px; }
         .toolbar { position: static; padding-top: 4px; }
+        .homework-form-grid { grid-template-columns: 1fr; }
       }
     </style>
   </head>
@@ -198,21 +241,117 @@
         </section>
 
         <section class="section">
-          <h2>VIP</h2>
-          <p class="section-note"><strong>立即生效</strong>。VIP 開關與 Buy Me a Coffee 設定。</p>
-          <div class="grid">
-            <div class="checkbox-row"><input id="vip-enabled" type="checkbox" /><span>Enabled</span></div>
-            <label>Coffee Price<input id="vip-coffee-price" type="number" min="0" /></label>
-          </div>
-        </section>
-
-        <section class="section">
-          <h2>Registration</h2>
-          <p class="section-note"><strong>立即生效</strong>。用列/欄管理器維護 `location_options`。</p>
+          <h2>Location Options</h2>
+          <p class="section-note"><strong>立即生效</strong>。編輯 Dashboard config 中的 `location_options`。</p>
           <div class="inline-actions">
             <button type="button" class="add-button" id="add-location-row">新增 Row</button>
           </div>
           <div id="location-rows" class="card-list"></div>
+        </section>
+
+        <section class="section">
+          <h2>Homework Demo</h2>
+          <p class="section-note"><strong>立即生效</strong>。管理 Google Sheet 連線、助教工作表、與學生預約規則。</p>
+          <div class="subsection-grid">
+            <div class="subsection-card hero">
+              <div>
+                <h3>目前狀態</h3>
+              </div>
+              <div class="status-grid">
+                <div class="status-tile">
+                  <div class="status-label">功能狀態</div>
+                  <div id="homework-status-enabled" class="status-value">未啟用</div>
+                </div>
+                <div class="status-tile">
+                  <div class="status-label">Google API Runtime</div>
+                  <div id="homework-status-runtime" class="status-value">檢查中</div>
+                </div>
+                <div class="status-tile">
+                  <div class="status-label">憑證檔案</div>
+                  <div id="homework-status-credentials" class="status-value">未設定</div>
+                </div>
+                <div class="status-tile">
+                  <div class="status-label">工作表來源</div>
+                  <div id="homework-status-sheets" class="status-value">自動抓全部子表</div>
+                </div>
+              </div>
+              <div class="helper-list">
+                <div><strong id="homework-credentials-path-label">憑證路徑：</strong><span id="homework-credentials-path">尚未設定</span></div>
+                <div id="homework-runtime-note">Google Sheets runtime 尚未檢查。</div>
+              </div>
+            </div>
+
+            <div class="subsection-card">
+              <div>
+                <h3>步驟 1：啟用與連線</h3>
+                <p class="field-help">先上傳 service account JSON 檔案，再貼上 Google Sheet 網址或 spreadsheet id。驗證時會直接使用容器內目前這份憑證檔。</p>
+              </div>
+              <div class="homework-form-grid">
+                <div class="full homework-inline-check">
+                  <input id="homework-enabled" type="checkbox" />
+                  <span>啟用 Homework Demo</span>
+                </div>
+                <label class="full">Spreadsheet ID / URL<input id="homework-spreadsheet-id" placeholder="可直接貼上 Google Sheet 網址" /></label>
+                <div class="full">
+                  <label>Google Service Account JSON
+                    <input id="homework-credentials-file" type="file" accept=".json,application/json" />
+                  </label>
+                  <p class="field-help" id="homework-credentials-status">尚未載入憑證狀態。</p>
+                  <div class="inline-actions">
+                    <button type="button" class="secondary" id="homework-upload-credentials">上傳憑證</button>
+                    <button type="button" class="secondary" id="homework-validate-access">測試 Google Sheet 存取</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection-card compact">
+              <div>
+                <h3>步驟 2：試算表解析</h3>
+                <p class="field-help">Homework Demo 會自動抓所有子工作表，工作表名稱直接當助教名稱</p>
+              </div>
+              <div class="homework-form-grid">
+                <label>Booking Year<input id="homework-booking-year" type="number" min="2000" max="9999" /><p class="field-help">如果日期標頭只有月日，系統會用這個年份補全。</p></label>
+                <label>Slot Range<input id="homework-slot-range" placeholder="A1:F20" /><p class="field-help">矩形內第一列會當日期、第一欄會當時段；空白欄列會自動跳過。</p></label>
+              </div>
+            </div>
+
+            <div class="subsection-card compact">
+              <div>
+                <h3>步驟 3：預約流程設定</h3>
+                <p class="field-help">控制學生最多能預約幾次、取消時限，以及是否要固定同一位助教。</p>
+              </div>
+              <div class="homework-form-grid">
+                <label>Max Demo Per Student<input id="homework-max-demo-per-student" type="number" min="1" /><p class="field-help">設定每個學生最多Demo幾次。</p></label>
+                <label>Min Gap Days<input id="homework-min-gap-days" type="number" min="0" /><p class="field-help">Demo間隔最小要幾天。</p></label>
+                <label>Cancel Deadline Hour<input id="homework-cancel-deadline-hour" type="number" min="0" max="23" /><p class="field-help">以預約日前一天的這個點作為取消截止。</p></label>
+                <div class="setting-card">
+                  <div class="switch-row">
+                    <div class="setting-card-title">第二次起限制同助教</div>
+                    <label class="switch-control" aria-label="第二次起限制同助教">
+                      <input id="homework-same-ta-after-first-demo" type="checkbox" />
+                      <span class="switch-slider"></span>
+                    </label>
+                  </div>
+                </div>
+                <p class="field-help">開啟後，學生第一次預約了哪位助教，之後只能繼續選同一位。</p>
+              </div>
+            </div>
+
+            <div class="subsection-card compact">
+              <div>
+                <h3>步驟 4：助教名額與限制</h3>
+                <p class="field-help">所有助教一律套用同一個人數上限。黑名單仍可依助教個別設定。</p>
+              </div>
+              <div class="homework-form-grid">
+                <label>Default TA Limit<input id="homework-default-ta-limit" type="number" min="1" placeholder="留空則不設定預設上限" /></label>
+                <label class="full">TA Blacklists
+                  <textarea id="homework-ta-blacklists" placeholder="Amy=114106001,114106002&#10;Bob=114106003"></textarea>
+                  <p class="field-help">格式：每行 `助教名稱=學號1,學號2`。</p>
+                </label>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section class="section">
@@ -261,6 +400,15 @@
           </div>
         </section>
 
+        <section class="section">
+          <h2>VIP</h2>
+          <p class="section-note"><strong>立即生效</strong>。VIP 開關與 Buy Me a Coffee 設定。</p>
+          <div class="grid">
+            <div class="checkbox-row"><input id="vip-enabled" type="checkbox" /><span>Enabled</span></div>
+            <label>Coffee Price<input id="vip-coffee-price" type="number" min="0" /></label>
+          </div>
+        </section>
+
         <div class="toolbar">
           <button type="button" class="secondary" id="reload-settings">重新載入</button>
           <button type="submit" class="primary">儲存設定</button>
@@ -301,6 +449,13 @@
       const specialRulesList = document.getElementById('special-rules-list');
       const locationRows = document.getElementById('location-rows');
       const adminIdOptions = document.getElementById('admin-id-options');
+      const homeworkCredentialsStatus = document.getElementById('homework-credentials-status');
+      const homeworkStatusEnabled = document.getElementById('homework-status-enabled');
+      const homeworkStatusRuntime = document.getElementById('homework-status-runtime');
+      const homeworkStatusCredentials = document.getElementById('homework-status-credentials');
+      const homeworkStatusSheets = document.getElementById('homework-status-sheets');
+      const homeworkCredentialsPath = document.getElementById('homework-credentials-path');
+      const homeworkRuntimeNote = document.getElementById('homework-runtime-note');
       const visualForm = document.getElementById('settings-form');
       const rawForm = document.getElementById('raw-editor-form');
       const modeVisualButton = document.getElementById('mode-visual');
@@ -320,9 +475,97 @@
         }, 1800);
       }
 
+      function clearFieldErrors() {
+        document.querySelectorAll('.field-error').forEach((node) => node.remove());
+        document.querySelectorAll('.input-error').forEach((node) => node.classList.remove('input-error'));
+      }
+
+      function clearFieldErrorForElement(element) {
+        if (!element) return;
+        element.classList.remove('input-error');
+        const host = element.closest('label') || element.parentElement;
+        if (!host) return;
+        const errorNode = host.querySelector(':scope > .field-error');
+        if (errorNode) {
+          errorNode.remove();
+        }
+      }
+
+      function ensureFieldErrorNode(element) {
+        if (!element) return null;
+        const host = element.closest('label') || element.parentElement;
+        if (!host) return null;
+        let node = host.querySelector(':scope > .field-error');
+        if (!node) {
+          node = document.createElement('div');
+          node.className = 'field-error';
+          host.appendChild(node);
+        }
+        return node;
+      }
+
+      function showFieldError(element, message) {
+        if (!element || !message) return false;
+        element.classList.add('input-error');
+        const errorNode = ensureFieldErrorNode(element);
+        if (!errorNode) return false;
+        errorNode.textContent = message;
+        return true;
+      }
+
+      function extractErrorPath(message) {
+        const match = String(message || '').match(/^([a-z_]+(?:\.[a-z_]+|\[\])*)\s/);
+        return match ? match[1] : '';
+      }
+
+      function resolveFieldForError(message) {
+        const fieldMap = {
+          'server.host': document.getElementById('server-host'),
+          'server.port': document.getElementById('server-port'),
+          'queue.max_capacity': document.getElementById('queue-max-capacity'),
+          'queue.special_serve_rules.match_field': document.getElementById('special-match-field'),
+          'queue.special_serve_rules.skip_message': document.getElementById('special-skip-message'),
+          'queue.special_serve_rules.no_next_reply': document.getElementById('special-no-next-reply'),
+          'homework_demo.spreadsheet_id': document.getElementById('homework-spreadsheet-id'),
+          'homework_demo.default_ta_limit': document.getElementById('homework-default-ta-limit'),
+          'homework_demo.booking_year': document.getElementById('homework-booking-year'),
+          'homework_demo.slot_range': document.getElementById('homework-slot-range'),
+          'homework_demo.max_demo_per_student': document.getElementById('homework-max-demo-per-student'),
+          'homework_demo.min_gap_days': document.getElementById('homework-min-gap-days'),
+          'homework_demo.cancel_deadline_hour': document.getElementById('homework-cancel-deadline-hour'),
+          'logging.level': document.getElementById('logging-level'),
+          'logging.log_file': document.getElementById('logging-log-file'),
+          'logging.max_size_mb': document.getElementById('logging-max-size-mb'),
+          'logging.backup_count': document.getElementById('logging-backup-count'),
+          'web_ui.session_cookie_name': document.getElementById('web-ui-session-cookie-name'),
+          'rawYaml': document.getElementById('raw-yaml-editor'),
+        };
+        const path = extractErrorPath(message);
+        if (fieldMap[path]) return fieldMap[path];
+        if (String(message).startsWith('Google service account JSON') || String(message).includes('尚未設定 Google service account JSON')) {
+          return document.getElementById('homework-credentials-file');
+        }
+        if (String(message).includes('Google Sheet') || String(message).includes('spreadsheet id') || String(message).includes('spreadsheet id 或 URL')) {
+          return document.getElementById('homework-spreadsheet-id');
+        }
+        if (String(message).startsWith('YAML ')) {
+          return document.getElementById('raw-yaml-editor');
+        }
+        return null;
+      }
+
+      function showSuccess(message) {
+        showToast(message);
+      }
+
       function showError(message) {
         errorBox.textContent = message;
         errorBox.style.display = 'block';
+        const field = resolveFieldForError(message);
+        if (field) {
+          showFieldError(field, message);
+        }
+        showToast(message);
       }
 
       function clearError() {
@@ -374,6 +617,76 @@
           result[row] = Array.from(new Set((item.columns || []).map((column) => String(column || '').trim()).filter(Boolean)));
         }
         return result;
+      }
+
+      function linesToList(text) {
+        return String(text || '')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean);
+      }
+
+      function listToLines(values) {
+        return (values || []).join('\n');
+      }
+
+      function linesToMap(text) {
+        const result = {};
+        for (const line of String(text || '').split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const separatorIndex = trimmed.indexOf('=');
+          if (separatorIndex === -1) continue;
+          const key = trimmed.slice(0, separatorIndex).trim();
+          const value = trimmed.slice(separatorIndex + 1).trim();
+          if (!key) continue;
+          result[key] = value;
+        }
+        return result;
+      }
+
+      function mapToLines(map) {
+        return Object.entries(map || {})
+          .map(([key, value]) => `${key}=${value}`)
+          .join('\n');
+      }
+
+      function linesToListMap(text) {
+        const result = {};
+        for (const line of String(text || '').split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const separatorIndex = trimmed.indexOf('=');
+          if (separatorIndex === -1) continue;
+          const key = trimmed.slice(0, separatorIndex).trim();
+          const value = trimmed.slice(separatorIndex + 1).trim();
+          if (!key) continue;
+          result[key] = value
+            ? value.split(',').map((item) => item.trim()).filter(Boolean)
+            : [];
+        }
+        return result;
+      }
+
+      function listMapToLines(map) {
+        return Object.entries(map || {})
+          .map(([key, values]) => `${key}=${(values || []).join(',')}`)
+          .join('\n');
+      }
+
+      function linesToIntMap(text) {
+        const result = {};
+        for (const [key, value] of Object.entries(linesToMap(text))) {
+          if (value === '') continue;
+          result[key] = Number(value);
+        }
+        return result;
+      }
+
+      function intMapToLines(map) {
+        return Object.entries(map || {})
+          .map(([key, value]) => `${key}=${value}`)
+          .join('\n');
       }
 
       function renderTags(container, values, onRemove) {
@@ -571,6 +884,54 @@
         document.getElementById(id).value = value ?? '';
       }
 
+      function setHomeworkCredentialStatus(meta) {
+        const configured = !!(meta && meta.homeworkCredentialsConfigured);
+        const path = String((meta && meta.homeworkCredentialsPath) || '');
+        homeworkCredentialsStatus.textContent = configured
+          ? `目前已設定憑證：${path}`
+          : `目前尚未設定憑證，預設會使用：${path || 'config/google-service-account.json'}`;
+      }
+
+      function applyStatusTone(element, tone) {
+        element.classList.remove('good', 'warn', 'bad');
+        if (tone) {
+          element.classList.add(tone);
+        }
+      }
+
+      function setHomeworkOverview(config, meta) {
+        const enabled = !!(config && config.homework_demo && config.homework_demo.enabled);
+        const credentialsConfigured = !!(meta && meta.homeworkCredentialsConfigured);
+        const credentialsPathValue = String((meta && meta.homeworkCredentialsPath) || '');
+        const runtimeReady = !!(meta && meta.homeworkGoogleApiReady);
+        const runtimeMessage = String((meta && meta.homeworkGoogleApiMessage) || '');
+        const sheetNames = Array.isArray(meta?.homeworkLastValidatedSheetNames) ? meta.homeworkLastValidatedSheetNames : [];
+        const spreadsheetValue = String((config?.homework_demo?.spreadsheet_id) || '').trim();
+
+        homeworkStatusEnabled.textContent = enabled ? '已啟用' : '未啟用';
+        applyStatusTone(homeworkStatusEnabled, enabled ? 'good' : 'warn');
+
+        homeworkStatusRuntime.textContent = runtimeReady ? '已安裝' : '缺少依賴';
+        applyStatusTone(homeworkStatusRuntime, runtimeReady ? 'good' : 'bad');
+
+        homeworkStatusCredentials.textContent = credentialsConfigured ? '已上傳' : '尚未上傳';
+        applyStatusTone(homeworkStatusCredentials, credentialsConfigured ? 'good' : 'warn');
+
+        if (!spreadsheetValue) {
+          homeworkStatusSheets.textContent = '尚未設定試算表';
+          applyStatusTone(homeworkStatusSheets, 'warn');
+        } else if (sheetNames.length) {
+          homeworkStatusSheets.textContent = `最近驗證抓到 ${sheetNames.length} 個工作表`;
+          applyStatusTone(homeworkStatusSheets, 'good');
+        } else {
+          homeworkStatusSheets.textContent = '自動抓全部子表（尚未驗證）';
+          applyStatusTone(homeworkStatusSheets, 'warn');
+        }
+
+        homeworkCredentialsPath.textContent = credentialsPathValue || 'config/google-service-account.json';
+        homeworkRuntimeNote.textContent = runtimeMessage || 'Google Sheets runtime 尚未檢查。';
+      }
+
       function setMode(mode) {
         const isRaw = mode === 'raw';
         visualForm.hidden = isRaw;
@@ -605,6 +966,8 @@
         state.specialAdmins = objectToAdminList(config.queue.special_serve_rules.admins);
         state.locationRows = objectToLocationRows(config.registration.location_options);
         renderAdminOptions(meta.adminOptions || []);
+        setHomeworkCredentialStatus(meta);
+        setHomeworkOverview(config, meta);
 
         setInput('server-host', config.server.host);
         setInput('server-port', config.server.port);
@@ -616,6 +979,16 @@
         setInput('special-no-next-reply', config.queue.special_serve_rules.no_next_reply);
         setCheckbox('vip-enabled', config.vip.enabled);
         setInput('vip-coffee-price', config.vip.coffee_price);
+        setCheckbox('homework-enabled', config.homework_demo.enabled);
+        setInput('homework-spreadsheet-id', config.homework_demo.spreadsheet_id);
+        setInput('homework-default-ta-limit', config.homework_demo.default_ta_limit);
+        setInput('homework-booking-year', config.homework_demo.booking_year);
+        setInput('homework-slot-range', config.homework_demo.slot_range);
+        setInput('homework-max-demo-per-student', config.homework_demo.max_demo_per_student);
+        setInput('homework-min-gap-days', config.homework_demo.min_gap_days);
+        setInput('homework-cancel-deadline-hour', config.homework_demo.cancel_deadline_hour);
+        setCheckbox('homework-same-ta-after-first-demo', config.homework_demo.same_ta_after_first_demo);
+        setInput('homework-ta-blacklists', listMapToLines(config.homework_demo.ta_blacklists));
         setInput('logging-level', config.logging.level);
         setInput('logging-log-file', config.logging.log_file);
         setInput('logging-max-size-mb', config.logging.max_size_mb);
@@ -665,6 +1038,18 @@
           registration: {
             location_options: state.locationRows.map((item) => ({ row: item.row, columns: item.columns || [] })),
           },
+          homework_demo: {
+            enabled: document.getElementById('homework-enabled').checked,
+            spreadsheet_id: document.getElementById('homework-spreadsheet-id').value,
+            default_ta_limit: parseOptionalNumber('homework-default-ta-limit'),
+            ta_blacklists: linesToListMap(document.getElementById('homework-ta-blacklists').value),
+            booking_year: Number(document.getElementById('homework-booking-year').value),
+            slot_range: document.getElementById('homework-slot-range').value,
+            max_demo_per_student: Number(document.getElementById('homework-max-demo-per-student').value),
+            min_gap_days: Number(document.getElementById('homework-min-gap-days').value),
+            same_ta_after_first_demo: document.getElementById('homework-same-ta-after-first-demo').checked,
+            cancel_deadline_hour: Number(document.getElementById('homework-cancel-deadline-hour').value),
+          },
           logging: {
             level: document.getElementById('logging-level').value,
             log_file: document.getElementById('logging-log-file').value,
@@ -686,6 +1071,10 @@
         return stableStringify(collectPayload());
       }
 
+      function refreshHomeworkOverview() {
+        setHomeworkOverview({ homework_demo: collectPayload().homework_demo }, state.meta || {});
+      }
+
       function getRawSnapshot() {
         return String(document.getElementById('raw-yaml-editor').value || '');
       }
@@ -696,6 +1085,9 @@
       }
 
       function refreshDirtyState() {
+        if (visualForm && !visualForm.hidden) {
+          refreshHomeworkOverview();
+        }
         document.body.dataset.dirty = hasUnsavedChanges() ? 'true' : 'false';
       }
 
@@ -713,6 +1105,7 @@
 
       async function loadSettings() {
         clearError();
+        clearFieldErrors();
         const response = await fetch(withAuthUrl('/settings/data'), withAuthHeaders());
         if (!response.ok) {
           showError('載入設定失敗');
@@ -741,6 +1134,62 @@
         refreshDirtyState();
       });
 
+      document.getElementById('homework-upload-credentials').addEventListener('click', async () => {
+        clearError();
+        clearFieldErrors();
+        const fileInput = document.getElementById('homework-credentials-file');
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          showError('請先選擇 Google service account JSON 檔案');
+          return;
+        }
+        const credentialsJson = await file.text();
+        const response = await fetch(
+          withAuthUrl('/settings/homework/credentials'),
+          withAuthHeaders({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credentialsJson }),
+          }),
+        );
+        const payload = await response.json();
+        if (!response.ok) {
+          showError(payload.detail || '上傳 Google service account JSON 失敗');
+          return;
+        }
+        state.meta = payload.meta || {};
+        setHomeworkCredentialStatus(payload.meta || {});
+        setHomeworkOverview(state.config || { homework_demo: collectPayload().homework_demo }, state.meta);
+        fileInput.value = '';
+        showSuccess('Google service account JSON 已上傳');
+      });
+
+      document.getElementById('homework-validate-access').addEventListener('click', async () => {
+        clearError();
+        clearFieldErrors();
+        const payload = collectPayload().homework_demo;
+        const response = await fetch(
+          withAuthUrl('/settings/homework/validate'),
+          withAuthHeaders({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          }),
+        );
+        const result = await response.json();
+        if (!response.ok) {
+          showError(result.detail || 'Google Sheet 驗證失敗');
+          return;
+        }
+        state.meta = {
+          ...(state.meta || {}),
+          homeworkLastValidatedSheetNames: Array.isArray(result.sheetNames) ? result.sheetNames : [],
+        };
+        setHomeworkOverview(state.config || { homework_demo: collectPayload().homework_demo }, state.meta);
+        const sheetPreview = Array.isArray(result.sheetNames) ? result.sheetNames.join(', ') : '';
+        showSuccess(`驗證成功：${result.spreadsheetId}${sheetPreview ? ` (${sheetPreview})` : ''}`);
+      });
+
       document.getElementById('reload-settings').addEventListener('click', () => {
         if (!confirmDiscardChanges('重新載入會捨棄尚未儲存的修改，確定要繼續嗎？')) return;
         loadSettings();
@@ -755,6 +1204,10 @@
       visualForm.addEventListener('change', refreshDirtyState);
       rawForm.addEventListener('input', refreshDirtyState);
       rawForm.addEventListener('change', refreshDirtyState);
+      visualForm.addEventListener('input', (event) => clearFieldErrorForElement(event.target));
+      visualForm.addEventListener('change', (event) => clearFieldErrorForElement(event.target));
+      rawForm.addEventListener('input', (event) => clearFieldErrorForElement(event.target));
+      rawForm.addEventListener('change', (event) => clearFieldErrorForElement(event.target));
 
       window.addEventListener('beforeunload', (event) => {
         if (!hasUnsavedChanges()) return;
@@ -772,6 +1225,7 @@
       document.getElementById('settings-form').addEventListener('submit', async (event) => {
         event.preventDefault();
         clearError();
+        clearFieldErrors();
         const response = await fetch(
           withAuthUrl('/settings'),
           withAuthHeaders({
@@ -788,12 +1242,13 @@
         populateForm(payload.config, payload.meta);
         populateRawEditor(payload.rawYaml);
         markSavedState();
-        showToast('設定已儲存');
+        showSuccess('設定已儲存');
       });
 
       document.getElementById('raw-editor-form').addEventListener('submit', async (event) => {
         event.preventDefault();
         clearError();
+        clearFieldErrors();
         const response = await fetch(
           withAuthUrl('/settings/raw'),
           withAuthHeaders({
@@ -810,7 +1265,7 @@
         populateForm(payload.config, payload.meta);
         populateRawEditor(payload.rawYaml);
         markSavedState();
-        showToast('原文設定已儲存');
+        showSuccess('原文設定已儲存');
       });
 
       restartButton.addEventListener('click', async () => {

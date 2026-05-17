@@ -11,7 +11,7 @@ services:
       - "8000:8000"
     volumes:
       - ./queue.db:/app/queue.db
-      - ./config/queue_config.yaml:/app/config/queue_config.yaml
+      - ./config:/app/config
       - ./logs:/app/logs
       - ./rich_menus:/app/rich_menus
       - ./dashboard_layout:/app/dashboard_layout

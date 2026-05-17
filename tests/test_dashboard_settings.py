@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from fastapi.testclient import TestClient
 
 import main
@@ -30,6 +32,18 @@ def test_dashboard_settings_page_and_data_api(tmp_path):
             "  protect_read_routes: false\n"
             "line_bot:\n"
             "  push_on_served: false\n"
+            "homework_demo:\n"
+            "  enabled: true\n"
+            "  spreadsheet_id: sheet-123\n"
+            "  default_ta_limit: 8\n"
+            "  ta_blacklists:\n"
+            "    Amy: ['114106999']\n"
+            "  booking_year: 2026\n"
+            "  slot_range: A1:F20\n"
+            "  max_demo_per_student: 2\n"
+            "  min_gap_days: 1\n"
+            "  same_ta_after_first_demo: true\n"
+            "  cancel_deadline_hour: 21\n"
         ),
         encoding="utf-8",
     )
@@ -52,11 +66,20 @@ def test_dashboard_settings_page_and_data_api(tmp_path):
     assert "restart-app" in page.text
     assert "special-rules-list" in page.text
     assert "location-rows" in page.text
+    assert "Homework Demo" in page.text
     assert data.status_code == 200
     payload = data.json()
     assert payload["config"]["queue"]["special_serve_rules"]["enabled"] is True
     assert payload["config"]["registration"]["location_options"] == {"1": ["1", "2"]}
+    assert payload["config"]["homework_demo"]["enabled"] is True
+    assert payload["config"]["homework_demo"]["slot_range"] == "A1:F20"
+    assert payload["config"]["homework_demo"]["default_ta_limit"] == 8
+    assert payload["config"]["homework_demo"]["booking_year"] == 2026
     assert payload["meta"]["hotReloadableSections"]["registration"] is True
+    assert payload["meta"]["hotReloadableSections"]["homework_demo"] is True
+    assert "homeworkGoogleApiReady" in payload["meta"]
+    assert "homeworkGoogleApiMessage" in payload["meta"]
+    assert payload["meta"]["homeworkLastValidatedSheetNames"] == []
     assert "special_serve_rules:" in payload["rawYaml"]
     assert "timeout_minutes" not in payload["config"]["queue"]
     assert "timeout_action" not in payload["config"]["queue"]
@@ -98,6 +121,40 @@ def test_dashboard_settings_template_avoids_html_injection_patterns(tmp_path):
     assert 'value="${item.row || \'\'}"' not in page.text
 
 
+def test_dashboard_settings_template_has_all_referenced_ids(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    client = TestClient(main.app)
+
+    page = client.get("/settings")
+
+    assert page.status_code == 200
+    refs = set(re.findall(r"getElementById\\('([^']+)'\\)", page.text))
+    ids = set(re.findall(r'id="([^"]+)"', page.text))
+    assert refs - ids == set()
+
+
+def test_dashboard_settings_template_has_contextual_feedback_regions(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    client = TestClient(main.app)
+
+    page = client.get("/settings")
+
+    assert page.status_code == 200
+    assert 'id="homework-credentials-feedback"' not in page.text
+    assert 'id="visual-form-feedback"' not in page.text
+    assert 'id="raw-form-feedback"' not in page.text
+    assert '#toast { position: fixed; left: 50%; top: 20px; transform: translateX(-50%)' in page.text
+    assert '.field-error {' in page.text
+    assert 'input.input-error, select.input-error, textarea.input-error' in page.text
+    assert "function showFieldError(element, message)" in page.text
+    assert "function resolveFieldForError(message)" in page.text
+    assert "function clearFieldErrorForElement(element)" in page.text
+    assert "showError(payload.detail || '儲存失敗');" in page.text
+    assert "showError(result.detail || 'Google Sheet 驗證失敗');" in page.text
+    assert "showFieldError(field, message);" in page.text
+    assert "visualForm.addEventListener('input', (event) => clearFieldErrorForElement(event.target));" in page.text
+
+
 def test_dashboard_settings_requires_login_when_admin_token_is_configured(tmp_path):
     _setup_runtime(tmp_path, location_options={"1": ["1"]})
     main.config["web_ui"] = {
@@ -134,7 +191,12 @@ def test_dashboard_settings_save_writes_yaml_and_applies_runtime_updates(tmp_pat
         encoding="utf-8",
     )
     main.CONFIG_FILE_PATH = config_path
+    main.config = main.load_config(str(config_path))
     client = TestClient(main.app)
+    main._validate_homework_demo_access = lambda payload: {
+        "spreadsheetId": "sheet-xyz",
+        "sheetNames": ["Amy", "Bob"],
+    }
 
     response = client.post(
         "/settings",
@@ -160,6 +222,18 @@ def test_dashboard_settings_save_writes_yaml_and_applies_runtime_updates(tmp_pat
             "logging": {"level": "DEBUG", "log_file": "logs/custom.log", "max_size_mb": 20, "backup_count": 7},
             "web_ui": {"protect_read_routes": True, "allow_query_token": True, "session_cookie_name": "new_cookie"},
             "line_bot": {"push_on_served": True},
+            "homework_demo": {
+                "enabled": True,
+                "spreadsheet_id": "sheet-xyz",
+                "default_ta_limit": 8,
+                "ta_blacklists": {"Amy": ["114106999"], "Bob": []},
+                "booking_year": 2026,
+                "slot_range": "A1:F20",
+                "max_demo_per_student": 2,
+                "min_gap_days": 1,
+                "same_ta_after_first_demo": True,
+                "cancel_deadline_hour": 21,
+            },
         },
     )
 
@@ -167,11 +241,20 @@ def test_dashboard_settings_save_writes_yaml_and_applies_runtime_updates(tmp_pat
     body = response.json()
     assert body["config"]["queue"]["max_capacity"] == 80
     assert body["config"]["registration"]["location_options"] == {"2": ["1", "3"], "3": ["2"]}
+    assert body["config"]["homework_demo"]["spreadsheet_id"] == "sheet-xyz"
+    assert body["config"]["homework_demo"]["default_ta_limit"] == 8
+    assert body["config"]["homework_demo"]["ta_blacklists"]["Amy"] == ["114106999"]
+    assert body["meta"]["homeworkLastValidatedSheetNames"] == ["Amy", "Bob"]
+    assert "homeworkGoogleApiReady" in body["meta"]
+    assert "homeworkGoogleApiMessage" in body["meta"]
     assert body["config"]["queue"]["special_serve_rules"]["admins"]["admin-2"]["targets"] == ["B001", "B002"]
     assert body["meta"]["adminOptions"] == []
     written = config_path.read_text(encoding="utf-8")
     assert "session_cookie_name: new_cookie" in written
     assert "admin-2:" in written
+    assert "homework_demo:" in written
+    assert "spreadsheet_id: sheet-xyz" in written
+    assert "slot_range: A1:F20" in written
     assert "B001" in written
     assert '  "2": ["1", "3"]' in written or "  '2': ['1', '3']" in written
     assert '  "3": ["2"]' in written or "  '3': ['2']" in written
@@ -210,6 +293,10 @@ def test_dashboard_settings_supports_unset_queue_values_and_admin_options(tmp_pa
     main.CONFIG_FILE_PATH = config_path
     main.config = main.load_config(str(config_path))
     client = TestClient(main.app)
+    main._validate_homework_demo_access = lambda payload: {
+        "spreadsheetId": "",
+        "sheetNames": [],
+    }
 
     data = client.get("/settings/data")
     save = client.post(
@@ -244,6 +331,7 @@ def test_dashboard_settings_supports_unset_queue_values_and_admin_options(tmp_pa
             "label": "Alice Admin (admin-1)",
         }
     ]
+    assert payload["meta"]["homeworkLastValidatedSheetNames"] == []
     assert payload["config"]["queue"]["max_capacity"] is None
     assert "timeout_minutes" not in payload["config"]["queue"]
     assert "timeout_action" not in payload["config"]["queue"]
@@ -259,6 +347,9 @@ def test_dashboard_settings_supports_unset_queue_values_and_admin_options(tmp_pa
             "label": "Alice Admin (admin-1)",
         }
     ]
+    assert save.json()["meta"]["homeworkLastValidatedSheetNames"] == []
+    assert "homeworkGoogleApiReady" in save.json()["meta"]
+    assert "homeworkGoogleApiMessage" in save.json()["meta"]
     assert main.queue_manager is not None
     assert main.queue_manager.get_max_capacity() is None
     written = config_path.read_text(encoding="utf-8")
@@ -417,3 +508,159 @@ def test_dashboard_settings_rejects_invalid_payload(tmp_path):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "queue.max_capacity 必須大於或等於 1"
+
+
+def test_dashboard_settings_homework_credentials_upload_and_validate_url(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    config_path = tmp_path / "config" / "queue_config.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text("queue:\n  max_capacity: 50\n", encoding="utf-8")
+    main.CONFIG_FILE_PATH = config_path
+    main.config = main.load_config(str(config_path))
+    client = TestClient(main.app)
+
+    upload = client.post(
+        "/settings/homework/credentials",
+        json={
+            "credentialsJson": '{"type":"service_account","client_email":"bot@example.com","private_key":"-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n","token_uri":"https://oauth2.googleapis.com/token"}'
+        },
+    )
+
+    assert upload.status_code == 200
+    credentials_path = tmp_path / "config" / "google-service-account.json"
+    assert credentials_path.exists()
+    upload_meta = upload.json()["meta"]
+    assert upload_meta["homeworkCredentialsConfigured"] is True
+    assert "homeworkGoogleApiReady" in upload_meta
+    assert "homeworkGoogleApiMessage" in upload_meta
+    assert upload_meta["homeworkLastValidatedSheetNames"] == []
+
+    captured = {}
+
+    def fake_validate(payload):
+        captured["payload"] = payload
+        return {
+            "spreadsheetId": "1AbCdEfGhIjKlMn",
+            "sheetNames": ["Amy", "Bob"],
+        }
+
+    main._validate_homework_demo_access = fake_validate
+
+    response = client.post(
+        "/settings/homework/validate",
+        json={
+            "enabled": True,
+            "spreadsheet_id": "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMn/edit#gid=0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["payload"]["spreadsheet_id"] == "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMn/edit#gid=0"
+
+
+def test_dashboard_settings_homework_credentials_rejects_missing_token_uri(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    config_path = tmp_path / "config" / "queue_config.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text("queue:\n  max_capacity: 50\n", encoding="utf-8")
+    main.CONFIG_FILE_PATH = config_path
+    main.config = main.load_config(str(config_path))
+    client = TestClient(main.app)
+
+    response = client.post(
+        "/settings/homework/credentials",
+        json={
+            "credentialsJson": '{"type":"service_account","client_email":"bot@example.com","private_key":"-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n"}'
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Google service account JSON 缺少必要欄位：token_uri"
+
+
+def test_dashboard_settings_homework_credentials_rejects_non_service_account_type(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    config_path = tmp_path / "config" / "queue_config.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text("queue:\n  max_capacity: 50\n", encoding="utf-8")
+    main.CONFIG_FILE_PATH = config_path
+    main.config = main.load_config(str(config_path))
+    client = TestClient(main.app)
+
+    response = client.post(
+        "/settings/homework/credentials",
+        json={
+            "credentialsJson": '{"type":"authorized_user","client_email":"bot@example.com","private_key":"-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n","token_uri":"https://oauth2.googleapis.com/token"}'
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Google service account JSON type 必須為 service_account"
+
+
+def test_dashboard_settings_homework_credentials_rejects_invalid_json(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    config_path = tmp_path / "config" / "queue_config.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text("queue:\n  max_capacity: 50\n", encoding="utf-8")
+    main.CONFIG_FILE_PATH = config_path
+    main.config = main.load_config(str(config_path))
+    client = TestClient(main.app)
+
+    response = client.post(
+        "/settings/homework/credentials",
+        json={"credentialsJson": "{not-json}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Google service account JSON 格式錯誤"
+
+def test_dashboard_settings_save_normalizes_homework_spreadsheet_url(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    config_path = tmp_path / "config" / "queue_config.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text("queue:\n  max_capacity: 50\n", encoding="utf-8")
+    main.CONFIG_FILE_PATH = config_path
+    main.config = main.load_config(str(config_path))
+    client = TestClient(main.app)
+    main._validate_homework_demo_access = lambda payload: {
+        "spreadsheetId": "1AbCdEfGhIjKlMn",
+        "sheetNames": ["Amy"],
+    }
+
+    response = client.post(
+        "/settings",
+        json={
+            "server": {"host": "127.0.0.1", "port": 9001, "debug": False},
+            "queue": {
+                "max_capacity": 50,
+                "special_serve_rules": {
+                    "enabled": False,
+                    "match_field": "display_name",
+                    "skip_message": "",
+                    "no_next_reply": "",
+                    "admins": [],
+                },
+            },
+            "vip": {"enabled": True, "coffee_price": 60},
+            "registration": {"location_options": [{"row": "1", "columns": ["1"]}]},
+            "homework_demo": {
+                "enabled": True,
+                "spreadsheet_id": "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMn/edit#gid=0",
+                "default_ta_limit": 8,
+                "ta_blacklists": {},
+                "booking_year": 2026,
+                "slot_range": "A1:F20",
+                "max_demo_per_student": 2,
+                "min_gap_days": 1,
+                "same_ta_after_first_demo": True,
+                "cancel_deadline_hour": 21,
+            },
+            "logging": {"level": "INFO", "log_file": "logs/x.log", "max_size_mb": 10, "backup_count": 2},
+            "web_ui": {"protect_read_routes": False, "allow_query_token": False, "session_cookie_name": "cookie"},
+            "line_bot": {"push_on_served": False},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["config"]["homework_demo"]["spreadsheet_id"] == "1AbCdEfGhIjKlMn"
