@@ -45,7 +45,7 @@ class HandlerAdminMixin:
         先做 admin 權限檢查，再依命令字串分派到各個子處理器。
         """
         if not self._is_admin(user_id):
-            return self._reply(reply_token, "❌ 未授權，僅限管理員使用。")
+            return self._reply_admin_unauthorized(user_id, reply_token)
 
         if command == "/admin/serve" and len(args) > 0:
             return self._admin_serve(user_id, args[0], reply_token)
@@ -90,7 +90,7 @@ class HandlerAdminMixin:
             return self._handle_admin_apply(user_id, reply_token)
 
         if not self._is_admin(user_id):
-            return self._reply(reply_token, "❌ 未授權，僅限管理員使用。")
+            return self._reply_admin_unauthorized(user_id, reply_token)
 
         sub = args[0].lower()
 

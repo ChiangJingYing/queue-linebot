@@ -64,6 +64,7 @@ class HandlerSupportMixin:
     def _handle_admin_page_switch(self, user_id: str, target_page: str, reply_token: str) -> list:
         """處理管理員 rich menu page1 / page2 切換。"""
         if not self._is_admin(user_id):
+            self._sync_rich_menu(user_id)
             return self._reply(reply_token, "❌ 未授權，僅限管理員使用。")
 
         target_id = (
@@ -73,6 +74,11 @@ class HandlerSupportMixin:
         self.notifier.link_rich_menu(user_id, target_id)
         page_num = 2 if target_page == "page2" else 1
         return self._reply(reply_token, f"✅ 已切換至第 {page_num} 頁")
+
+    def _reply_admin_unauthorized(self, user_id: str, reply_token: str) -> list:
+        """回覆未授權訊息，並把 rich menu 校正回一般使用者頁。"""
+        self._sync_rich_menu(user_id)
+        return self._reply(reply_token, "❌ 未授權，僅限管理員使用。")
 
     def _handle_status(self, user_id: str, reply_token: str) -> list:
         """回覆使用者目前排隊狀態。"""

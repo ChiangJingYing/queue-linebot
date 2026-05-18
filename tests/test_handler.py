@@ -442,6 +442,34 @@ def test_admin_apply_subcommands_require_admin(tmp_path):
     assert "未授權" in reply[0]["text"]
 
 
+def test_unauthorized_admin_command_relinks_demoted_user_to_regular_rich_menu(tmp_path):
+    db = DatabaseManager(str(tmp_path / "demoted-admin-rich-menu.db"))
+    handler = LineBotHandler(
+        queue_manager=QueueManager(db),
+        vip_service=VipService(db),
+        admin_ids=["admin"],
+        user_rich_menu_id="user-page1-id",
+        user_rich_menu_page2_id="user-page2-id",
+        admin_rich_menu_id="admin-page1-id",
+        admin_rich_menu_page2_id="admin-page2-id",
+    )
+    linked = []
+    current_menu = {"value": "admin-page2-id"}
+    handler.notifier.get_user_rich_menu = lambda user_id: current_menu["value"]
+
+    def fake_link_rich_menu(user_id, rich_menu_id):
+        linked.append((user_id, rich_menu_id))
+        current_menu["value"] = rich_menu_id
+        return "ok"
+
+    handler.notifier.link_rich_menu = fake_link_rich_menu
+
+    reply = handler.handle_event(make_event("/admin/status", user_id="alice"))
+
+    assert "未授權" in reply[0]["text"]
+    assert linked == [("alice", "user-page1-id")]
+
+
 def test_help_is_admin_only(tmp_path):
     db = DatabaseManager(str(tmp_path / "help.db"))
     handler = LineBotHandler(queue_manager=QueueManager(db), vip_service=VipService(db), admin_ids=["admin"])
