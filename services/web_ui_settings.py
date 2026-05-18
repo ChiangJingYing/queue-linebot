@@ -177,12 +177,13 @@ def _normalize_string_list_map(value: object, path: str) -> dict[str, list[str]]
 
 def editable_config_defaults() -> dict:
     defaults = get_defaults()
-    return build_editable_config(defaults)
+    return build_editable_config(defaults, raw_config={})
 
 
-def build_editable_config(loaded_config: dict) -> dict:
+def build_editable_config(loaded_config: dict, *, raw_config: dict | None = None) -> dict:
     defaults = get_defaults()
     merged = load_config_data(defaults, loaded_config)
+    raw_homework_demo = raw_config.get("homework_demo") if isinstance(raw_config, dict) and isinstance(raw_config.get("homework_demo"), dict) else {}
     loaded_queue = loaded_config.get("queue") if isinstance(loaded_config.get("queue"), dict) else None
     if loaded_queue:
         merged.setdefault("queue", {})
@@ -230,6 +231,17 @@ def build_editable_config(loaded_config: dict) -> dict:
                 int(merged["homework_demo"]["default_ta_limit"])
                 if merged["homework_demo"].get("default_ta_limit") is not None
                 else None
+            ),
+            **(
+                {
+                    "ta_line_user_ids": {
+                        str(key): str(value).strip()
+                        for key, value in (merged["homework_demo"].get("ta_line_user_ids", {}) or {}).items()
+                        if str(key).strip() and str(value).strip()
+                    }
+                }
+                if "ta_line_user_ids" in raw_homework_demo
+                else {}
             ),
             "ta_blacklists": {
                 str(key): _dedupe_strings(value if isinstance(value, list) else [])
@@ -335,6 +347,11 @@ def normalize_editable_config(payload: object) -> dict:
             "sheet_names": [],
             "ta_order": [],
             "ta_display_names": {},
+            **(
+                {"ta_line_user_ids": _normalize_string_map(homework_demo.get("ta_line_user_ids", {}), "homework_demo.ta_line_user_ids")}
+                if "ta_line_user_ids" in homework_demo
+                else {}
+            ),
             "default_ta_limit": (
                 None if homework_demo.get("default_ta_limit") in (None, "")
                 else _as_int(homework_demo.get("default_ta_limit"), "homework_demo.default_ta_limit", minimum=1)
@@ -392,7 +409,7 @@ class QueueConfigStore:
 
     def load_editable(self) -> dict:
         raw = self.load_raw()
-        editable = build_editable_config(load_config(str(self.path)))
+        editable = build_editable_config(load_config(str(self.path)), raw_config=raw)
         raw_queue = raw.get("queue") if isinstance(raw.get("queue"), dict) else {}
         editable_queue = editable.get("queue", {})
         for key in ("max_capacity",):

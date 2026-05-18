@@ -12,6 +12,7 @@ from typing import Iterable, List, Optional
 
 from .models import (
     AdminNotificationPreference,
+    HomeworkCancelApplication,
     HomeworkUserProfile,
     QueueEntry,
     QueueEvent,
@@ -99,6 +100,28 @@ class DatabaseManager:
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS homework_cancel_applications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_user_id TEXT NOT NULL,
+                    student_id TEXT NOT NULL,
+                    student_name TEXT NOT NULL,
+                    booking_key TEXT NOT NULL,
+                    sheet_name TEXT NOT NULL,
+                    booking_date TEXT NOT NULL,
+                    time_slot TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    review_reason TEXT NOT NULL DEFAULT '',
+                    reviewed_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_at TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_homework_cancel_applications_status
+                ON homework_cancel_applications(status, booking_key)
             """)
             defaults = [
                 ("queue_max_capacity", "50"),
@@ -632,6 +655,140 @@ class DatabaseManager:
                 (user_id,),
             ).fetchone()
             return HomeworkUserProfile(**dict(row)) if row else None
+
+    def create_homework_cancel_application(
+        self,
+        *,
+        student_user_id: str,
+        student_id: str,
+        student_name: str,
+        booking_key: str,
+        sheet_name: str,
+        booking_date: str,
+        time_slot: str,
+        reason: str,
+    ) -> HomeworkCancelApplication | None:
+        """Create one pending late-cancel application unless one already exists."""
+        cleaned_reason = str(reason or "").strip()
+        if not cleaned_reason:
+            return None
+        now = now_in_taipei().isoformat()
+        with self._connection() as conn:
+            existing = conn.execute(
+                "SELECT * FROM homework_cancel_applications "
+                "WHERE booking_key = ? AND status = 'pending' "
+                "ORDER BY id DESC LIMIT 1",
+                (booking_key,),
+            ).fetchone()
+            if existing is not None:
+                return None
+            cursor = conn.execute(
+                "INSERT INTO homework_cancel_applications ("
+                "student_user_id, student_id, student_name, booking_key, sheet_name, booking_date, time_slot, reason, status, review_reason, reviewed_by, created_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '', ?)",
+                (student_user_id, student_id, student_name, booking_key, sheet_name, booking_date, time_slot, cleaned_reason, now),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM homework_cancel_applications WHERE id = ?",
+                (cursor.lastrowid,),
+            ).fetchone()
+        return HomeworkCancelApplication(**dict(row)) if row else None
+
+    def get_homework_cancel_application(self, application_id: int) -> dict | None:
+        """Get one homework cancel application by id."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM homework_cancel_applications WHERE id = ?",
+                (application_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_pending_homework_cancel_applications(self) -> list[dict]:
+        """List all pending homework cancel applications."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM homework_cancel_applications WHERE status = 'pending' ORDER BY id ASC"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_pending_homework_cancel_application_by_booking_key(self, booking_key: str) -> dict | None:
+        """Get pending application for a booking, if any."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM homework_cancel_applications "
+                "WHERE booking_key = ? AND status = 'pending' "
+                "ORDER BY id DESC LIMIT 1",
+                (booking_key,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def approve_homework_cancel_application(self, application_id: int, reviewed_by: str) -> dict | None:
+        """Mark a pending application as approved."""
+        now = now_in_taipei().isoformat()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM homework_cancel_applications WHERE id = ? AND status = 'pending'",
+                (application_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            conn.execute(
+                "UPDATE homework_cancel_applications "
+                "SET status = 'approved', reviewed_by = ?, reviewed_at = ? "
+                "WHERE id = ?",
+                (reviewed_by, now, application_id),
+            )
+            conn.commit()
+        return self.get_homework_cancel_application(application_id)
+
+    def reject_homework_cancel_application(self, application_id: int, reviewed_by: str, review_reason: str) -> dict | None:
+        """Mark a pending application as rejected with reason."""
+        cleaned_reason = str(review_reason or "").strip()
+        if not cleaned_reason:
+            return None
+        now = now_in_taipei().isoformat()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM homework_cancel_applications WHERE id = ? AND status = 'pending'",
+                (application_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            conn.execute(
+                "UPDATE homework_cancel_applications "
+                "SET status = 'rejected', review_reason = ?, reviewed_by = ?, reviewed_at = ? "
+                "WHERE id = ?",
+                (cleaned_reason, reviewed_by, now, application_id),
+            )
+            conn.commit()
+        return self.get_homework_cancel_application(application_id)
+
+    def mark_homework_cancel_application_invalid(
+        self,
+        application_id: int,
+        *,
+        reviewed_by: str,
+        review_reason: str,
+    ) -> dict | None:
+        """Mark an application invalid when its booking can no longer be processed."""
+        cleaned_reason = str(review_reason or "").strip() or "申請已失效"
+        now = now_in_taipei().isoformat()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM homework_cancel_applications WHERE id = ? AND status = 'pending'",
+                (application_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            conn.execute(
+                "UPDATE homework_cancel_applications "
+                "SET status = 'invalid', review_reason = ?, reviewed_by = ?, reviewed_at = ? "
+                "WHERE id = ?",
+                (cleaned_reason, reviewed_by, now, application_id),
+            )
+            conn.commit()
+        return self.get_homework_cancel_application(application_id)
 
     def get_verified_profiles(self) -> list[UserProfile]:
         """List verified user profiles."""

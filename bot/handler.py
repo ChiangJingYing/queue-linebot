@@ -168,6 +168,8 @@ class LineBotHandler(
             return self._handle_homework_profile_update(user_id, reply_token)
         elif command == "/homework/cancel":
             return self._handle_homework_cancel(user_id, reply_token)
+        elif command == "/homework/cancel/apply":
+            return self._handle_homework_cancel_apply(user_id, reply_token)
         elif command == "/homework/list":
             return self._handle_homework_list(user_id, reply_token)
         elif command == "/coffee":

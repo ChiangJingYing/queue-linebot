@@ -128,6 +128,7 @@ def get_defaults() -> dict:
             "sheet_names": [],
             "ta_order": [],
             "ta_display_names": {},
+            "ta_line_user_ids": {},
             "default_ta_limit": 8,
             "ta_limits": {},
             "ta_blacklists": {},

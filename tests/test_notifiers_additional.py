@@ -1,5 +1,8 @@
 """Additional notifier tests."""
 
+import json
+from urllib import error as urllib_error
+
 from services.notifier import Notifier
 
 
@@ -54,3 +57,89 @@ class TestNotifierAdditional:
         assert result == "已推送給 discord_user_1：" + sent[0][1]
         assert sent == [("discord_user_1", sent[0][1])]
         assert "#7" in sent[0][1]
+
+    def test_push_flex_returns_fallback_message_when_token_missing(self):
+        notifier = Notifier("secret", "")
+
+        result = notifier.push_flex(
+            "alice",
+            {
+                "type": "flex",
+                "altText": "審核通知",
+                "contents": {"type": "bubble", "body": {"type": "box", "layout": "vertical", "contents": []}},
+            },
+        )
+
+        assert result == "已推送 Flex 給 alice：審核通知"
+
+    def test_push_flex_posts_raw_line_payload(self, monkeypatch):
+        captured = {}
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"{}"
+
+        def fake_urlopen(request, timeout=0):
+            captured["url"] = request.full_url
+            captured["headers"] = dict(request.header_items())
+            captured["body"] = request.data.decode("utf-8")
+            captured["timeout"] = timeout
+            return _Response()
+
+        monkeypatch.setattr("services.notifier.urllib_request.urlopen", fake_urlopen)
+        notifier = Notifier("secret", "token")
+
+        result = notifier.push_flex(
+            "alice",
+            {
+                "type": "flex",
+                "altText": "審核通知",
+                "contents": {"type": "bubble", "body": {"type": "box", "layout": "vertical", "contents": []}},
+            },
+        )
+
+        assert result == "已推送 Flex 給 alice：審核通知"
+        assert captured["url"] == "https://api.line.me/v2/bot/message/push"
+        assert captured["timeout"] == 10
+        assert json.loads(captured["body"]) == {
+            "to": "alice",
+            "messages": [
+                {
+                    "type": "flex",
+                    "altText": "審核通知",
+                    "contents": {"type": "bubble", "body": {"type": "box", "layout": "vertical", "contents": []}},
+                }
+            ],
+        }
+
+    def test_push_flex_hides_http_error_body_from_return_value(self, monkeypatch):
+        def fake_urlopen(request, timeout=0):
+            error = urllib_error.HTTPError(
+                request.full_url,
+                400,
+                "Bad Request",
+                hdrs=None,
+                fp=None,
+            )
+            error.read = lambda: b'{"message":"bad request","details":[{"secret":"x"}]}'
+            raise error
+
+        monkeypatch.setattr("services.notifier.urllib_request.urlopen", fake_urlopen)
+        notifier = Notifier("secret", "token")
+
+        result = notifier.push_flex(
+            "alice",
+            {
+                "type": "flex",
+                "altText": "審核通知",
+                "contents": {"type": "bubble", "body": {"type": "box", "layout": "vertical", "contents": []}},
+            },
+        )
+
+        assert result == "推播 Flex 失敗給 alice：LINE API 暫時不可用"

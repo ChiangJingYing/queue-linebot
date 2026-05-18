@@ -132,6 +132,141 @@ def build_homework_booking_list_flex(bookings: list[HomeworkBooking], *, mode: s
     )
 
 
+def build_homework_late_cancel_apply_flex(
+    bookings: list[HomeworkBooking],
+    *,
+    pending_booking_keys: set[str] | None = None,
+) -> list[dict]:
+    pending_booking_keys = pending_booking_keys or set()
+    return _build_carousel(
+        alt_text="逾期取消申請",
+        title="逾期取消申請",
+        bubbles=[
+            _booking_list_bubble(
+                booking=booking,
+                mode="apply",
+                selectable=booking.booking_key not in pending_booking_keys,
+                action_data=f"homework:cancel:apply:booking:{booking.booking_key}" if booking.booking_key not in pending_booking_keys else "",
+            )
+            for booking in bookings
+        ] or [
+            _option_bubble(
+                step_label="逾期取消申請",
+                title="目前沒有可申請項目",
+                badge_text="無資料",
+                badge_tone="neutral",
+                metadata=[("狀態", "沒有超過取消時限且尚未開始的預約")],
+                note_text="如果預約還在取消時限內，請改用一般取消流程。",
+                note_tone="neutral",
+                action_data="",
+                action_label="無資料",
+                selectable=False,
+            )
+        ],
+    )
+
+
+def build_homework_cancel_application_review_flex(*, application: dict) -> dict:
+    student_label = f"{application.get('student_id', '')} {application.get('student_name', '')}".strip()
+    return {
+        "type": "flex",
+        "altText": "Homework 逾期取消審核",
+        "contents": {
+            "type": "bubble",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "md",
+                "contents": [
+                    _badge("待審核", tone="primary"),
+                    {
+                        "type": "text",
+                        "text": f"{application.get('sheet_name', '')}｜{application.get('booking_date', '')}",
+                        "weight": "bold",
+                        "size": "xl",
+                        "color": _BLUE,
+                        "wrap": True,
+                    },
+                    _info_panel(
+                        [
+                            ("學生", student_label),
+                            ("時段", str(application.get("time_slot", "") or "")),
+                            ("理由", str(application.get("reason", "") or "")),
+                        ]
+                    ),
+                ],
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "color": _GREEN,
+                        "height": "sm",
+                        "action": {
+                            "type": "postback",
+                            "label": "許可",
+                            "data": f"homework:cancel:apply:review:approve:{application['id']}",
+                            "displayText": "許可",
+                        },
+                    },
+                    {
+                        "type": "button",
+                        "style": "secondary",
+                        "height": "sm",
+                        "action": {
+                            "type": "postback",
+                            "label": "不許可",
+                            "data": f"homework:cancel:apply:review:reject:{application['id']}",
+                            "displayText": "不許可",
+                        },
+                    },
+                ],
+            },
+        },
+    }
+
+
+def build_homework_cancel_application_result_flex(*, application: dict, approved: bool) -> dict:
+    title = "取消申請已核准" if approved else "取消申請未通過"
+    note = "助教已協助取消你的預約。" if approved else str(application.get("review_reason", "") or "助教未提供理由")
+    tone = "success" if approved else "danger"
+    accent = _GREEN if approved else _RED
+    return {
+        "type": "flex",
+        "altText": title,
+        "contents": {
+            "type": "bubble",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "md",
+                "contents": [
+                    _badge(title, tone=tone),
+                    {
+                        "type": "text",
+                        "text": f"{application.get('sheet_name', '')}｜{application.get('booking_date', '')}",
+                        "weight": "bold",
+                        "size": "xl",
+                        "color": accent,
+                        "wrap": True,
+                    },
+                    _info_panel(
+                        [
+                            ("時段", str(application.get("time_slot", "") or "")),
+                            ("理由", str(application.get("reason", "") or "")),
+                        ]
+                    ),
+                    _note_panel(note, tone=tone),
+                ],
+            },
+        },
+    }
+
+
 def build_homework_success_flex(*, title: str, booking: HomeworkBooking, student_label: str) -> dict:
     success_tone = "success" if title == "預約完成" else "danger"
     accent = _GREEN if success_tone == "success" else _RED
@@ -352,18 +487,35 @@ def _booking_list_bubble(
     action_data: str,
 ) -> dict:
     is_cancel = mode == "cancel"
+    is_apply = mode == "apply"
+    is_apply_pending = is_apply and not selectable
     accent = _RED if is_cancel else _GREEN
     accent_soft = _RED_SOFT if is_cancel else _GREEN_SOFT
     accent_text = _RED_TEXT if is_cancel else _GREEN_TEXT
-    badge_text = "可取消" if is_cancel else "已登記"
-    badge_tone = "danger" if is_cancel else "success"
-    action_label = "取消預約" if is_cancel else "已登記"
+    if is_apply:
+        accent = _BLUE
+        accent_soft = _BLUE_SOFT
+        accent_text = _BLUE_TEXT
+    if is_apply_pending:
+        accent = _GRAY_TEXT
+        accent_soft = _GRAY_SOFT
+        accent_text = _GRAY_TEXT
+    badge_text = "可取消" if is_cancel else ("可申請" if is_apply else "已登記")
+    badge_tone = "danger" if is_cancel else ("primary" if is_apply else "success")
+    action_label = "取消預約" if is_cancel else ("申請取消" if is_apply else "已登記")
+    if is_apply_pending:
+        badge_text = "已送出"
+        badge_tone = "neutral"
+        action_label = "已送出申請"
     note_text = (
         "點擊後系統會再次檢查是否仍符合取消期限。"
         if is_cancel
-        else "這是你目前已存在的 Homework 預約。"
+        else ("點擊後需要輸入逾期取消理由。" if is_apply else "這是你目前已存在的 Homework 預約。")
     )
-    note_tone = "danger" if is_cancel else "success"
+    note_tone = "danger" if is_cancel else ("primary" if is_apply else "success")
+    if is_apply_pending:
+        note_text = "這筆預約已送出逾期取消申請，請等待助教審核。"
+        note_tone = "neutral"
 
     bubble = {
         "type": "bubble",
@@ -383,7 +535,7 @@ def _booking_list_bubble(
                     "contents": [
                         {
                             "type": "text",
-                            "text": "取消流程" if is_cancel else "目前預約",
+                            "text": "逾期取消申請" if is_apply else ("取消流程" if is_cancel else "目前預約"),
                             "size": "xs",
                             "color": _GRAY,
                             "flex": 3,

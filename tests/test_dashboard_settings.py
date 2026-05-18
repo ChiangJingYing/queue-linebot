@@ -75,6 +75,7 @@ def test_dashboard_settings_page_and_data_api(tmp_path):
     assert payload["config"]["homework_demo"]["slot_range"] == "A1:F20"
     assert payload["config"]["homework_demo"]["default_ta_limit"] == 8
     assert payload["config"]["homework_demo"]["booking_year"] == 2026
+    assert "ta_line_user_ids" not in payload["config"]["homework_demo"]
     assert payload["meta"]["hotReloadableSections"]["registration"] is True
     assert payload["meta"]["hotReloadableSections"]["homework_demo"] is True
     assert "homeworkGoogleApiReady" in payload["meta"]
@@ -226,6 +227,7 @@ def test_dashboard_settings_save_writes_yaml_and_applies_runtime_updates(tmp_pat
                 "enabled": True,
                 "spreadsheet_id": "sheet-xyz",
                 "default_ta_limit": 8,
+                "ta_line_user_ids": {"Amy": "Uamy123", "Bob": "Ubob456"},
                 "ta_blacklists": {"Amy": ["114106999"], "Bob": []},
                 "booking_year": 2026,
                 "slot_range": "A1:F20",
@@ -243,6 +245,7 @@ def test_dashboard_settings_save_writes_yaml_and_applies_runtime_updates(tmp_pat
     assert body["config"]["registration"]["location_options"] == {"2": ["1", "3"], "3": ["2"]}
     assert body["config"]["homework_demo"]["spreadsheet_id"] == "sheet-xyz"
     assert body["config"]["homework_demo"]["default_ta_limit"] == 8
+    assert body["config"]["homework_demo"]["ta_line_user_ids"] == {"Amy": "Uamy123", "Bob": "Ubob456"}
     assert body["config"]["homework_demo"]["ta_blacklists"]["Amy"] == ["114106999"]
     assert body["meta"]["homeworkLastValidatedSheetNames"] == ["Amy", "Bob"]
     assert "homeworkGoogleApiReady" in body["meta"]
@@ -254,6 +257,8 @@ def test_dashboard_settings_save_writes_yaml_and_applies_runtime_updates(tmp_pat
     assert "admin-2:" in written
     assert "homework_demo:" in written
     assert "spreadsheet_id: sheet-xyz" in written
+    assert "ta_line_user_ids:" in written
+    assert "Amy: Uamy123" in written
     assert "slot_range: A1:F20" in written
     assert "B001" in written
     assert '  "2": ["1", "3"]' in written or "  '2': ['1', '3']" in written
@@ -648,6 +653,7 @@ def test_dashboard_settings_save_normalizes_homework_spreadsheet_url(tmp_path):
                 "enabled": True,
                 "spreadsheet_id": "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMn/edit#gid=0",
                 "default_ta_limit": 8,
+                "ta_line_user_ids": {"Amy": "Uamy123"},
                 "ta_blacklists": {},
                 "booking_year": 2026,
                 "slot_range": "A1:F20",
@@ -664,3 +670,29 @@ def test_dashboard_settings_save_normalizes_homework_spreadsheet_url(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["config"]["homework_demo"]["spreadsheet_id"] == "1AbCdEfGhIjKlMn"
+    assert response.json()["config"]["homework_demo"]["ta_line_user_ids"] == {"Amy": "Uamy123"}
+
+
+def test_dashboard_settings_data_exposes_existing_ta_line_user_ids(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    config_path = tmp_path / "config" / "queue_config.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        (
+            "homework_demo:\n"
+            "  enabled: true\n"
+            "  spreadsheet_id: sheet-123\n"
+            "  ta_line_user_ids:\n"
+            "    Amy: Uamy123\n"
+            "    Bob: Ubob456\n"
+        ),
+        encoding="utf-8",
+    )
+    main.CONFIG_FILE_PATH = config_path
+    main.config = main.load_config(str(config_path))
+    client = TestClient(main.app)
+
+    response = client.get("/settings/data")
+
+    assert response.status_code == 200
+    assert response.json()["config"]["homework_demo"]["ta_line_user_ids"] == {"Amy": "Uamy123", "Bob": "Ubob456"}

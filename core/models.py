@@ -94,3 +94,23 @@ class HomeworkUserProfile:
     student_name: str = ""
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class HomeworkCancelApplication:
+    """Late homework cancel application awaiting TA review."""
+
+    id: int = 0
+    student_user_id: str = ""
+    student_id: str = ""
+    student_name: str = ""
+    booking_key: str = ""
+    sheet_name: str = ""
+    booking_date: str = ""
+    time_slot: str = ""
+    reason: str = ""
+    status: str = "pending"
+    review_reason: str = ""
+    reviewed_by: str = ""
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    reviewed_at: str | None = None

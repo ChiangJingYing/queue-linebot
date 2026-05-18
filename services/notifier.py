@@ -7,7 +7,10 @@
 from __future__ import annotations
 
 import logging
+import json
 from typing import Callable
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +75,38 @@ class Notifier:
             return f"推播失敗給 {user_id}：{exc}"
 
         return f"已推送給 {user_id}：{message}"
+
+    def push_flex(self, user_id: str, message: dict) -> str:
+        """Send one Flex message via LINE Push API."""
+        alt_text = str((message or {}).get("altText") or "通知").strip() or "通知"
+        if not self.channel_access_token:
+            logger.info("LINE access token 缺失，無法實際推送 Flex 給 %s", user_id)
+            return f"已推送 Flex 給 {user_id}：{alt_text}"
+        payload = {
+            "to": user_id,
+            "messages": [json.loads(json.dumps(message or {}))],
+        }
+        request = urllib_request.Request(
+            "https://api.line.me/v2/bot/message/push",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.channel_access_token}",
+            },
+            method="POST",
+        )
+        try:
+            with urllib_request.urlopen(request, timeout=10) as response:
+                response.read()
+        except urllib_error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            logger.exception("LINE Flex 推播失敗 user_id=%s response=%s", user_id, body)
+            return f"推播 Flex 失敗給 {user_id}：LINE API 暫時不可用"
+        except Exception as exc:
+            logger.exception("LINE Flex 推播失敗 user_id=%s", user_id)
+            return f"推播 Flex 失敗給 {user_id}：通知服務暫時不可用"
+
+        return f"已推送 Flex 給 {user_id}：{alt_text}"
 
     def link_rich_menu(self, user_id: str, rich_menu_id: str) -> str:
         """把指定 rich menu 綁到 LINE 使用者。"""
@@ -206,4 +241,3 @@ class Notifier:
             else self.admin_rich_menu_id
         )
         return self.link_rich_menu(user_id, target_menu)
-

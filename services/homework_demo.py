@@ -54,6 +54,7 @@ class HomeworkDemoConfig:
     sheet_names: list[str] = field(default_factory=list)
     ta_order: list[str] = field(default_factory=list)
     ta_display_names: dict[str, str] = field(default_factory=dict)
+    ta_line_user_ids: dict[str, str] = field(default_factory=dict)
     default_ta_limit: int | None = None
     ta_limits: dict[str, int] = field(default_factory=dict)
     ta_blacklists: dict[str, list[str]] = field(default_factory=dict)
@@ -374,6 +375,11 @@ def build_homework_demo_config(raw: dict | None) -> HomeworkDemoConfig:
         sheet_names=[],
         ta_order=[],
         ta_display_names={},
+        ta_line_user_ids={
+            str(key).strip(): str(value).strip()
+            for key, value in dict(raw.get("ta_line_user_ids") or {}).items()
+            if str(key).strip() and str(value).strip()
+        },
         default_ta_limit=(
             int(raw.get("default_ta_limit"))
             if raw.get("default_ta_limit") not in (None, "")
@@ -485,6 +491,33 @@ class HomeworkBookingService:
     def list_bookings(self, student: StudentIdentity) -> list[HomeworkBooking]:
         snapshot = self._load_snapshot()
         return self._list_bookings_from_snapshot(snapshot, student)
+
+    def list_late_cancel_applicable_bookings(self, student: StudentIdentity) -> list[HomeworkBooking]:
+        bookings = self.list_bookings(student)
+        now = self.now_provider()
+        return [
+            booking
+            for booking in bookings
+            if self._is_booking_past_cancel_deadline(booking, now=now)
+            and self._is_booking_not_started(booking, now=now)
+        ]
+
+    def get_late_cancel_application_target(self, booking: HomeworkBooking) -> str:
+        return str(self.config.ta_line_user_ids.get(booking.sheet_name, "") or "").strip()
+
+    def cancel_booking_by_approval(self, *, student: StudentIdentity, booking_key: str) -> HomeworkActionResult:
+        snapshot = self._load_snapshot(use_cache=False, force_refresh=True)
+        booking = self._find_booking_key(snapshot, booking_key, include_empty=False)
+        if booking is None:
+            return HomeworkActionResult(status="missing", message="找不到指定的預約資料。")
+        if booking.student_id != student.student_id:
+            return HomeworkActionResult(status="error", message="預約資料與申請學生不符。")
+        self.gateway.update_cell(booking.sheet_name, booking.row_index, booking.col_index, "")
+        return HomeworkActionResult(
+            status="success",
+            message=f"取消成功：{booking.ta_name} {booking.iso_date} {booking.time_slot}",
+            booking=booking,
+        )
 
     def book_slot(self, *, student: StudentIdentity, ta_name: str, booking_key: str) -> HomeworkActionResult:
         started_at = time_module.monotonic()
@@ -692,6 +725,28 @@ class HomeworkBookingService:
             return "當日時段已滿"
         return ""
 
+    def _is_booking_past_cancel_deadline(self, booking: HomeworkBooking, *, now: datetime) -> bool:
+        return now > self._cancel_deadline_for_booking(booking)
+
+    def _is_booking_not_started(self, booking: HomeworkBooking, *, now: datetime) -> bool:
+        start_at = self._booking_start_datetime(booking)
+        return now < start_at
+
+    def _cancel_deadline_for_booking(self, booking: HomeworkBooking) -> datetime:
+        return datetime.combine(
+            booking.booking_date - timedelta(days=1),
+            time(hour=self.config.cancel_deadline_hour, tzinfo=_resolve_timezone(self.config.booking_timezone)),
+        )
+
+    def _booking_start_datetime(self, booking: HomeworkBooking) -> datetime:
+        start_time = _parse_time_slot_start(booking.time_slot)
+        if start_time is None:
+            return datetime.combine(
+                booking.booking_date,
+                time.max.replace(tzinfo=_resolve_timezone(self.config.booking_timezone)),
+            )
+        return datetime.combine(booking.booking_date, start_time)
+
     def _ta_student_count(self, ta_name: str, bookings: list[HomeworkBooking]) -> int:
         return len({booking.student_id for booking in bookings if booking.ta_name == ta_name and booking.student_id})
 
@@ -821,6 +876,29 @@ def _looks_like_time_slot(value: str) -> bool:
 def _parse_iso_date(value: str) -> date | None:
     try:
         return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _parse_time_slot_start(value: str) -> time | None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    match = re.search(r"(\d{1,2}):(\d{2})", normalized)
+    if match is None:
+        compact_match = re.search(r"\b(\d{2})(\d{2})\b", normalized)
+        if compact_match is not None:
+            hour = int(compact_match.group(1))
+            minute = int(compact_match.group(2))
+            try:
+                return time(hour=hour, minute=minute, tzinfo=_resolve_timezone("Asia/Taipei"))
+            except ValueError:
+                return None
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    try:
+        return time(hour=hour, minute=minute, tzinfo=_resolve_timezone("Asia/Taipei"))
     except ValueError:
         return None
 

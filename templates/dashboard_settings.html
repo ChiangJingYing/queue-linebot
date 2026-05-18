@@ -302,6 +302,15 @@
                     <button type="button" class="secondary" id="homework-validate-access">測試 Google Sheet 存取</button>
                   </div>
                 </div>
+                <div class="full" id="homework-ta-line-user-ids-panel" hidden>
+                  <div class="mini-card">
+                    <div>
+                      <strong>助教 LINE User ID 對應</strong>
+                      <p class="field-help">測試抓到的每個工作表都會顯示在這裡。請填入對應助教的 LINE user id，格式與 Special Serve Rules 的 Admin ID 類似，供逾期取消申請推播審核通知使用。</p>
+                    </div>
+                    <div id="homework-ta-line-user-ids-list" class="card-list"></div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -440,6 +449,8 @@
         meta: null,
         specialAdmins: [],
         locationRows: [],
+        homeworkTaLineUserIds: {},
+        homeworkTaLineUserIdsVisible: false,
         isLoaded: false,
         lastSavedVisualSnapshot: '',
         lastSavedRawSnapshot: '',
@@ -456,6 +467,8 @@
       const homeworkStatusSheets = document.getElementById('homework-status-sheets');
       const homeworkCredentialsPath = document.getElementById('homework-credentials-path');
       const homeworkRuntimeNote = document.getElementById('homework-runtime-note');
+      const homeworkTaLineUserIdsPanel = document.getElementById('homework-ta-line-user-ids-panel');
+      const homeworkTaLineUserIdsList = document.getElementById('homework-ta-line-user-ids-list');
       const visualForm = document.getElementById('settings-form');
       const rawForm = document.getElementById('raw-editor-form');
       const modeVisualButton = document.getElementById('mode-visual');
@@ -811,6 +824,49 @@
         }
       }
 
+      function getHomeworkTaSheetNames() {
+        const fromMeta = Array.isArray(state?.meta?.homeworkLastValidatedSheetNames) ? state.meta.homeworkLastValidatedSheetNames : [];
+        const fromConfig = Object.keys(state.homeworkTaLineUserIds || {});
+        return Array.from(new Set([...fromMeta, ...fromConfig].map((value) => String(value || '').trim()).filter(Boolean)));
+      }
+
+      function renderHomeworkTaLineUserIds() {
+        const sheetNames = getHomeworkTaSheetNames();
+        const shouldShow = !!state.homeworkTaLineUserIdsVisible || sheetNames.length > 0;
+        homeworkTaLineUserIdsPanel.hidden = !shouldShow;
+        homeworkTaLineUserIdsList.innerHTML = '';
+        if (!shouldShow) return;
+        sheetNames.forEach((sheetName) => {
+          const card = document.createElement('div');
+          card.className = 'mini-card';
+          const label = document.createElement('label');
+          label.appendChild(document.createTextNode(`${sheetName} LINE User ID`));
+          const input = document.createElement('input');
+          input.setAttribute('list', 'admin-id-options');
+          input.value = String((state.homeworkTaLineUserIds || {})[sheetName] || '');
+          input.placeholder = '例如：U1234567890abcdef';
+          const help = document.createElement('p');
+          help.className = 'field-help';
+          const renderHelpText = (userId) => {
+            const adminHint = describeAdminOption(userId);
+            return `工作表 ${sheetName} 的審核通知會推播到這個 LINE user id。${adminHint}`;
+          };
+          help.textContent = renderHelpText(input.value);
+          input.addEventListener('input', (event) => {
+            state.homeworkTaLineUserIds = {
+              ...(state.homeworkTaLineUserIds || {}),
+              [sheetName]: String(event.target.value || ''),
+            };
+            help.textContent = renderHelpText(event.target.value);
+            refreshDirtyState();
+          });
+          label.appendChild(input);
+          label.appendChild(help);
+          card.appendChild(label);
+          homeworkTaLineUserIdsList.appendChild(card);
+        });
+      }
+
       function renderLocationRows() {
         locationRows.innerHTML = '';
         state.locationRows.forEach((item, index) => {
@@ -965,6 +1021,8 @@
         state.meta = meta;
         state.specialAdmins = objectToAdminList(config.queue.special_serve_rules.admins);
         state.locationRows = objectToLocationRows(config.registration.location_options);
+        state.homeworkTaLineUserIds = { ...(config.homework_demo.ta_line_user_ids || {}) };
+        state.homeworkTaLineUserIdsVisible = Object.prototype.hasOwnProperty.call(config.homework_demo || {}, 'ta_line_user_ids');
         renderAdminOptions(meta.adminOptions || []);
         setHomeworkCredentialStatus(meta);
         setHomeworkOverview(config, meta);
@@ -1000,6 +1058,7 @@
 
         renderSpecialRules();
         renderLocationRows();
+        renderHomeworkTaLineUserIds();
         refreshDirtyState();
       }
 
@@ -1042,6 +1101,13 @@
             enabled: document.getElementById('homework-enabled').checked,
             spreadsheet_id: document.getElementById('homework-spreadsheet-id').value,
             default_ta_limit: parseOptionalNumber('homework-default-ta-limit'),
+            ...(state.homeworkTaLineUserIdsVisible ? {
+              ta_line_user_ids: Object.fromEntries(
+                Object.entries(state.homeworkTaLineUserIds || {})
+                  .map(([key, value]) => [String(key || '').trim(), String(value || '').trim()])
+                  .filter(([key, value]) => key && value),
+              ),
+            } : {}),
             ta_blacklists: linesToListMap(document.getElementById('homework-ta-blacklists').value),
             booking_year: Number(document.getElementById('homework-booking-year').value),
             slot_range: document.getElementById('homework-slot-range').value,
@@ -1185,6 +1251,8 @@
           ...(state.meta || {}),
           homeworkLastValidatedSheetNames: Array.isArray(result.sheetNames) ? result.sheetNames : [],
         };
+        state.homeworkTaLineUserIdsVisible = true;
+        renderHomeworkTaLineUserIds();
         setHomeworkOverview(state.config || { homework_demo: collectPayload().homework_demo }, state.meta);
         const sheetPreview = Array.isArray(result.sheetNames) ? result.sheetNames.join(', ') : '';
         showSuccess(`驗證成功：${result.spreadsheetId}${sheetPreview ? ` (${sheetPreview})` : ''}`);

@@ -565,15 +565,17 @@ GOOGLE_SERVICE_ACCOUNT_FILE=/absolute/path/to/google-service-account.json
 - `/homework` 登記時段
 - `/homework/register` 更新或覆蓋綁定資料
 - `/homework/cancel` 取消預約
+- `/homework/cancel/apply` 申請逾期取消
 - `/homework/list` 查詢既有預約
 
 資料來源說明：
 
-- 第一次使用 `/homework`、`/homework/cancel`、`/homework/list` 時，會要求輸入一次 `<學號> <姓名>`，並和 LINE user id 綁定到獨立的 Homework 資料表
+- 第一次使用 `/homework`、`/homework/cancel`、`/homework/cancel/apply`、`/homework/list` 時，會要求輸入一次 `<學號> <姓名>`，並和 LINE user id 綁定到獨立的 Homework 資料表
 - 若要修改綁定資料，可使用 `/homework/register` 重新輸入 `<學號> <姓名>`，會直接覆蓋 Homework 綁定資料庫，不會更動 Google Sheet
 - 完成綁定後，之後再使用 `/homework*` 指令會直接從資料庫讀取，不需要再次輸入學號姓名
 - 每位助教對應 Google Sheet 中的一個工作表
 - 工作表名稱即助教識別鍵
+- 若要啟用逾期取消審核，需另外設定 `ta_line_user_ids`，把工作表名稱對應到助教的 LINE user id
 - 預設以 `slot_range: A1:F20` 解析時段表
 - 儲存格內容格式為 `學號 姓名`
 
@@ -584,6 +586,8 @@ homework_demo:
   enabled: true
   spreadsheet_id: "your-google-sheet-id"
   default_ta_limit: 8
+  ta_line_user_ids:
+    Amy: "Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
   ta_blacklists: {}
   booking_year: 2026
   slot_range: "A1:F20"
@@ -598,6 +602,7 @@ homework_demo:
 - `enabled`: 是否啟用 Homework Demo 流程
 - `spreadsheet_id`: Google Sheet 的 spreadsheet id
 - `default_ta_limit`: 未個別指定時，每位助教的預設 Demo 上限
+- `ta_line_user_ids`: 以工作表名稱為 key 的 LINE user id 對照，用於 `/homework/cancel/apply` 逾期取消審核通知
 - `ta_blacklists`: 以學號為單位的黑名單；會顯示在卡片上，但禁止選擇
 - `booking_year`: `5/4` 這類日期標頭要套用的年份
 - `slot_range`: 有效登記區域，預設 `A1:F20`
@@ -622,6 +627,8 @@ homework_demo:
 - 同一學生不可在同一天 Demo 兩次；隔天可再次預約，不做 24 小時計算
 - 第二次起可限制為同一位助教
 - 取消需在預約日期前一天 `cancel_deadline_hour:00` 前完成
+- 若已超過取消時限但尚未超過預約開始時間，可使用 `/homework/cancel/apply` 送出逾期取消申請
+- 逾期取消申請會 push 給 `ta_line_user_ids` 對應的助教，由助教在 LINE 上許可或不許可
 
 若要實際接 Google Sheet，除了 `homework_demo` 設定外，也要設定：
 
@@ -980,6 +987,7 @@ python scripts/upload_rich_menus.py \
 | `/homework` Homework Demo 登記 | ✅ | ❌ | ❌ |
 | `/homework/register` Homework Demo 更新綁定 | ✅ | ❌ | ❌ |
 | `/homework/cancel` Homework Demo 取消 | ✅ | ❌ | ❌ |
+| `/homework/cancel/apply` Homework Demo 逾期取消申請 | ✅ | ❌ | ❌ |
 | `/homework/list` Homework Demo 查詢 | ✅ | ❌ | ❌ |
 | `/help` 查看說明 | ✅ | ✅ | ✅ |
 | `/menu` 顯示常用功能選單 | ❌ | ✅ | ✅ |

@@ -941,6 +941,217 @@ def test_line_handler_homework_list_and_cancel_flow(tmp_path):
     assert service.list_bookings(parse_student_identity("114106123 王小明")) == []
 
 
+def test_homework_service_lists_only_late_cancel_applicable_bookings():
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}, ta_line_user_ids={"Amy": "Uamy123"}),
+        gateway=InMemoryHomeworkSheetGateway(
+            {
+                "Amy": [
+                    ["", "5/7", "5/8", "5/9"],
+                    ["11:00-11:30", "114106123 王小明", "114106123 王小明", "114106123 王小明"],
+                ],
+            }
+        ),
+        now_provider=lambda: datetime(2026, 5, 7, 10, 0, tzinfo=TAIPEI_TZ),
+    )
+    student = parse_student_identity("114106123 王小明")
+
+    bookings = service.list_late_cancel_applicable_bookings(student)
+
+    assert [(booking.iso_date, booking.time_slot) for booking in bookings] == [("2026-05-07", "11:00-11:30")]
+
+
+def test_line_handler_homework_cancel_apply_requires_ta_line_mapping(tmp_path):
+    db = DatabaseManager(str(tmp_path / "homework-apply-missing-ta.db"))
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}, ta_line_user_ids={}),
+        gateway=InMemoryHomeworkSheetGateway(
+            {
+                "Amy": [
+                    ["", "5/8"],
+                    ["11:00-11:30", "114106123 王小明"],
+                ],
+            }
+        ),
+        now_provider=lambda: datetime(2026, 5, 7, 22, 0, tzinfo=TAIPEI_TZ),
+    )
+    db.upsert_homework_user_profile("alice", "114106123", "王小明")
+    handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
+
+    first = handler.handle_event(make_text_event("/homework/cancel/apply", reply_token="r1"))
+    booking_key = service.list_bookings(parse_student_identity("114106123 王小明"))[0].booking_key
+    second = handler.handle_event(make_postback_event(f"homework:cancel:apply:booking:{booking_key}", reply_token="r2"))
+
+    assert first[0]["messages"][0]["type"] == "flex"
+    assert "尚未設定審核通知對象" in second[0]["text"]
+
+
+def test_homework_service_supports_compact_time_slot_for_late_cancel_window():
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}, ta_line_user_ids={"Amy": "Uamy123"}),
+        gateway=InMemoryHomeworkSheetGateway(
+            {
+                "Amy": [
+                    ["", "5/4"],
+                    ["1830-1900", "114106123 王小明"],
+                ],
+            }
+        ),
+        now_provider=lambda: datetime(2026, 5, 4, 18, 20, tzinfo=TAIPEI_TZ),
+    )
+    student = parse_student_identity("114106123 王小明")
+
+    bookings = service.list_late_cancel_applicable_bookings(student)
+
+    assert [(booking.iso_date, booking.time_slot) for booking in bookings] == [("2026-05-04", "1830-1900")]
+
+
+def test_line_handler_homework_cancel_apply_marks_pending_booking_as_submitted(tmp_path):
+    db = DatabaseManager(str(tmp_path / "homework-apply-pending-list.db"))
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}, ta_line_user_ids={"Amy": "UtaAmy"}),
+        gateway=InMemoryHomeworkSheetGateway(
+            {
+                "Amy": [
+                    ["", "5/8"],
+                    ["11:00-11:30", "114106123 王小明"],
+                ],
+            }
+        ),
+        now_provider=lambda: datetime(2026, 5, 7, 22, 0, tzinfo=TAIPEI_TZ),
+    )
+    db.upsert_homework_user_profile("alice", "114106123", "王小明")
+    booking = service.list_bookings(parse_student_identity("114106123 王小明"))[0]
+    db.create_homework_cancel_application(
+        student_user_id="alice",
+        student_id="114106123",
+        student_name="王小明",
+        booking_key=booking.booking_key,
+        sheet_name=booking.sheet_name,
+        booking_date=booking.iso_date,
+        time_slot=booking.time_slot,
+        reason="臨時有事",
+    )
+    handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
+
+    result = handler.handle_event(make_text_event("/homework/cancel/apply", reply_token="r1"))
+
+    texts = _collect_texts(result[0]["messages"][0])
+    assert "已送出申請" in texts
+
+
+def test_line_handler_homework_cancel_apply_approve_clears_booking_and_pushes_student(tmp_path):
+    db = DatabaseManager(str(tmp_path / "homework-apply-approve.db"))
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}, ta_line_user_ids={"Amy": "UtaAmy"}),
+        gateway=InMemoryHomeworkSheetGateway(
+            {
+                "Amy": [
+                    ["", "5/8"],
+                    ["11:00-11:30", "114106123 王小明"],
+                ],
+            }
+        ),
+        now_provider=lambda: datetime(2026, 5, 7, 22, 0, tzinfo=TAIPEI_TZ),
+    )
+    db.upsert_homework_user_profile("alice", "114106123", "王小明")
+    handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
+    pushed: list[tuple[str, object]] = []
+    handler.notifier.push_flex = lambda user_id, message: pushed.append((user_id, message)) or f"已推送 Flex 給 {user_id}"
+    handler.notifier.push = lambda user_id, message: pushed.append((user_id, message)) or f"已推送給 {user_id}：{message}"
+
+    handler.handle_event(make_text_event("/homework/cancel/apply", reply_token="r1"))
+    booking_key = service.list_bookings(parse_student_identity("114106123 王小明"))[0].booking_key
+    handler.handle_event(make_postback_event(f"homework:cancel:apply:booking:{booking_key}", reply_token="r2"))
+    created = handler.handle_event(make_text_event("行程衝突", reply_token="r3"))
+    assert "已送出" in created[0]["text"]
+    pending = db.get_pending_homework_cancel_applications()
+    result = handler.handle_event(
+        make_postback_event(
+            f"homework:cancel:apply:review:approve:{pending[0]['id']}",
+            user_id="UtaAmy",
+            reply_token="r4",
+        )
+    )
+
+    assert "已核准" in result[0]["text"]
+    assert service.list_bookings(parse_student_identity("114106123 王小明")) == []
+    assert db.get_homework_cancel_application(pending[0]["id"])["status"] == "approved"
+    assert pushed[0][0] == "UtaAmy"
+    assert pushed[-1][0] == "alice"
+
+
+def test_line_handler_homework_cancel_apply_reports_notification_failure_and_invalidates_application(tmp_path):
+    db = DatabaseManager(str(tmp_path / "homework-apply-push-fail.db"))
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}, ta_line_user_ids={"Amy": "UtaAmy"}),
+        gateway=InMemoryHomeworkSheetGateway(
+            {
+                "Amy": [
+                    ["", "5/8"],
+                    ["11:00-11:30", "114106123 王小明"],
+                ],
+            }
+        ),
+        now_provider=lambda: datetime(2026, 5, 7, 22, 0, tzinfo=TAIPEI_TZ),
+    )
+    db.upsert_homework_user_profile("alice", "114106123", "王小明")
+    handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
+    handler.notifier.push_flex = lambda user_id, message: "推播 Flex 失敗給 UtaAmy：LINE API 暫時不可用"
+
+    handler.handle_event(make_text_event("/homework/cancel/apply", reply_token="r1"))
+    booking_key = service.list_bookings(parse_student_identity("114106123 王小明"))[0].booking_key
+    handler.handle_event(make_postback_event(f"homework:cancel:apply:booking:{booking_key}", reply_token="r2"))
+    result = handler.handle_event(make_text_event("行程衝突", reply_token="r3"))
+    application = db.get_homework_cancel_application(1)
+
+    assert "送出失敗" in result[0]["text"]
+    assert application["status"] == "invalid"
+    assert application["review_reason"] == "審核通知推播失敗，請學生重新送出申請。"
+
+
+def test_line_handler_homework_cancel_apply_reject_requires_reason_and_notifies_student(tmp_path):
+    db = DatabaseManager(str(tmp_path / "homework-apply-reject.db"))
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}, ta_line_user_ids={"Amy": "UtaAmy"}),
+        gateway=InMemoryHomeworkSheetGateway(
+            {
+                "Amy": [
+                    ["", "5/8"],
+                    ["11:00-11:30", "114106123 王小明"],
+                ],
+            }
+        ),
+        now_provider=lambda: datetime(2026, 5, 7, 22, 0, tzinfo=TAIPEI_TZ),
+    )
+    db.upsert_homework_user_profile("alice", "114106123", "王小明")
+    handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
+    pushed: list[tuple[str, object]] = []
+    handler.notifier.push_flex = lambda user_id, message: pushed.append((user_id, message)) or f"已推送 Flex 給 {user_id}"
+    handler.notifier.push = lambda user_id, message: pushed.append((user_id, message)) or f"已推送給 {user_id}：{message}"
+
+    handler.handle_event(make_text_event("/homework/cancel/apply", reply_token="r1"))
+    booking_key = service.list_bookings(parse_student_identity("114106123 王小明"))[0].booking_key
+    handler.handle_event(make_postback_event(f"homework:cancel:apply:booking:{booking_key}", reply_token="r2"))
+    handler.handle_event(make_text_event("臨時有事", reply_token="r3"))
+    pending = db.get_pending_homework_cancel_applications()
+    prompt = handler.handle_event(
+        make_postback_event(
+            f"homework:cancel:apply:review:reject:{pending[0]['id']}",
+            user_id="UtaAmy",
+            reply_token="r4",
+        )
+    )
+    completed = handler.handle_event(make_text_event("不符合補退條件", user_id="UtaAmy", reply_token="r5"))
+
+    assert "輸入不許可理由" in prompt[0]["text"]
+    assert "已送出不許可" in completed[0]["text"]
+    assert db.get_homework_cancel_application(pending[0]["id"])["status"] == "rejected"
+    assert db.get_homework_cancel_application(pending[0]["id"])["review_reason"] == "不符合補退條件"
+    assert service.list_bookings(parse_student_identity("114106123 王小明")) != []
+    assert pushed[-1][0] == "alice"
+
+
 def test_homework_list_requires_binding_and_then_uses_saved_profile(tmp_path):
     db = DatabaseManager(str(tmp_path / "homework-bind.db"))
     service = HomeworkBookingService(
