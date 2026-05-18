@@ -72,6 +72,7 @@ DISCORD_BOT_TOKEN = discord_bot_config.get("bot_token", "")
 DISCORD_APPLICATION_ID = discord_bot_config.get("application_id", "")
 DISCORD_PUBLIC_KEY = discord_bot_config.get("public_key", "")
 ADMIN_IDS: list[str] = line_bot_config.get("admin_ids", ["admin_xxxxx", "another_admin"])
+PLACEHOLDER_ADMIN_IDS = {"admin_xxxxx", "another_admin"}
 ADMIN_RICH_MENU_ID = line_bot_config.get("admin_rich_menu_id", "")
 ADMIN_RICH_MENU_PAGE2_ID = line_bot_config.get("admin_rich_menu_page2_id", "")
 USER_RICH_MENU_ID = line_bot_config.get("user_rich_menu_id", "")
@@ -289,11 +290,12 @@ def _validate_homework_google_credentials_json(credentials_json: str) -> dict:
     return payload
 
 
-def _validate_homework_demo_access(homework_payload: dict) -> dict:
+def _validate_homework_demo_access(homework_payload: dict, *, force_validate: bool = False) -> dict:
     normalized_payload = dict(homework_payload or {})
     spreadsheet_id = extract_google_sheet_id(str(normalized_payload.get("spreadsheet_id") or ""))
     normalized_payload["spreadsheet_id"] = spreadsheet_id
-    if not normalized_payload.get("enabled"):
+    should_validate = bool(normalized_payload.get("enabled")) or force_validate
+    if not should_validate:
         return {"spreadsheetId": spreadsheet_id, "sheetNames": []}
     if not spreadsheet_id:
         raise HTTPException(status_code=400, detail="Homework Demo 已啟用時必須提供 Google Sheet spreadsheet id 或 URL")
@@ -359,15 +361,32 @@ def _fetch_line_profile_display_name(user_id: str) -> str:
 
 
 def _resolve_admin_options() -> list[dict[str, str]]:
-    if db_manager is None:
-        return []
+    admin_records: dict[str, dict[str, str]] = {}
+
+    for user_id in ADMIN_IDS:
+        normalized_user_id = str(user_id or "").strip()
+        if not normalized_user_id or normalized_user_id in PLACEHOLDER_ADMIN_IDS:
+            continue
+        admin_records[normalized_user_id] = {
+            "user_id": normalized_user_id,
+            "display_name": "",
+        }
+
+    if db_manager is not None:
+        for admin in db_manager.get_all_admins():
+            user_id = str(admin.get("user_id") or "").strip()
+            display_name = str(admin.get("display_name") or "").strip()
+            if not user_id:
+                continue
+            admin_records[user_id] = {
+                "user_id": user_id,
+                "display_name": display_name,
+            }
 
     options: list[dict[str, str]] = []
-    for admin in db_manager.get_all_admins():
-        user_id = str(admin.get("user_id") or "").strip()
-        display_name = str(admin.get("display_name") or "").strip()
-        if not user_id:
-            continue
+    for admin in admin_records.values():
+        user_id = admin["user_id"]
+        display_name = admin["display_name"]
         line_display_name = _fetch_line_profile_display_name(user_id)
         preferred_name = line_display_name or display_name
         label = f"{preferred_name} ({user_id})" if preferred_name else user_id
@@ -1035,7 +1054,7 @@ def save_homework_credentials(request: Request, payload: dict) -> dict:
 @app.post("/settings/homework/validate")
 def validate_homework_settings(request: Request, payload: dict) -> dict:
     _require_web_ui_auth(request)
-    result = _validate_homework_demo_access(dict(payload or {}))
+    result = _validate_homework_demo_access(dict(payload or {}), force_validate=True)
     return {
         "status": "ok",
         "spreadsheetId": result["spreadsheetId"],

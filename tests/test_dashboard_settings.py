@@ -366,6 +366,7 @@ def test_dashboard_settings_supports_unset_queue_values_and_admin_options(tmp_pa
 def test_dashboard_settings_prefers_live_line_display_name_for_admin_options(tmp_path, monkeypatch):
     _setup_runtime(tmp_path, location_options={"1": ["1"]})
     assert main.db_manager is not None
+    monkeypatch.setattr(main, "ADMIN_IDS", [])
     main.db_manager.upsert_user_profile("admin-1", "Stored Admin", verified=True, role="admin")
     main.db_manager.upsert_user_profile("admin-2", "", verified=True, role="admin")
     monkeypatch.setattr(main, "_fetch_line_profile_display_name", lambda user_id: {
@@ -392,6 +393,35 @@ def test_dashboard_settings_prefers_live_line_display_name_for_admin_options(tmp
             "display_name": "",
             "line_display_name": "LINE Bob",
             "label": "LINE Bob (admin-2)",
+        },
+    ]
+
+
+def test_dashboard_settings_includes_static_env_admin_ids_in_admin_options(tmp_path, monkeypatch):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    assert main.db_manager is not None
+    monkeypatch.setattr(main, "ADMIN_IDS", ["static-admin", "db-admin"])
+    main.db_manager.upsert_user_profile("db-admin", "Stored Admin", verified=True, role="admin")
+    monkeypatch.setattr(main, "_fetch_line_profile_display_name", lambda user_id: "")
+
+    client = TestClient(main.app)
+
+    response = client.get("/settings/data")
+
+    assert response.status_code == 200
+    admin_options = sorted(response.json()["meta"]["adminOptions"], key=lambda item: item["user_id"])
+    assert admin_options == [
+        {
+            "user_id": "db-admin",
+            "display_name": "Stored Admin",
+            "line_display_name": "",
+            "label": "Stored Admin (db-admin)",
+        },
+        {
+            "user_id": "static-admin",
+            "display_name": "",
+            "line_display_name": "",
+            "label": "static-admin",
         },
     ]
 
@@ -542,8 +572,9 @@ def test_dashboard_settings_homework_credentials_upload_and_validate_url(tmp_pat
 
     captured = {}
 
-    def fake_validate(payload):
+    def fake_validate(payload, *, force_validate=False):
         captured["payload"] = payload
+        captured["force_validate"] = force_validate
         return {
             "spreadsheetId": "1AbCdEfGhIjKlMn",
             "sheetNames": ["Amy", "Bob"],
@@ -561,6 +592,36 @@ def test_dashboard_settings_homework_credentials_upload_and_validate_url(tmp_pat
 
     assert response.status_code == 200
     assert captured["payload"]["spreadsheet_id"] == "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMn/edit#gid=0"
+    assert captured["force_validate"] is True
+
+
+def test_dashboard_settings_homework_validate_lists_sheets_even_when_disabled(tmp_path):
+    _setup_runtime(tmp_path, location_options={"1": ["1"]})
+    client = TestClient(main.app)
+    captured = {}
+
+    def fake_validate(payload, *, force_validate=False):
+        captured["payload"] = payload
+        captured["force_validate"] = force_validate
+        return {
+            "spreadsheetId": "1AbCdEfGhIjKlMn",
+            "sheetNames": ["Amy", "Bob"],
+        }
+
+    main._validate_homework_demo_access = fake_validate
+
+    response = client.post(
+        "/settings/homework/validate",
+        json={
+            "enabled": False,
+            "spreadsheet_id": "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMn/edit#gid=0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["sheetNames"] == ["Amy", "Bob"]
+    assert captured["payload"]["enabled"] is False
+    assert captured["force_validate"] is True
 
 
 def test_dashboard_settings_homework_credentials_rejects_missing_token_uri(tmp_path):

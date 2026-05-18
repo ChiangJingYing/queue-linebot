@@ -29,7 +29,7 @@ registration:
     '6': ['1', '2', '3', '4', '5', '6', '7', '8']
     '7': ['1', '2', '3', '4', '5', '6', '7', '8']
 homework_demo:
-  enabled: true
+  enabled: false
   spreadsheet_id: 1kdYS-6hvjXA0KMHzQ8mZSjZEjINHbtBTrnn58pCf-Kg
   default_ta_limit: 8
   ta_blacklists: {}
@@ -46,6 +46,7 @@ homework_demo:
   booking_timezone: Asia/Taipei
   ta_line_user_ids:
     江金穎: U3c8b083f3863caec2e9f6c5ea637631d
+    張晉嘉: U3c8b083f3863caec2e9f6c5ea637631d
 logging:
   level: INFO
   log_file: logs/queue_events.log
