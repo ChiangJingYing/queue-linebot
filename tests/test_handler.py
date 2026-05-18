@@ -86,6 +86,15 @@ def test_handle_status_when_user_not_in_queue_shows_total_queue_count(tmp_path):
     assert "VIP" not in text
 
 
+def test_rich_menu_switch_payload_is_silently_ignored(tmp_path):
+    db = DatabaseManager(str(tmp_path / "handler-richmenuswitch.db"))
+    handler = LineBotHandler(queue_manager=QueueManager(db))
+
+    result = handler.handle_event(make_event("go-member-page2", user_id="alice"))
+
+    assert result == []
+
+
 
 def test_handle_history_returns_user_history(tmp_path):
     db = DatabaseManager(str(tmp_path / "handler.db"))
@@ -185,6 +194,39 @@ def test_handle_history_returns_empty_message_when_no_history(tmp_path):
     result = handler.handle_event(make_event("/history", user_id="alice"))
 
     assert reply_texts(result)[0] == "查無排隊歷史紀錄。"
+
+
+def test_sync_rich_menu_for_regular_user_always_links_user_page1(tmp_path):
+    db = DatabaseManager(str(tmp_path / "handler-sync-user.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(
+        queue_manager=qm,
+        user_rich_menu_id="user-page1-id",
+    )
+    handler.notifier.get_user_rich_menu = lambda user_id: ""
+    linked = []
+    handler.notifier.link_rich_menu = lambda user_id, rich_menu_id: linked.append((user_id, rich_menu_id)) or "ok"
+
+    handler._sync_rich_menu("alice")
+
+    assert linked == [("alice", "user-page1-id")]
+
+
+def test_sync_rich_menu_keeps_regular_user_on_user_page2_when_already_switched(tmp_path):
+    db = DatabaseManager(str(tmp_path / "handler-sync-user-page2.db"))
+    qm = QueueManager(db)
+    handler = LineBotHandler(
+        queue_manager=qm,
+        user_rich_menu_id="user-page1-id",
+        user_rich_menu_page2_id="user-page2-id",
+    )
+    handler.notifier.get_user_rich_menu = lambda user_id: "user-page2-id"
+    linked = []
+    handler.notifier.link_rich_menu = lambda user_id, rich_menu_id: linked.append((user_id, rich_menu_id)) or "ok"
+
+    handler._sync_rich_menu("alice")
+
+    assert linked == []
 
 
 

@@ -50,11 +50,15 @@ class HandlerSupportMixin:
         is_admin = self._is_admin(user_id)
         if is_admin:
             current = self.notifier.get_user_rich_menu(user_id)
-            valid = current in (self.admin_rich_menu_id, self.admin_rich_menu_page2_id)
+            valid_menus = {menu_id for menu_id in (self.admin_rich_menu_id, self.admin_rich_menu_page2_id) if menu_id}
+            valid = current in valid_menus
             if not valid and self.admin_rich_menu_id:
                 self.notifier.link_rich_menu(user_id, self.admin_rich_menu_id)
         else:
-            if self.user_rich_menu_id:
+            current = self.notifier.get_user_rich_menu(user_id)
+            valid_menus = {menu_id for menu_id in (self.user_rich_menu_id, self.user_rich_menu_page2_id) if menu_id}
+            valid = current in valid_menus
+            if not valid and self.user_rich_menu_id:
                 self.notifier.link_rich_menu(user_id, self.user_rich_menu_id)
 
     def _handle_admin_page_switch(self, user_id: str, target_page: str, reply_token: str) -> list:

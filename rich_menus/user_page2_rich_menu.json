@@ -4,8 +4,8 @@
     "height": 1686
   },
   "selected": false,
-  "name": "queue-admin-menu-page2",
-  "chatBarText": "管理功能",
+  "name": "member-menu-page2",
+  "chatBarText": "作業登記",
   "areas": [
     {
       "bounds": {
@@ -16,8 +16,8 @@
       },
       "action": {
         "type": "richmenuswitch",
-        "richMenuAliasId": "admin-menu-page1",
-        "data": "go-admin-page1"
+        "richMenuAliasId": "member-menu-page1",
+        "data": "go-member-page1"
       }
     },
     {
@@ -29,8 +29,8 @@
       },
       "action": {
         "type": "richmenuswitch",
-        "richMenuAliasId": "admin-menu-page2",
-        "data": "go-admin-page2"
+        "richMenuAliasId": "member-menu-page2",
+        "data": "go-member-page2"
       }
     },
     {
@@ -42,7 +42,7 @@
       },
       "action": {
         "type": "message",
-        "text": "/admin/clear"
+        "text": "/homework"
       }
     },
     {
@@ -54,7 +54,7 @@
       },
       "action": {
         "type": "message",
-        "text": "/admin/vip status"
+        "text": "/homework/cancel"
       }
     },
     {
@@ -66,7 +66,43 @@
       },
       "action": {
         "type": "message",
-        "text": "/help"
+        "text": "/homework/list"
+      }
+    },
+    {
+      "bounds": {
+        "x": 0,
+        "y": 943,
+        "width": 833,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/homework/register"
+      }
+    },
+    {
+      "bounds": {
+        "x": 833,
+        "y": 943,
+        "width": 834,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/homework/cancel/apply"
+      }
+    },
+    {
+      "bounds": {
+        "x": 1667,
+        "y": 943,
+        "width": 833,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/status"
       }
     }
   ]

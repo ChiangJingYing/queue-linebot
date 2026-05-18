@@ -28,6 +28,11 @@ from services.special_serve_rules import normalize_special_serve_rules
 from services.telegram_admin_notifications import TelegramAdminNotificationService
 from services.vip_service import VipService
 
+RICH_MENU_SWITCH_DATA_PREFIXES = (
+    "go-member-page",
+    "go-admin-page",
+)
+
 
 class LineBotHandler(
     HandlerAdminMixin,
@@ -48,6 +53,7 @@ class LineBotHandler(
         admin_rich_menu_id: str = "",
         admin_rich_menu_page2_id: str = "",
         user_rich_menu_id: str = "",
+        user_rich_menu_page2_id: str = "",
         location_options: dict[str, list[str]] | None = None,
         announcement_service: object | None = None,
         new_order_idle_seconds: int = 300,
@@ -73,6 +79,7 @@ class LineBotHandler(
         self.admin_rich_menu_id = admin_rich_menu_id
         self.admin_rich_menu_page2_id = admin_rich_menu_page2_id
         self.user_rich_menu_id = user_rich_menu_id
+        self.user_rich_menu_page2_id = user_rich_menu_page2_id
         self.location_options = location_options or {"A": ["1", "2"], "B": ["1", "2"]}
         #: 額外的 dashboard / 語音公告通道；不負責對被叫號者送私訊。
         self.announcement_service = announcement_service
@@ -125,6 +132,9 @@ class LineBotHandler(
 
         if text.startswith("homework:") and self.homework_booking_service and self.homework_booking_service.is_enabled():
             return self._capture_homework_input(user_id, text.strip(), reply_token)
+
+        if text.startswith(RICH_MENU_SWITCH_DATA_PREFIXES):
+            return []
 
         if text == "switch_page2":
             return self._handle_admin_page_switch(user_id, "page2", reply_token)

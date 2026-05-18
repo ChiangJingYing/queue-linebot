@@ -130,7 +130,7 @@ def test_load_config_prefers_config_directory_default_path(monkeypatch, tmp_path
 def test_load_config_merges_partial_yaml_with_defaults(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
-        "server:\n  port: 9000\nline_bot:\n  admin_ids:\n    - admin_1\n",
+        "server:\n  port: 9000\nline_bot:\n  admin_ids:\n    - admin_1\n  user_rich_menu_page2_id: user-page2\n",
         encoding="utf-8",
     )
 
@@ -139,6 +139,7 @@ def test_load_config_merges_partial_yaml_with_defaults(tmp_path):
     assert config["server"]["port"] == 9000
     assert config["server"]["host"] == "0.0.0.0"
     assert config["line_bot"]["admin_ids"] == ["admin_1"]
+    assert config["line_bot"]["user_rich_menu_page2_id"] == "user-page2"
     assert "channel_secret" in config["line_bot"]
 
 
@@ -156,6 +157,14 @@ def test_load_config_reads_new_order_announcement_env(monkeypatch, tmp_path):
     config = load_config(str(tmp_path / "missing.yaml"))
 
     assert config["tts"]["new_order_announcement_text"] == "/app/audio/new-order.mp3"
+
+
+def test_load_config_reads_user_rich_menu_page2_from_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("LINE_USER_RICH_MENU_PAGE2_ID", "user-rich-menu-page2")
+
+    config = load_config(str(tmp_path / "missing.yaml"))
+
+    assert config["line_bot"]["user_rich_menu_page2_id"] == "user-rich-menu-page2"
 
 
 def test_load_config_ignores_empty_section_and_keeps_env_defaults(monkeypatch, tmp_path):

@@ -75,6 +75,7 @@ ADMIN_IDS: list[str] = line_bot_config.get("admin_ids", ["admin_xxxxx", "another
 ADMIN_RICH_MENU_ID = line_bot_config.get("admin_rich_menu_id", "")
 ADMIN_RICH_MENU_PAGE2_ID = line_bot_config.get("admin_rich_menu_page2_id", "")
 USER_RICH_MENU_ID = line_bot_config.get("user_rich_menu_id", "")
+USER_RICH_MENU_PAGE2_ID = line_bot_config.get("user_rich_menu_page2_id", "")
 LOCATION_OPTIONS = config.get("registration", {}).get("location_options", {"A": ["1", "2"], "B": ["1", "2"]})
 
 
@@ -462,6 +463,7 @@ def _apply_runtime_config(next_config: dict) -> None:
             admin_rich_menu_id=ADMIN_RICH_MENU_ID,
             admin_rich_menu_page2_id=ADMIN_RICH_MENU_PAGE2_ID,
             user_rich_menu_id=USER_RICH_MENU_ID,
+            user_rich_menu_page2_id=USER_RICH_MENU_PAGE2_ID,
             location_options=LOCATION_OPTIONS,
             announcement_service=dashboard_announcement_service,
             new_order_idle_seconds=int(config.get("tts", {}).get("new_order_idle_seconds", 300)),
@@ -595,6 +597,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         admin_rich_menu_id=ADMIN_RICH_MENU_ID,
         admin_rich_menu_page2_id=ADMIN_RICH_MENU_PAGE2_ID,
         user_rich_menu_id=USER_RICH_MENU_ID,
+        user_rich_menu_page2_id=USER_RICH_MENU_PAGE2_ID,
         location_options=LOCATION_OPTIONS,
         announcement_service=dashboard_announcement_service,
         new_order_idle_seconds=int(tts_config.get("new_order_idle_seconds", 300)),

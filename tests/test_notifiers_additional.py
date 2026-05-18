@@ -1,6 +1,7 @@
 """Additional notifier tests."""
 
 import json
+from types import SimpleNamespace
 from urllib import error as urllib_error
 
 from services.notifier import Notifier
@@ -143,3 +144,10 @@ class TestNotifierAdditional:
         )
 
         assert result == "推播 Flex 失敗給 alice：LINE API 暫時不可用"
+
+    def test_get_user_rich_menu_normalizes_sdk_response_object(self):
+        notifier = Notifier("secret", "token")
+
+        result = notifier._normalize_rich_menu_id_response(SimpleNamespace(rich_menu_id="richmenu-123"))
+
+        assert result == "richmenu-123"

@@ -3,33 +3,107 @@
     "width": 2500,
     "height": 1686
   },
-  "selected": false,
-  "name": "queue-user-menu-6grid",
+  "selected": true,
+  "name": "member-menu-page1",
   "chatBarText": "一般功能",
   "areas": [
     {
-      "bounds": { "x": 0, "y": 0, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "/join" }
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1250,
+        "height": 200
+      },
+      "action": {
+        "type": "richmenuswitch",
+        "richMenuAliasId": "member-menu-page1",
+        "data": "go-member-page1"
+      }
     },
     {
-      "bounds": { "x": 833, "y": 0, "width": 834, "height": 843 },
-      "action": { "type": "message", "text": "/cancel" }
+      "bounds": {
+        "x": 1250,
+        "y": 0,
+        "width": 1250,
+        "height": 200
+      },
+      "action": {
+        "type": "richmenuswitch",
+        "richMenuAliasId": "member-menu-page2",
+        "data": "go-member-page2"
+      }
     },
     {
-      "bounds": { "x": 1667, "y": 0, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "/status" }
+      "bounds": {
+        "x": 0,
+        "y": 200,
+        "width": 833,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/join"
+      }
     },
     {
-      "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "/hostory" }
+      "bounds": {
+        "x": 833,
+        "y": 200,
+        "width": 834,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/cancel"
+      }
     },
     {
-      "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
-      "action": { "type": "message", "text": "/register" }
+      "bounds": {
+        "x": 1667,
+        "y": 200,
+        "width": 833,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/status"
+      }
     },
     {
-      "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "/history" }
+      "bounds": {
+        "x": 0,
+        "y": 943,
+        "width": 833,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/history"
+      }
+    },
+    {
+      "bounds": {
+        "x": 833,
+        "y": 943,
+        "width": 834,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/register"
+      }
+    },
+    {
+      "bounds": {
+        "x": 1667,
+        "y": 943,
+        "width": 833,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/history"
+      }
     }
   ]
 }

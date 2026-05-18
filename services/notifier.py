@@ -211,6 +211,26 @@ class Notifier:
         msg = f"✅ 已成功加入隊列！你的號碼是：#{queue_number}"
         return self.notify_user(user_id, msg)
 
+    def _normalize_rich_menu_id_response(self, value: object) -> str:
+        """把 LINE SDK rich menu response 正規化為 rich menu ID 字串。"""
+        if isinstance(value, str):
+            return value
+        if value is None:
+            return ""
+
+        for attr_name in ("rich_menu_id", "richMenuId"):
+            attr_value = getattr(value, attr_name, None)
+            if isinstance(attr_value, str) and attr_value:
+                return attr_value
+
+        if isinstance(value, dict):
+            for key in ("rich_menu_id", "richMenuId"):
+                item = value.get(key)
+                if isinstance(item, str) and item:
+                    return item
+
+        return ""
+
     def get_user_rich_menu(self, user_id: str) -> str:
         """取得 LINE 使用者目前綁定的 rich menu ID。"""
         if not self.channel_access_token:
@@ -223,7 +243,8 @@ class Notifier:
         try:
             config = Configuration(access_token=self.channel_access_token)
             with ApiClient(config) as api_client:
-                return MessagingApi(api_client).get_rich_menu_id_of_user(user_id)
+                response = MessagingApi(api_client).get_rich_menu_id_of_user(user_id)
+                return self._normalize_rich_menu_id_response(response)
         except Exception as exc:
             logger.exception("取得 rich menu ID 失敗 user_id=%s", user_id)
             return ""

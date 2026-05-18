@@ -4,28 +4,82 @@
     "height": 1686
   },
   "selected": false,
-  "name": "queue-admin-menu-6grid",
+  "name": "queue-admin-menu-page1",
   "chatBarText": "管理功能",
   "areas": [
     {
-      "bounds": { "x": 0, "y": 0, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "/admin/serve" }
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1250,
+        "height": 200
+      },
+      "action": {
+        "type": "richmenuswitch",
+        "richMenuAliasId": "admin-menu-page1",
+        "data": "go-admin-page1"
+      }
     },
     {
-      "bounds": { "x": 833, "y": 0, "width": 834, "height": 843 },
-      "action": { "type": "message", "text": "/admin/ping" }
+      "bounds": {
+        "x": 1250,
+        "y": 0,
+        "width": 1250,
+        "height": 200
+      },
+      "action": {
+        "type": "richmenuswitch",
+        "richMenuAliasId": "admin-menu-page2",
+        "data": "go-admin-page2"
+      }
     },
     {
-      "bounds": { "x": 1667, "y": 0, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "/admin/status" }
+      "bounds": {
+        "x": 0,
+        "y": 200,
+        "width": 833,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/admin/serve"
+      }
     },
     {
-      "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "/admin/join" }
+      "bounds": {
+        "x": 833,
+        "y": 200,
+        "width": 834,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/admin/ping"
+      }
     },
     {
-      "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
-      "action": { "type": "message", "text": "switch_page2" }
+      "bounds": {
+        "x": 1667,
+        "y": 200,
+        "width": 833,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/admin/status"
+      }
+    },
+    {
+      "bounds": {
+        "x": 0,
+        "y": 943,
+        "width": 833,
+        "height": 743
+      },
+      "action": {
+        "type": "message",
+        "text": "/admin/join"
+      }
     }
   ]
 }
