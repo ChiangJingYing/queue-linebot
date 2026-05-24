@@ -57,7 +57,15 @@ class DiscordCommandService:
         ],
     ]
 
-    def __init__(self, *, db, location_options: dict[str, list[str]] | None = None, telegram_sender=None) -> None:
+    def __init__(
+        self,
+        *,
+        db,
+        location_options: dict[str, list[str]] | None = None,
+        telegram_sender=None,
+        notification_dispatcher=None,
+        line_display_name_resolver=None,
+    ) -> None:
         """建立 Discord command service 與其共用依賴。"""
         self.db = db
         #: Discord command 層共用的隊列核心；join/cancel/status 都透過它落到共用邏輯。
@@ -67,7 +75,12 @@ class DiscordCommandService:
         self.pending_state_store = ConfigPendingStateStore(db, namespace="discord")
         #: 透過 Telegram 發送給管理員的後台事件廣播 service。
         self.notification_service = (
-            TelegramAdminNotificationService(db=db, sender=telegram_sender)
+            TelegramAdminNotificationService(
+                db=db,
+                sender=telegram_sender,
+                dispatcher=notification_dispatcher,
+                line_display_name_resolver=line_display_name_resolver,
+            )
             if telegram_sender is not None
             else None
         )
@@ -183,13 +196,20 @@ class DiscordCommandService:
             }
 
         if outcome["status"] != "success":
+            raw = outcome.get("raw_result", {})
+            if raw.get("message") == "目前隊列已關閉，請稍後再試。":
+                self._broadcast_join_error_event(
+                    user_id=user_id,
+                    command_text="/join" if queue_type == "regular" else f"/join {queue_type}",
+                    error_message=raw["message"],
+                )
             return {"status": "error", "message": outcome["message"]}
 
         if self.notification_service is not None:
             self.notification_service.broadcast_event(
                 category="join",
                 title="排隊通知",
-                actor_label=f"使用者：{self.db.get_display_name(user_id)}（{user_id}）",
+                actor_label=f"使用者：{self.db.get_display_name(user_id)}",
                 target_label=f"隊列：{queue_type}",
                 detail_lines=[
                     f"號碼：#{outcome['queue_number']}",
@@ -210,6 +230,19 @@ class DiscordCommandService:
             ]),
         }
 
+    def _broadcast_join_error_event(self, *, user_id: str, command_text: str, error_message: str) -> None:
+        """Broadcast join failures that should be visible to Telegram admins."""
+        if self.notification_service is None:
+            return
+        self.notification_service.broadcast_event(
+            category="error",
+            title="失敗通知",
+            actor_label=f"使用者：{self.db.get_display_name(user_id)}",
+            target_label=f"指令：{command_text}",
+            detail_lines=[f"原因：{error_message}"],
+            platform=self.PLATFORM_LABEL,
+        )
+
     def _handle_cancel(self, *, user_id: str) -> dict:
         """處理取消排隊；封隊時改走 Discord 二次確認按鈕流程。"""
         if not self.queue_manager.get_queue_enabled() and self.queue_manager.get_user_position(user_id) is not None:
@@ -228,7 +261,7 @@ class DiscordCommandService:
             self.notification_service.broadcast_event(
                 category="cancel",
                 title="取消通知",
-                actor_label=f"使用者：{self.db.get_display_name(user_id)}（{user_id}）",
+                actor_label=f"使用者：{self.db.get_display_name(user_id)}",
                 target_label="動作：離開隊列",
                 platform=self.PLATFORM_LABEL,
             )
@@ -416,7 +449,7 @@ class DiscordCommandService:
             self.notification_service.broadcast_event(
                 category="cancel",
                 title="取消通知",
-                actor_label=f"使用者：{self.db.get_display_name(user_id)}（{user_id}）",
+                actor_label=f"使用者：{self.db.get_display_name(user_id)}",
                 target_label="動作：離開隊列",
                 platform=self.PLATFORM_LABEL,
             )

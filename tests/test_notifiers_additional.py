@@ -59,6 +59,30 @@ class TestNotifierAdditional:
         assert sent == [("discord_user_1", sent[0][1])]
         assert "#7" in sent[0][1]
 
+    def test_notify_user_returns_before_deferred_sender_runs(self, tmp_path):
+        from core.database import DatabaseManager
+
+        db = DatabaseManager(str(tmp_path / "deferred-telegram-user.db"))
+        db.set_config("telegram_user:tg_user_1", "1")
+        sent = []
+        queued = []
+
+        class DeferringDispatcher:
+            def dispatch(self, func):
+                queued.append(func)
+
+        notifier = Notifier(
+            telegram_sender=lambda user_id, text: sent.append((user_id, text)),
+            db=db,
+            dispatcher=DeferringDispatcher(),
+        )
+
+        result = notifier.notify_user("tg_user_1", "hello")
+
+        assert result == "已推送給 tg_user_1：hello"
+        assert sent == []
+        assert len(queued) == 1
+
     def test_push_flex_returns_fallback_message_when_token_missing(self):
         notifier = Notifier("secret", "")
 

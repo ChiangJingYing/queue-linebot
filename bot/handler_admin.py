@@ -38,6 +38,8 @@ class HandlerAdminMixin:
 
     #: 用於管理通知廣播中的平台名稱標記。
     LINE_NOTIFICATION_PLATFORM = "Line"
+    #: LINE quick reply message action label max length.
+    LINE_QUICK_REPLY_LABEL_MAX_LENGTH = 20
 
     def _handle_admin(self, user_id: str, command: str, args: list, reply_token: str) -> list:
         """管理員指令總入口。
@@ -135,7 +137,7 @@ class HandlerAdminMixin:
         if not pending:
             return self._reply(reply_token, "📋 Admin 申請列表\n─────────────\n目前沒有待審核的申請。")
 
-        page_size = 12
+        page_size = 10
         total_pages = max(1, (len(pending) + page_size - 1) // page_size)
 
         if page < -1:
@@ -150,8 +152,8 @@ class HandlerAdminMixin:
         page_apps = pending[start:end]
 
         items = []
-        for app in page_apps:
-            label = f"{app['user_id']} ({app['resolved_display_name']})"
+        for index, app in enumerate(page_apps, start=1):
+            label = self._admin_apply_quick_reply_label(index=index, display_name=app["resolved_display_name"])
             items.append({
                 "type": "action",
                 "action": {
@@ -162,9 +164,9 @@ class HandlerAdminMixin:
             })
 
         if page > 1:
-            items.append({"type": "action", "action": {"type": "message", "label": "←上一頁", "text": "/admin/apply list page-1"}})
+            items.append({"type": "action", "action": {"type": "message", "label": "←上一頁", "text": f"/admin/apply list page-{page - 1}"}})
         if page < total_pages:
-            items.append({"type": "action", "action": {"type": "message", "label": "→下一頁", "text": f"/admin/apply list page+{page}"}})
+            items.append({"type": "action", "action": {"type": "message", "label": "→下一頁", "text": f"/admin/apply list page+{page + 1}"}})
         if page == total_pages:
             items.append({"type": "action", "action": {"type": "message", "label": "←返回", "text": "/admin/apply list"}})
 
@@ -173,6 +175,15 @@ class HandlerAdminMixin:
             msg += f"{i}. {app['user_id']} ({app['resolved_display_name']})\n"
 
         return self._reply(reply_token, msg, quick_options=items)
+
+    def _admin_apply_quick_reply_label(self, *, index: int, display_name: str) -> str:
+        """Build a LINE-safe admin application quick reply label."""
+        prefix = f"批准{index}. "
+        name = str(display_name or "").strip() or "未命名"
+        max_name_length = max(self.LINE_QUICK_REPLY_LABEL_MAX_LENGTH - len(prefix), 1)
+        if len(name) > max_name_length:
+            name = name[: max_name_length - 1] + "…" if max_name_length > 1 else name[:1]
+        return f"{prefix}{name}"
 
     def _resolve_line_display_name_for_review(self, user_id: str) -> str:
         return fetch_line_profile_display_name(

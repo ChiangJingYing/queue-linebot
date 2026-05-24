@@ -42,6 +42,12 @@ Thumbs.db
 # Environment variables (secrets, tokens, etc.)
 .env
 .env.local
+.env.dev
+
+# Local Docker Compose overrides
+compose.override.yml
+docker-compose.override.yml
+docker-compose.dev.yml
 
 # Flask / FastAPI deploy artifacts
 www/

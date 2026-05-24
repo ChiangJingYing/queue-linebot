@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
+from main import _line_message_payloads_from_action
+
 
 class TestAdminApplicationsDB:
     """Test admin_applications table operations."""
@@ -150,21 +152,22 @@ class TestAdminApplyHandler:
         result = handler._handle_admin_apply_list(reply_token="replytoken", user_id="Uadmin001")
         assert len(result) == 1
         text = result[0]["text"]
-        assert "B12345678" in text
-        assert "John" not in text
+        assert "John" in text
+        assert "B12345678" not in text
 
-    def test_apply_list_falls_back_to_user_id_when_profile_name_missing(self, handler):
+    def test_apply_list_uses_application_display_name_when_profile_name_missing(self, handler):
         handler.queue_manager.db.add_admin_application("Uuser123", "John")
 
         result = handler._handle_admin_apply_list(reply_token="replytoken", user_id="Uadmin001")
 
         assert len(result) == 1
         text = result[0]["text"]
-        assert "Uuser123 (Uuser123)" in text
+        assert "Uuser123 (John)" in text
 
-    def test_apply_list_prefers_line_profile_name_over_user_profile(self, handler):
-        handler.queue_manager.db.add_admin_application("Uuser123", "John")
-        handler.queue_manager.db.upsert_user_profile("Uuser123", "B12345678", verified=True, role="user")
+    def test_apply_list_prefers_line_profile_name_over_application_display_name(self, handler):
+        line_user_id = "U" + "a" * 32
+        handler.queue_manager.db.add_admin_application(line_user_id, "John")
+        handler.queue_manager.db.upsert_user_profile(line_user_id, "B12345678", verified=True, role="user")
         handler.channel_access_token = "line-token"
 
         with patch("bot.handler_admin.fetch_line_profile_display_name", return_value="LINE Alice"):
@@ -173,10 +176,12 @@ class TestAdminApplyHandler:
         assert len(result) == 1
         text = result[0]["text"]
         assert "LINE Alice" in text
+        assert "John" not in text
         assert "B12345678" not in text
 
     def test_apply_list_uses_line_profile_name_when_pending_user_has_no_profile(self, handler):
-        handler.queue_manager.db.add_admin_application("Uuser123", "John")
+        line_user_id = "U" + "a" * 32
+        handler.queue_manager.db.add_admin_application(line_user_id, "John")
         handler.channel_access_token = "line-token"
 
         with patch("bot.handler_admin.fetch_line_profile_display_name", return_value="LINE Alice"):
@@ -185,11 +190,12 @@ class TestAdminApplyHandler:
         assert len(result) == 1
         text = result[0]["text"]
         assert "LINE Alice" in text
-        assert "Uuser123 (Uuser123)" not in text
+        assert f"{line_user_id} (John)" not in text
 
-    def test_apply_list_falls_back_to_user_profile_when_line_profile_missing(self, handler):
-        handler.queue_manager.db.add_admin_application("Uuser123", "John")
-        handler.queue_manager.db.upsert_user_profile("Uuser123", "B12345678", verified=True, role="user")
+    def test_apply_list_falls_back_to_application_display_name_when_line_profile_missing(self, handler):
+        line_user_id = "U" + "a" * 32
+        handler.queue_manager.db.add_admin_application(line_user_id, "John")
+        handler.queue_manager.db.upsert_user_profile(line_user_id, "B12345678", verified=True, role="user")
         handler.channel_access_token = "line-token"
 
         with patch("bot.handler_admin.fetch_line_profile_display_name", return_value=""):
@@ -197,7 +203,8 @@ class TestAdminApplyHandler:
 
         assert len(result) == 1
         text = result[0]["text"]
-        assert "B12345678" in text
+        assert f"{line_user_id} (John)" in text
+        assert "B12345678" not in text
 
     def test_apply_approve(self, handler):
         """Approving an application."""
@@ -244,6 +251,9 @@ class TestAdminApplyHandler:
         # Should have quick reply items for pagination
         action = result[0]
         assert "quickReply" in action
+        items = action["quickReply"]["items"]
+        assert len(items) <= 13
+        assert any(item["action"]["text"] == "/admin/apply list page+2" for item in items)
 
     def test_apply_list_page_navigation(self, handler):
         """Page navigation should work."""
@@ -252,6 +262,39 @@ class TestAdminApplyHandler:
         # Page 2 (page=2)
         result = handler._handle_admin_apply_list(reply_token="replytoken", user_id="Uadmin001", page=2)
         assert len(result) == 1
+        items = result[0]["quickReply"]["items"]
+        assert len(items) <= 13
+        assert any(item["action"]["text"] == "/admin/apply list page-1" for item in items)
+
+    def test_apply_list_quick_reply_labels_are_line_safe(self, handler):
+        """LINE quick reply message action labels must stay within 20 chars."""
+        line_user_id = "U" + "a" * 32
+        handler.queue_manager.db.add_admin_application(line_user_id, "A very very long display name")
+
+        result = handler._handle_admin_apply_list(reply_token="replytoken", user_id="Uadmin001")
+
+        items = result[0]["quickReply"]["items"]
+        assert items
+        for item in items:
+            label = item["action"]["label"]
+            assert len(label) <= 20
+            assert line_user_id not in label
+        assert any(item["action"]["text"] == f"/admin/apply approve {line_user_id}" for item in items)
+
+    def test_apply_list_line_payload_quick_reply_labels_are_line_safe(self, handler):
+        """Final LINE reply payload should keep quick reply labels API-safe."""
+        line_user_id = "U" + "a" * 32
+        handler.queue_manager.db.add_admin_application(line_user_id, "A very very long display name")
+
+        [action] = handler._handle_admin_apply_list(reply_token="replytoken", user_id="Uadmin001")
+        [message] = _line_message_payloads_from_action(action)
+
+        items = message["quickReply"]["items"]
+        for item in items:
+            label = item["action"]["label"]
+            assert len(label) <= 20
+            assert line_user_id not in label
+        assert any(item["action"]["text"] == f"/admin/apply approve {line_user_id}" for item in items)
 
     def test_apply_list_page_minus_one(self, handler):
         """Page -1 should go to last page."""

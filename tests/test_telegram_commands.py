@@ -262,14 +262,27 @@ class TestTelegramCommandService:
         db_manager.add_admin_application("tg_user_1", "王小明")
         service = TelegramCommandService(db=db_manager, channel_access_token="line-token")
 
+        result = service.handle_text(user_id="admin_a", text="/admin/apply list")
+
+        assert result["status"] == "success"
+        assert "Admin 申請列表" in result["message"]
+        assert "王小明" in result["message"]
+        assert "B12345678" not in result["message"]
+
+    def test_admin_apply_list_prefers_line_profile_for_line_user_id(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "Admin A", verified=True, role="admin")
+        line_user_id = "U" + "a" * 32
+        db_manager.upsert_user_profile(line_user_id, "B12345678", verified=True, role="user")
+        db_manager.add_admin_application(line_user_id, "王小明")
+        service = TelegramCommandService(db=db_manager, channel_access_token="line-token")
+
         with patch.object(telegram_commands_module, "fetch_line_profile_display_name", return_value="LINE Alice"):
             result = service.handle_text(user_id="admin_a", text="/admin/apply list")
 
         assert result["status"] == "success"
-        assert "Admin 申請列表" in result["message"]
         assert "LINE Alice" in result["message"]
-        assert "B12345678" not in result["message"]
         assert "王小明" not in result["message"]
+        assert "B12345678" not in result["message"]
 
     def test_admin_apply_list_rejects_non_admin(self, db_manager):
         db_manager.add_admin_application("tg_user_1", "王小明")
@@ -696,6 +709,7 @@ class TestTelegramCommandService:
         assert "排隊通知" in sent[0][1]
         assert "平台：Telegram" in sent[0][1]
         assert "B12345678（A-1）" in sent[0][1]
+        assert "alice" not in sent[0][1]
 
     def test_cancel_broadcasts_to_admins_with_cancel_pref(self, db_manager):
         db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
@@ -716,6 +730,41 @@ class TestTelegramCommandService:
         assert sent == [("admin_a", sent[0][1])]
         assert "取消通知" in sent[0][1]
         assert "B12345678（A-1）" in sent[0][1]
+        assert "alice" not in sent[0][1]
+
+    def test_admin_serve_line_user_ids_are_resolved_without_showing_ids(self, db_manager):
+        admin_line_id = "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        target_line_id = "Ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        db_manager.upsert_user_profile(admin_line_id, "Stored Admin", verified=True, role="admin")
+        db_manager.upsert_user_profile("admin_b", "管理員乙", verified=True, role="admin")
+        db_manager.upsert_user_profile(target_line_id, "Stored User", location="A-1", verified=True, role="user")
+        db_manager.set_admin_notification_preference("admin_b", "serve", True)
+        sent = []
+
+        def sender(user_id: str, text: str) -> None:
+            sent.append((user_id, text))
+
+        def resolver(user_id: str) -> str:
+            return {
+                admin_line_id: "LINE Admin",
+                target_line_id: "LINE Target",
+            }.get(user_id, "")
+
+        service = TelegramCommandService(
+            db=db_manager,
+            telegram_sender=sender,
+            line_display_name_resolver=resolver,
+        )
+        service.queue_manager.join(target_line_id, "regular")
+
+        result = service.handle_text(user_id=admin_line_id, text="/admin/serve")
+
+        assert result["status"] == "success"
+        assert sent == [("admin_b", sent[0][1])]
+        assert "管理員：LINE Admin" in sent[0][1]
+        assert "叫號對象：LINE Target" in sent[0][1]
+        assert admin_line_id not in sent[0][1]
+        assert target_line_id not in sent[0][1]
 
     def test_failed_join_broadcasts_to_admins_with_error_pref(self, db_manager):
         db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
@@ -738,6 +787,30 @@ class TestTelegramCommandService:
         assert "失敗通知" in sent[0][1]
         assert "/join" in sent[0][1]
         assert "請勿重複加入" in sent[0][1]
+
+    def test_join_when_queue_closed_broadcasts_error_to_admins_with_error_pref(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+        db_manager.set_admin_notification_preference("admin_a", "error", True)
+        db_manager.set_config("queue_enabled", "false")
+        sent = []
+
+        def sender(user_id: str, text: str) -> None:
+            sent.append((user_id, text))
+
+        service = TelegramCommandService(db=db_manager, telegram_sender=sender)
+
+        result = service.handle_text(user_id="alice", text="/join")
+
+        assert result["status"] == "error"
+        assert "目前隊列已關閉" in result["message"]
+        assert sent == [("admin_a", sent[0][1])]
+        assert "失敗通知" in sent[0][1]
+        assert "平台：Telegram" in sent[0][1]
+        assert "指令：/join" in sent[0][1]
+        assert "目前隊列已關閉" in sent[0][1]
+        assert "B12345678（A-1）" in sent[0][1]
+        assert "alice" not in sent[0][1]
 
     def test_admin_stats_reports_summary(self, db_manager):
         db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")

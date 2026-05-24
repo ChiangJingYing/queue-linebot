@@ -60,6 +60,8 @@ class LineBotHandler(
         new_order_announcement_text: str = "您有新訂單",
         admin_serve_cooldown_seconds: int = 3,
         telegram_sender=None,
+        notification_dispatcher=None,
+        line_display_name_resolver=None,
         special_serve_rules: dict | None = None,
         homework_booking_service: HomeworkBookingService | None = None,
     ) -> None:
@@ -74,6 +76,7 @@ class LineBotHandler(
             channel_secret=self.channel_secret,
             channel_access_token=self.channel_access_token,
             admin_rich_menu_page2_id=admin_rich_menu_page2_id,
+            dispatcher=notification_dispatcher,
         )
         self.admin_ids = list(admin_ids) if admin_ids else []
         self.admin_rich_menu_id = admin_rich_menu_id
@@ -106,7 +109,12 @@ class LineBotHandler(
         self.homework_booking_service = homework_booking_service
         #: 廣播給 Telegram admin 訂閱者的後台通知 service。
         self.notification_service = (
-            TelegramAdminNotificationService(db=self.queue_manager.db, sender=telegram_sender)
+            TelegramAdminNotificationService(
+                db=self.queue_manager.db,
+                sender=telegram_sender,
+                dispatcher=notification_dispatcher,
+                line_display_name_resolver=line_display_name_resolver,
+            )
             if telegram_sender is not None
             else None
         )

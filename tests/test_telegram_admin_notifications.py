@@ -122,3 +122,58 @@ class TestTelegramAdminNotificationService:
         assert "使用者：B12345678（A-1）" in message
         assert "隊列：regular" in message
         assert "時間：2026-04-30 00:55:00" in message
+
+    def test_management_event_hides_line_user_id_and_prefers_line_display_name(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "telegram-line-label.db"))
+        db.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db.set_admin_notification_preference("admin_a", "admin_action", True)
+        sent = []
+        line_user_id = "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+        service = TelegramAdminNotificationService(
+            db=db,
+            sender=lambda user_id, text: sent.append((user_id, text)),
+            line_display_name_resolver=lambda user_id: "LINE Alice" if user_id == line_user_id else "",
+        )
+
+        delivered = service.broadcast_event(
+            category="admin_action",
+            title="Demo完成通知",
+            actor_label=f"管理員：Stored Admin（{line_user_id}）",
+            target_label=f"對象：Stored User（{line_user_id}）",
+            platform="Line",
+        )
+
+        assert delivered == ["admin_a"]
+        assert sent == [("admin_a", sent[0][1])]
+        assert "管理員：LINE Alice" in sent[0][1]
+        assert "對象：LINE Alice" in sent[0][1]
+        assert line_user_id not in sent[0][1]
+
+    def test_broadcast_is_best_effort_when_dispatcher_defers_work(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "telegram-dispatcher.db"))
+        db.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db.set_admin_notification_preference("admin_a", "join", True)
+        sent = []
+        queued = []
+
+        class DeferringDispatcher:
+            def dispatch(self, func):
+                queued.append(func)
+
+        service = TelegramAdminNotificationService(
+            db=db,
+            sender=lambda user_id, text: sent.append((user_id, text)),
+            dispatcher=DeferringDispatcher(),
+        )
+
+        delivered = service.broadcast_event(
+            category="join",
+            title="排隊通知",
+            actor_label="使用者：B12345678（A-1）",
+            target_label="隊列：regular",
+        )
+
+        assert delivered == ["admin_a"]
+        assert sent == []
+        assert len(queued) == 1

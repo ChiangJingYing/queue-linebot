@@ -34,6 +34,7 @@ from core.database import DatabaseManager
 from core.queue_manager import QueueManager
 from core.time_utils import TAIPEI_TZ, format_display_time, parse_timestamp
 from services.notifier import Notifier
+from services.background_dispatcher import ThreadedDispatcher
 from services.telegram_commands import TelegramCommandService
 from services.discord_commands import DiscordCommandService
 from services.vip_service import VipService
@@ -460,6 +461,7 @@ def _apply_runtime_config(next_config: dict) -> None:
         telegram_sender=_send_telegram_text,
         db=db_manager,
         line_push_on_served=bool(line_bot_config.get("push_on_served", True)),
+        dispatcher=notification_dispatcher,
     )
 
     if queue_manager is not None:
@@ -488,6 +490,8 @@ def _apply_runtime_config(next_config: dict) -> None:
             new_order_idle_seconds=int(config.get("tts", {}).get("new_order_idle_seconds", 300)),
             new_order_announcement_text=str(config.get("tts", {}).get("new_order_announcement_text", "您有新訂單")),
             telegram_sender=_send_telegram_text,
+            notification_dispatcher=notification_dispatcher,
+            line_display_name_resolver=_fetch_line_profile_display_name,
             special_serve_rules=queue_config.get("special_serve_rules"),
             homework_booking_service=homework_service,
         )
@@ -496,6 +500,8 @@ def _apply_runtime_config(next_config: dict) -> None:
             queue_manager=queue_manager,
             channel_access_token=CHANNEL_ACCESS_TOKEN,
             telegram_sender=_send_telegram_text,
+            notification_dispatcher=notification_dispatcher,
+            line_display_name_resolver=_fetch_line_profile_display_name,
             location_options=LOCATION_OPTIONS,
             announcement_service=dashboard_announcement_service,
             special_serve_rules=queue_config.get("special_serve_rules"),
@@ -504,6 +510,8 @@ def _apply_runtime_config(next_config: dict) -> None:
             db=db_manager,
             location_options=LOCATION_OPTIONS,
             telegram_sender=_send_telegram_text,
+            notification_dispatcher=notification_dispatcher,
+            line_display_name_resolver=_fetch_line_profile_display_name,
         )
 
 
@@ -511,6 +519,7 @@ db_manager: DatabaseManager | None = None
 queue_manager: QueueManager | None = None
 vip_service: VipService | None = None
 notifier: Notifier | None = None
+notification_dispatcher: ThreadedDispatcher | None = None
 line_handler: LineBotHandler | None = None
 telegram_command_service: TelegramCommandService | None = None
 discord_command_service: DiscordCommandService | None = None
@@ -570,10 +579,11 @@ dashboard_layout_store = DashboardLayoutStore()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Initialize DB and services on startup."""
-    global db_manager, queue_manager, vip_service, notifier, line_handler, telegram_command_service, discord_command_service, scheduler, dashboard_announcement_service
+    global db_manager, queue_manager, vip_service, notifier, notification_dispatcher, line_handler, telegram_command_service, discord_command_service, scheduler, dashboard_announcement_service
     from apscheduler.schedulers.background import BackgroundScheduler
 
     db_manager = DatabaseManager()
+    notification_dispatcher = ThreadedDispatcher(max_workers=4)
     notifier = Notifier(
         CHANNEL_SECRET,
         CHANNEL_ACCESS_TOKEN,
@@ -582,6 +592,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         telegram_sender=_send_telegram_text,
         db=db_manager,
         line_push_on_served=bool(line_bot_config.get("push_on_served", True)),
+        dispatcher=notification_dispatcher,
     )
     queue_manager = QueueManager(db_manager, notifier)
     vip_service = VipService(db_manager)
@@ -622,6 +633,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         new_order_idle_seconds=int(tts_config.get("new_order_idle_seconds", 300)),
         new_order_announcement_text=str(tts_config.get("new_order_announcement_text", "您有新訂單")),
         telegram_sender=_send_telegram_text,
+        notification_dispatcher=notification_dispatcher,
+        line_display_name_resolver=_fetch_line_profile_display_name,
         special_serve_rules=queue_config.get("special_serve_rules"),
         homework_booking_service=homework_service,
     )
@@ -630,6 +643,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         queue_manager=queue_manager,
         channel_access_token=CHANNEL_ACCESS_TOKEN,
         telegram_sender=_send_telegram_text,
+        notification_dispatcher=notification_dispatcher,
+        line_display_name_resolver=_fetch_line_profile_display_name,
         location_options=LOCATION_OPTIONS,
         announcement_service=dashboard_announcement_service,
         special_serve_rules=queue_config.get("special_serve_rules"),
@@ -638,6 +653,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         db=db_manager,
         location_options=LOCATION_OPTIONS,
         telegram_sender=_send_telegram_text,
+        notification_dispatcher=notification_dispatcher,
+        line_display_name_resolver=_fetch_line_profile_display_name,
     )
     _apply_runtime_config(config)
 
@@ -648,6 +665,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     yield
     logger.info("Queue system shutting down")
     scheduler.shutdown(wait=False)
+    if notification_dispatcher is not None:
+        notification_dispatcher.shutdown(wait=False)
 
 
 app = FastAPI(

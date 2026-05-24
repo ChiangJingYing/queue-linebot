@@ -97,6 +97,7 @@ class TestDiscordCommandService:
         assert "排隊通知" in sent[0][1]
         assert "平台：Discord" in sent[0][1]
         assert "B12345678（A-1）" in sent[0][1]
+        assert "discord_user_1" not in sent[0][1]
 
     def test_status_returns_total_count_when_user_not_in_queue(self, db_manager):
         db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
@@ -141,6 +142,30 @@ class TestDiscordCommandService:
         assert "目前排在第 2 位" in result["message"]
         labels = [item["label"] for row in result["components"] for item in row["components"]]
         assert labels == ["舉手", "放棄", "看紀錄"]
+
+    def test_join_when_queue_closed_broadcasts_error_to_telegram_admins(self, db_manager):
+        db_manager.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
+        db_manager.set_admin_notification_preference("admin_a", "error", True)
+        db_manager.set_config("queue_enabled", "false")
+        sent = []
+
+        def sender(user_id: str, text: str) -> None:
+            sent.append((user_id, text))
+
+        service = DiscordCommandService(db=db_manager, telegram_sender=sender)
+
+        result = service.handle_interaction(user_id="alice", input_value="/join")
+
+        assert result["status"] == "error"
+        assert "目前隊列已關閉" in result["message"]
+        assert sent == [("admin_a", sent[0][1])]
+        assert "失敗通知" in sent[0][1]
+        assert "平台：Discord" in sent[0][1]
+        assert "指令：/join" in sent[0][1]
+        assert "目前隊列已關閉" in sent[0][1]
+        assert "B12345678（A-1）" in sent[0][1]
+        assert "alice" not in sent[0][1]
 
     def test_cancel_when_queue_closed_requires_double_confirmation(self, db_manager):
         db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")
@@ -213,6 +238,7 @@ class TestDiscordCommandService:
         assert "取消通知" in sent[0][1]
         assert "平台：Discord" in sent[0][1]
         assert "B12345678（A-1）" in sent[0][1]
+        assert "discord_user_1" not in sent[0][1]
 
     def test_history_returns_recent_user_events(self, db_manager):
         db_manager.upsert_user_profile("alice", "B12345678", location="A-1", verified=True, role="user")

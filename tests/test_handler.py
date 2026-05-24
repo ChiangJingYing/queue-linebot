@@ -48,6 +48,33 @@ def test_handle_join_without_args_joins_current_user_and_broadcasts_line_platfor
     assert "排隊通知" in sent[0][1]
     assert "平台：Line" in sent[0][1]
     assert "Alice（A-1）" in sent[0][1]
+    assert "alice" not in sent[0][1]
+
+
+def test_handle_join_when_queue_closed_broadcasts_error_to_telegram_admins(tmp_path):
+    db = DatabaseManager(str(tmp_path / "handler-closed-join.db"))
+    qm = QueueManager(db)
+    db.upsert_user_profile("tg_admin_1", "Telegram 管理員", verified=True, role="admin")
+    db.set_admin_notification_preference("tg_admin_1", "error", True)
+    qm.register_name("alice", "Alice", location="A-1")
+    qm.set_queue_enabled(False)
+    sent = []
+
+    def telegram_sender(user_id: str, text: str) -> None:
+        sent.append((user_id, text))
+
+    handler = LineBotHandler(queue_manager=qm, telegram_sender=telegram_sender)
+
+    result = handler.handle_event(make_event("/join", user_id="alice"))
+
+    assert "目前隊列已關閉" in reply_texts(result)[0]
+    assert sent == [("tg_admin_1", sent[0][1])]
+    assert "失敗通知" in sent[0][1]
+    assert "平台：Line" in sent[0][1]
+    assert "指令：/join" in sent[0][1]
+    assert "目前隊列已關閉" in sent[0][1]
+    assert "Alice（A-1）" in sent[0][1]
+    assert "alice" not in sent[0][1]
 
 
 
@@ -184,6 +211,7 @@ def test_cancel_when_queue_open_still_cancels_immediately_and_broadcasts_line_pl
     assert "取消通知" in sent[0][1]
     assert "平台：Line" in sent[0][1]
     assert "Alice（A-1）" in sent[0][1]
+    assert "alice" not in sent[0][1]
 
 
 

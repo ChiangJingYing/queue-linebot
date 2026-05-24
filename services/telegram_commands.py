@@ -119,6 +119,8 @@ class TelegramCommandService:
         queue_manager: QueueManager | None = None,
         channel_access_token: str = "",
         telegram_sender=None,
+        notification_dispatcher=None,
+        line_display_name_resolver=None,
         location_options: dict[str, list[str]] | None = None,
         announcement_service=None,
         special_serve_rules: dict | None = None,
@@ -133,6 +135,8 @@ class TelegramCommandService:
         """
         self.db = db
         self.channel_access_token = channel_access_token
+        self.notification_dispatcher = notification_dispatcher
+        self.line_display_name_resolver = line_display_name_resolver or self._resolve_line_display_name_for_review
         #: Telegram command 層共用的隊列核心；admin serve/join/cancel 皆會經過它。
         self.queue_manager = queue_manager or (QueueManager(db) if isinstance(db, DatabaseManager) else None)
         self.vip_service = VipService(db) if isinstance(db, DatabaseManager) else None
@@ -145,10 +149,19 @@ class TelegramCommandService:
         #: Dashboard / 語音公告通道。
         self.announcement_service = announcement_service
         if telegram_sender is not None:
-            self.notification_service = TelegramAdminNotificationService(db=db, sender=telegram_sender)
+            self.notification_service = TelegramAdminNotificationService(
+                db=db,
+                sender=telegram_sender,
+                dispatcher=notification_dispatcher,
+                line_display_name_resolver=self.line_display_name_resolver,
+            )
             if self.queue_manager is not None and getattr(self.queue_manager, "notifier", None) is None:
                 #: 真正送被叫號者私訊通知的 notifier 會掛在 queue_manager 上。
-                self.queue_manager.notifier = Notifier(telegram_sender=telegram_sender, db=db)
+                self.queue_manager.notifier = Notifier(
+                    telegram_sender=telegram_sender,
+                    db=db,
+                    dispatcher=notification_dispatcher,
+                )
 
     def handle_text(self, *, user_id: str, text: str) -> dict:
         """處理 Telegram 收到的文字或 callback payload。

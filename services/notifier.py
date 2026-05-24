@@ -12,6 +12,8 @@ from typing import Callable
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
+from services.background_dispatcher import DEFAULT_DISPATCHER
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,6 +37,7 @@ class Notifier:
         telegram_sender: Callable[[str, str], None] | None = None,
         db: object | None = None,
         line_push_on_served: bool = True,
+        dispatcher: object | None = None,
     ) -> None:
         """保存可用的 sender、LINE rich menu 設定與 served push 開關。"""
         self.channel_secret = channel_secret
@@ -44,6 +47,7 @@ class Notifier:
         self.telegram_sender = telegram_sender
         self.db = db
         self.line_push_on_served = bool(line_push_on_served)
+        self.dispatcher = dispatcher or DEFAULT_DISPATCHER
 
     def push(self, user_id: str, message: str) -> str:
         """直接透過 LINE Push API 傳送訊息。
@@ -166,19 +170,24 @@ class Notifier:
         """
         if self.discord_sender is not None and self._is_discord_user(user_id):
             try:
-                self.discord_sender(user_id, message)
+                self.dispatcher.dispatch(lambda: self.discord_sender(user_id, message))
                 return f"已推送給 {user_id}：{message}"
             except Exception as exc:
                 logger.exception("Discord 推播失敗 user_id=%s", user_id)
                 return f"推播失敗給 {user_id}：{exc}"
         if self.telegram_sender is not None and self._is_telegram_user(user_id):
             try:
-                self.telegram_sender(user_id, message)
+                self.dispatcher.dispatch(lambda: self.telegram_sender(user_id, message))
                 return f"已推送給 {user_id}：{message}"
             except Exception as exc:
                 logger.exception("Telegram 推播失敗 user_id=%s", user_id)
                 return f"推播失敗給 {user_id}：{exc}"
-        return self._notify_line_user(user_id, message)
+        try:
+            result = self.dispatcher.dispatch(lambda: self._notify_line_user(user_id, message))
+        except Exception as exc:
+            logger.exception("LINE 推播派送失敗 user_id=%s", user_id)
+            return f"推播失敗給 {user_id}：{exc}"
+        return result if isinstance(result, str) else f"已推送給 {user_id}：{message}"
 
     def notify_served(self, user_id: str, queue_number: int) -> str:
         """送出「輪到你了」叫號通知。

@@ -924,12 +924,14 @@ class DatabaseManager:
                     line_display_name = str(line_display_name_resolver(user_id) or "").strip()
                 except Exception:
                     line_display_name = ""
+            application_display_name = str(app.get("display_name") or "").strip()
             profile = self.get_user_profile(user_id) if user_id else None
             profile_display_name = str(getattr(profile, "display_name", "") or "").strip()
-            resolved_display_name = line_display_name or profile_display_name or user_id
+            resolved_display_name = line_display_name or application_display_name or profile_display_name or user_id
             items.append(
                 {
                     **app,
+                    "application_display_name": application_display_name,
                     "line_display_name": line_display_name,
                     "profile_display_name": profile_display_name,
                     "resolved_display_name": resolved_display_name,

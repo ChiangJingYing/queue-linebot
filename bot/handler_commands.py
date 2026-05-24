@@ -59,7 +59,7 @@ class HandlerCommandsMixin:
                 self.notification_service.broadcast_event(
                     category="join",
                     title="排隊通知",
-                    actor_label=f"使用者：{self.queue_manager.db.get_display_name(target_id)}（{target_id}）",
+                    actor_label=f"使用者：{self.queue_manager.db.get_display_name(target_id)}",
                     target_label=f"隊列：{queue_type}",
                     detail_lines=[
                         f"號碼：#{outcome['queue_number']}",
@@ -74,9 +74,29 @@ class HandlerCommandsMixin:
                 f"   隊列總人數：{outcome['total_in_queue']}"
             )
         else:
+            raw = outcome.get("raw_result", {})
+            if raw.get("message") == "目前隊列已關閉，請稍後再試。":
+                self._broadcast_join_error_event(
+                    user_id=target_id,
+                    command_text="/join" if queue_type == "regular" else f"/join {queue_type}",
+                    error_message=raw["message"],
+                )
             msg = outcome["message"]
 
         return self._reply(reply_token, msg)
+
+    def _broadcast_join_error_event(self, *, user_id: str, command_text: str, error_message: str) -> None:
+        """Broadcast join failures that should be visible to Telegram admins."""
+        if getattr(self, "notification_service", None) is None:
+            return
+        self.notification_service.broadcast_event(
+            category="error",
+            title="失敗通知",
+            actor_label=f"使用者：{self.queue_manager.db.get_display_name(user_id)}",
+            target_label=f"指令：{command_text}",
+            detail_lines=[f"原因：{error_message}"],
+            platform=self.LINE_NOTIFICATION_PLATFORM,
+        )
 
     def _handle_cancel(self, user_id: str, reply_token: str) -> list:
         """處理取消排隊指令。
@@ -133,7 +153,7 @@ class HandlerCommandsMixin:
                 self.notification_service.broadcast_event(
                     category="cancel",
                     title="取消通知",
-                    actor_label=f"使用者：{self.queue_manager.db.get_display_name(user_id)}（{user_id}）",
+                    actor_label=f"使用者：{self.queue_manager.db.get_display_name(user_id)}",
                     target_label="動作：離開隊列",
                     platform=self.LINE_NOTIFICATION_PLATFORM,
                 )
