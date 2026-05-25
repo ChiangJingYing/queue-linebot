@@ -95,6 +95,32 @@ class TestDashboardStats:
         assert served_recent[0]["user_id"] == "u5"
         assert served_recent[-1]["user_id"] == "u1"
 
+    def test_dashboard_data_served_recent_hides_duplicate_served_rows(self, client: TestClient):
+        import main
+        qm = main.queue_manager
+        _register(qm, "alice", "Alice A", "A-1")
+        served_time = "2026-05-25T10:00:00+08:00"
+        with qm.db._connection() as conn:
+            conn.execute(
+                "INSERT INTO queues (user_id, queue_type, queue_number, join_time, served_time, served) "
+                "VALUES (?, 'regular', 1, ?, ?, 1)",
+                ("alice", "2026-05-25T09:50:00+08:00", served_time),
+            )
+            conn.execute(
+                "INSERT INTO queues (user_id, queue_type, queue_number, join_time, served_time, served) "
+                "VALUES (?, 'regular', 2, ?, ?, 1)",
+                ("alice", "2026-05-25T09:51:00+08:00", served_time),
+            )
+            conn.commit()
+
+        response = client.get("/dashboard/data")
+
+        assert response.status_code == 200
+        served_recent = response.json()["served_recent"]
+        assert len(served_recent) == 1
+        assert served_recent[0]["user_id"] == "alice"
+        assert served_recent[0]["served_time"] == "2026-05-25 10:00"
+
 
 class TestResetEndpoint:
     """Test POST /api/queue/reset clears queue/profile/served data."""

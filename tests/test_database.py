@@ -61,6 +61,33 @@ class TestDatabaseManager:
         assert served.served_time is not None
         assert db_manager.get_regular_queue() == []
 
+    def test_serve_queue_neutralizes_duplicate_active_rows_for_user(self, db_manager):
+        db_manager.join_queue("alice", "regular")
+        db_manager.join_queue("alice", "regular")
+
+        served = db_manager.serve_queue("alice")
+
+        assert served is not None
+        with db_manager._connection() as conn:
+            rows = conn.execute(
+                "SELECT served, served_time, cancel_time, release_time "
+                "FROM queues WHERE user_id = ? ORDER BY id ASC",
+                ("alice",),
+            ).fetchall()
+        assert sum(1 for row in rows if row["served"] == 1 and row["served_time"]) == 1
+        assert sum(1 for row in rows if row["served"] == 0 and row["served_time"] is None) == 0
+        cleanup_rows = [
+            row
+            for row in rows
+            if row["served"] == 1
+            and row["served_time"] is None
+            and row["cancel_time"] is None
+            and row["release_time"] is not None
+        ]
+        assert len(cleanup_rows) == 1
+        assert db_manager.get_active_queue_entry("alice") is not None
+        assert db_manager.get_regular_queue() == []
+
     def test_serve_queue_returns_none_for_missing_user(self, db_manager):
         assert db_manager.serve_queue("ghost") is None
 
@@ -150,6 +177,33 @@ class TestDatabaseManager:
 
         assert parsed.tzinfo is not None
         assert parsed.utcoffset() == TAIPEI_TZ.utcoffset(None)
+
+    def test_get_recent_served_deduplicates_same_user_and_served_time(self, db_manager):
+        db_manager.upsert_user_profile("alice", "Alice A", location="A-1")
+        same_served_time = "2026-05-25T10:00:00+08:00"
+        later_served_time = "2026-05-25T10:01:00+08:00"
+        with db_manager._connection() as conn:
+            conn.execute(
+                "INSERT INTO queues (user_id, queue_type, queue_number, join_time, served_time, served) "
+                "VALUES (?, 'regular', 1, ?, ?, 1)",
+                ("alice", "2026-05-25T09:50:00+08:00", same_served_time),
+            )
+            conn.execute(
+                "INSERT INTO queues (user_id, queue_type, queue_number, join_time, served_time, served) "
+                "VALUES (?, 'regular', 2, ?, ?, 1)",
+                ("alice", "2026-05-25T09:51:00+08:00", same_served_time),
+            )
+            conn.execute(
+                "INSERT INTO queues (user_id, queue_type, queue_number, join_time, served_time, served) "
+                "VALUES (?, 'regular', 3, ?, ?, 1)",
+                ("alice", "2026-05-25T09:52:00+08:00", later_served_time),
+            )
+            conn.commit()
+
+        recent = db_manager.get_recent_served(limit=5)
+
+        assert [row["served_time"] for row in recent] == [later_served_time, same_served_time]
+        assert [row["user_id"] for row in recent] == ["alice", "alice"]
 
     def test_format_display_time_converts_utc_timestamp_to_taipei_time(self):
         value = "2026-04-30T02:12:00+00:00"

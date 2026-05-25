@@ -123,6 +123,18 @@ class TestQueueManagerAdditional:
         assert stats["vip"]["active_count"] == 1
         assert stats["average_wait_minutes"] >= 4.5
 
+    def test_get_stats_does_not_count_duplicate_cleanup_as_skipped(self, db_path):
+        db = DatabaseManager(db_path)
+        queue_manager = QueueManager(db)
+        db.join_queue("alice", "regular")
+        db.join_queue("alice", "regular")
+
+        queue_manager.serve_specific("alice")
+
+        stats = queue_manager.get_stats()
+        assert stats["served_count"] == 1
+        assert stats["skipped_count"] == 0
+
     def test_get_user_history_returns_latest_events(self, queue_manager):
         queue_manager.join("alice", "regular")
         queue_manager.cancel("alice")
@@ -362,4 +374,3 @@ class TestAdminServeSessionsAutoRelease:
         qm.serve_next()
 
         assert qm._admin_serve_sessions == {}
-

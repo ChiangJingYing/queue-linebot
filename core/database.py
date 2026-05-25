@@ -383,15 +383,21 @@ class DatabaseManager:
         """Mark user as served. Returns updated QueueEntry or None."""
         with self._connection() as conn:
             row = conn.execute(
-                "SELECT * FROM queues WHERE user_id = ? AND served = 0",
+                "SELECT * FROM queues WHERE user_id = ? AND served = 0 "
+                "AND cancel_time IS NULL ORDER BY join_time ASC, id ASC LIMIT 1",
                 (user_id,),
             ).fetchone()
             if row is None:
                 return None
             served_time = now_in_taipei().isoformat()
             conn.execute(
-                "UPDATE queues SET served = 1, served_time = ? WHERE user_id = ?",
-                (served_time, user_id),
+                "UPDATE queues SET served = 1, served_time = ? WHERE id = ?",
+                (served_time, row["id"]),
+            )
+            conn.execute(
+                "UPDATE queues SET served = 1, release_time = ? "
+                "WHERE user_id = ? AND id != ? AND served = 0 AND cancel_time IS NULL",
+                (served_time, user_id, row["id"]),
             )
             conn.commit()
             return QueueEntry(
@@ -1146,10 +1152,16 @@ class DatabaseManager:
                        up.display_name,
                        up.location
                 FROM queues q
+                JOIN (
+                    SELECT MAX(id) AS id
+                    FROM queues
+                    WHERE served = 1 AND served_time IS NOT NULL
+                    GROUP BY user_id, served_time
+                    ORDER BY served_time DESC, MAX(id) DESC
+                    LIMIT ?
+                ) recent ON recent.id = q.id
                 LEFT JOIN user_profiles up ON up.user_id = q.user_id
-                WHERE q.served = 1 AND q.served_time IS NOT NULL
                 ORDER BY q.served_time DESC, q.id DESC
-                LIMIT ?
                 """,
                 (limit,),
             ).fetchall()
