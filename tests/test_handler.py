@@ -617,8 +617,8 @@ def test_admin_serve_next_broadcasts_line_platform_to_telegram_admins(tmp_path, 
     assert sent == [("tg_admin_1", sent[0][1])]
     assert "管理叫號通知" in sent[0][1]
     assert "平台：Line" in sent[0][1]
-    assert "LINE 管理員（admin）" in sent[0][1]
-    assert "B12345678（A-1）（alice）" in sent[0][1]
+    assert "管理員：LINE 管理員" in sent[0][1]
+    assert "叫號對象：B12345678（A-1）" in sent[0][1]
 
 
 def test_admin_serve_next_uses_special_rule_to_skip_target_and_push_admin(tmp_path):
