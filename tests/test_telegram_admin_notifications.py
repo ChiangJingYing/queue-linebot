@@ -123,32 +123,75 @@ class TestTelegramAdminNotificationService:
         assert "隊列：regular" in message
         assert "時間：2026-04-30 00:55:00" in message
 
-    def test_management_event_hides_line_user_id_and_prefers_line_display_name(self, tmp_path):
+    def test_management_event_only_rewrites_admin_line_name_and_keeps_target_registration_label(self, tmp_path):
         db = DatabaseManager(str(tmp_path / "telegram-line-label.db"))
         db.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
         db.set_admin_notification_preference("admin_a", "admin_action", True)
         sent = []
-        line_user_id = "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        admin_line_user_id = "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        target_line_user_id = "Ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
         service = TelegramAdminNotificationService(
             db=db,
             sender=lambda user_id, text: sent.append((user_id, text)),
-            line_display_name_resolver=lambda user_id: "LINE Alice" if user_id == line_user_id else "",
+            line_display_name_resolver=lambda user_id: (
+                "LINE Admin"
+                if user_id == admin_line_user_id
+                else "LINE Target"
+                if user_id == target_line_user_id
+                else ""
+            ),
         )
 
         delivered = service.broadcast_event(
             category="admin_action",
             title="Demo完成通知",
-            actor_label=f"管理員：Stored Admin（{line_user_id}）",
-            target_label=f"對象：Stored User（{line_user_id}）",
+            actor_label=f"管理員：Stored Admin（{admin_line_user_id}）",
+            target_label=f"對象：B12345678（A-1）（{target_line_user_id}）",
             platform="Line",
         )
 
         assert delivered == ["admin_a"]
         assert sent == [("admin_a", sent[0][1])]
-        assert "管理員：LINE Alice" in sent[0][1]
-        assert "對象：LINE Alice" in sent[0][1]
-        assert line_user_id not in sent[0][1]
+        assert "管理員：LINE Admin" in sent[0][1]
+        assert "對象：B12345678（A-1）" in sent[0][1]
+        assert target_line_user_id not in sent[0][1]
+
+    def test_serve_event_prefers_admin_line_name_but_keeps_target_registration_display_name(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "telegram-serve-line-label.db"))
+        db.upsert_user_profile("admin_a", "管理員甲", verified=True, role="admin")
+        db.set_admin_notification_preference("admin_a", "serve", True)
+        sent = []
+        admin_line_user_id = "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        target_line_user_id = "Ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+        service = TelegramAdminNotificationService(
+            db=db,
+            sender=lambda user_id, text: sent.append((user_id, text)),
+            line_display_name_resolver=lambda user_id: (
+                "LINE Admin"
+                if user_id == admin_line_user_id
+                else "LINE Target"
+                if user_id == target_line_user_id
+                else ""
+            ),
+        )
+
+        delivered = service.broadcast_serve_event(
+            admin_user_id=admin_line_user_id,
+            admin_display_name="管理員甲",
+            target_user_id=target_line_user_id,
+            target_display_name="B12345678（A-1）",
+            command_text="/admin/serve",
+            at_text="2026-05-25 01:23:45",
+            platform="Telegram",
+        )
+
+        assert delivered == ["admin_a"]
+        assert sent == [("admin_a", sent[0][1])]
+        assert "管理員：LINE Admin" in sent[0][1]
+        assert "叫號對象：B12345678（A-1）" in sent[0][1]
+        assert target_line_user_id not in sent[0][1]
 
     def test_broadcast_is_best_effort_when_dispatcher_defers_work(self, tmp_path):
         db = DatabaseManager(str(tmp_path / "telegram-dispatcher.db"))

@@ -83,8 +83,16 @@ class TelegramAdminNotificationService:
     ) -> list[str]:
         """將一般事件組裝成一致格式後廣播。"""
         def _build_message() -> str:
-            rendered_actor_label = self._normalize_management_label(title=title, label=actor_label)
-            rendered_target_label = self._normalize_management_label(title=title, label=target_label)
+            rendered_actor_label = self._normalize_management_label(
+                title=title,
+                label=actor_label,
+                prefer_line_profile_name=True,
+            )
+            rendered_target_label = self._normalize_management_label(
+                title=title,
+                label=target_label,
+                prefer_line_profile_name=False,
+            )
             lines = [f"🔔 {title}"]
             if platform:
                 lines.append(f"平台：{platform}")
@@ -114,16 +122,16 @@ class TelegramAdminNotificationService:
             lines.extend(
                 [
                     f"時間：{at_text}",
-                    f"管理員：{self._format_user_reference(user_id=admin_user_id, display_name=admin_display_name)}",
+                    f"管理員：{self._format_user_reference(user_id=admin_user_id, display_name=admin_display_name, prefer_line_profile_name=True)}",
                     f"指令：{command_text}",
-                    f"叫號對象：{self._format_user_reference(user_id=target_user_id, display_name=target_display_name)}",
+                    f"叫號對象：{self._format_user_reference(user_id=target_user_id, display_name=target_display_name, prefer_line_profile_name=False)}",
                 ]
             )
             return "\n".join(lines)
 
         return self.broadcast(category="serve", message_builder=_build_message)
 
-    def _normalize_management_label(self, *, title: str, label: str) -> str:
+    def _normalize_management_label(self, *, title: str, label: str, prefer_line_profile_name: bool) -> str:
         """Hide LINE user ids in management-related labels."""
         if title not in self._MANAGEMENT_TITLES:
             return label
@@ -135,15 +143,18 @@ class TelegramAdminNotificationService:
         prefix = match.group("prefix")
         display_name = match.group("display")
         user_id = match.group("user_id")
-        return f"{prefix}：{self._format_user_reference(user_id=user_id, display_name=display_name)}"
+        return (
+            f"{prefix}："
+            f"{self._format_user_reference(user_id=user_id, display_name=display_name, prefer_line_profile_name=prefer_line_profile_name)}"
+        )
 
-    def _format_user_reference(self, *, user_id: str, display_name: str) -> str:
+    def _format_user_reference(self, *, user_id: str, display_name: str, prefer_line_profile_name: bool) -> str:
         """Render a user reference, hiding LINE ids when possible."""
         normalized_user_id = str(user_id or "").strip()
         fallback_name = str(display_name or "").strip() or normalized_user_id
-        if is_probable_line_user_id(normalized_user_id):
+        if prefer_line_profile_name and is_probable_line_user_id(normalized_user_id):
             return self._resolve_line_display_name(normalized_user_id) or fallback_name
-        return f"{fallback_name}（{normalized_user_id}）" if normalized_user_id else fallback_name
+        return fallback_name
 
     def _resolve_line_display_name(self, user_id: str) -> str:
         if not callable(self.line_display_name_resolver):

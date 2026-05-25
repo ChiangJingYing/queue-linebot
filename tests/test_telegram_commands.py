@@ -732,7 +732,7 @@ class TestTelegramCommandService:
         assert "B12345678（A-1）" in sent[0][1]
         assert "alice" not in sent[0][1]
 
-    def test_admin_serve_line_user_ids_are_resolved_without_showing_ids(self, db_manager):
+    def test_admin_serve_uses_line_name_for_admin_but_keeps_target_registration_display(self, db_manager):
         admin_line_id = "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         target_line_id = "Ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         db_manager.upsert_user_profile(admin_line_id, "Stored Admin", verified=True, role="admin")
@@ -762,7 +762,7 @@ class TestTelegramCommandService:
         assert result["status"] == "success"
         assert sent == [("admin_b", sent[0][1])]
         assert "管理員：LINE Admin" in sent[0][1]
-        assert "叫號對象：LINE Target" in sent[0][1]
+        assert "叫號對象：Stored User（A-1）" in sent[0][1]
         assert admin_line_id not in sent[0][1]
         assert target_line_id not in sent[0][1]
 
