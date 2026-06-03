@@ -1,0 +1,1866 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Homework 登記使用教學</title>
+    <style>
+      :root {
+        --bg: #f2f5f8;
+        --panel: rgba(255, 255, 255, 0.88);
+        --panel-strong: #ffffff;
+        --text: #15202b;
+        --muted: #5b6b7b;
+        --line-green: #06c755;
+        --line-soft: #dff8e7;
+        --line-bg: #a9d8ff;
+        --accent: #0f6cbd;
+        --accent-soft: #eef5ff;
+        --danger: #da3d3d;
+        --danger-soft: #fff1f1;
+        --warning: #ffb020;
+        --warning-soft: #fff7df;
+        --success: #1b8f5a;
+        --success-soft: #eaf8f0;
+        --border: rgba(21, 32, 43, 0.1);
+        --shadow: 0 24px 80px rgba(48, 72, 98, 0.16);
+        --phone-shadow: 0 26px 64px rgba(17, 32, 55, 0.24);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(6, 199, 85, 0.16), transparent 24rem),
+          radial-gradient(circle at 85% 15%, rgba(15, 108, 189, 0.16), transparent 24rem),
+          linear-gradient(180deg, #fbfdff 0%, #edf3f8 100%);
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .page {
+        max-width: 1480px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 24px;
+        align-items: stretch;
+        margin-bottom: 24px;
+      }
+
+      .hero-card,
+      .overview-card,
+      .scenario-card,
+      .guide-card {
+        background: var(--panel);
+        backdrop-filter: blur(14px);
+        border: 1px solid rgba(255, 255, 255, 0.72);
+        border-radius: 28px;
+        box-shadow: var(--shadow);
+      }
+
+      .hero-card {
+        padding: 28px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--accent);
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .hero h1 {
+        margin: 18px 0 12px;
+        font-size: clamp(32px, 4vw, 58px);
+        line-height: 1.02;
+        letter-spacing: -0.03em;
+      }
+
+      .hero p {
+        margin: 0;
+        max-width: 58rem;
+        color: var(--muted);
+        font-size: 17px;
+        line-height: 1.75;
+      }
+
+      .hero-metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 26px;
+      }
+
+      .metric {
+        padding: 18px;
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.74);
+        border: 1px solid rgba(21, 32, 43, 0.06);
+      }
+
+      .metric strong {
+        display: block;
+        font-size: 28px;
+        margin-bottom: 6px;
+      }
+
+      .metric span {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .overview-card {
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .overview-card h2,
+      .guide-card h2,
+      .scenario-card h2 {
+        margin: 0;
+        font-size: 24px;
+      }
+
+      .scenario-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .scenario-chip {
+        border: 1px solid rgba(21, 32, 43, 0.08);
+        background: var(--panel-strong);
+        border-radius: 18px;
+        padding: 14px 16px;
+      }
+
+      .scenario-chip small {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .scenario-chip strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 16px;
+      }
+
+      .scenario-chip span {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 360px minmax(0, 1fr) 360px;
+        gap: 24px;
+        align-items: start;
+      }
+
+      .guide-card,
+      .scenario-card {
+        padding: 22px;
+        position: sticky;
+        top: 18px;
+      }
+
+      .guide-card {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .guide-card p,
+      .scenario-card p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .scenario-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .scenario-button {
+        width: 100%;
+        text-align: left;
+        border: 1px solid rgba(21, 32, 43, 0.08);
+        background: rgba(255, 255, 255, 0.7);
+        border-radius: 18px;
+        padding: 14px 16px;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      }
+
+      .scenario-button:hover,
+      .scenario-button:focus-visible {
+        transform: translateY(-2px);
+        box-shadow: 0 16px 32px rgba(24, 49, 74, 0.1);
+        border-color: rgba(15, 108, 189, 0.24);
+        outline: none;
+      }
+
+      .scenario-button.active {
+        background: linear-gradient(180deg, #ffffff 0%, #f1f8ff 100%);
+        border-color: rgba(15, 108, 189, 0.32);
+      }
+
+      .scenario-button small {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 64px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .scenario-button strong {
+        display: block;
+        margin: 10px 0 6px;
+        font-size: 16px;
+      }
+
+      .scenario-button span {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .progress {
+        display: grid;
+        gap: 8px;
+      }
+
+      .progress-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .progress-bar {
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(21, 32, 43, 0.08);
+        overflow: hidden;
+      }
+
+      .progress-fill {
+        height: 100%;
+        width: 0;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--line-green), #35a4ff);
+        transition: width 0.3s ease;
+      }
+
+      .toolbox {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .toolbox button {
+        flex: 1 1 120px;
+        min-height: 46px;
+        border: 0;
+        border-radius: 16px;
+        padding: 0 16px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+      }
+
+      .toolbox button:hover,
+      .toolbox button:focus-visible,
+      .quick-nav button:hover,
+      .quick-nav button:focus-visible,
+      .flex-action:hover,
+      .flex-action:focus-visible {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 28px rgba(20, 40, 60, 0.16);
+        outline: none;
+      }
+
+      .toolbox .primary {
+        background: var(--line-green);
+        color: #fff;
+      }
+
+      .toolbox .secondary {
+        background: #fff;
+        color: var(--text);
+        border: 1px solid rgba(21, 32, 43, 0.08);
+      }
+
+      .toolbox .ghost {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .notes {
+        display: grid;
+        gap: 10px;
+      }
+
+      .note {
+        padding: 14px 16px;
+        border-radius: 18px;
+        border: 1px solid rgba(21, 32, 43, 0.06);
+      }
+
+      .note strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 15px;
+      }
+
+      .note span {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .note.info {
+        background: var(--accent-soft);
+      }
+
+      .note.ok {
+        background: var(--success-soft);
+      }
+
+      .note.warn {
+        background: var(--warning-soft);
+      }
+
+      .phone-stage {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        justify-content: flex-start;
+        align-items: center;
+        justify-self: center;
+        width: 100%;
+        max-width: 430px;
+        margin: 0 auto;
+        padding: 4px;
+      }
+
+      .trigger-hint {
+        align-self: stretch;
+        width: 100%;
+        padding: 12px 14px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px dashed rgba(15, 108, 189, 0.28);
+        color: var(--muted);
+        box-shadow: 0 14px 32px rgba(31, 49, 74, 0.08);
+      }
+
+      .trigger-hint strong {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--accent);
+        font-size: 13px;
+      }
+
+      .trigger-hint span {
+        display: block;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .trigger-command {
+        display: inline-flex;
+        align-items: center;
+        margin-top: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .phone {
+        width: 100%;
+        min-height: 860px;
+        background: #0f1720;
+        border-radius: 42px;
+        padding: 12px;
+        box-shadow: var(--phone-shadow);
+        position: relative;
+      }
+
+      .phone::before {
+        content: "";
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        width: 128px;
+        height: 28px;
+        transform: translateX(-50%);
+        border-radius: 999px;
+        background: #06090d;
+      }
+
+      .screen {
+        background: var(--line-bg);
+        border-radius: 32px;
+        min-height: 836px;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+      }
+
+      .line-status {
+        background: rgba(255, 255, 255, 0.28);
+        padding: 14px 18px 8px;
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+        color: #ffffff;
+      }
+
+      .line-header {
+        padding: 10px 18px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: #fff;
+      }
+
+      .line-avatar {
+        width: 42px;
+        height: 42px;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(180deg, #18d96c 0%, #02b84d 100%);
+        color: #fff;
+        font-weight: 900;
+      }
+
+      .line-header h3 {
+        margin: 0 0 4px;
+        font-size: 17px;
+      }
+
+      .line-header span {
+        color: rgba(255, 255, 255, 0.86);
+        font-size: 12px;
+      }
+
+      .chat {
+        padding: 18px 14px 28px;
+        overflow: hidden;
+      }
+
+      .message-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .message-row {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        animation: rise 0.28s ease;
+      }
+
+      .message-row.user {
+        justify-content: flex-end;
+      }
+
+      .bot-badge {
+        width: 28px;
+        height: 28px;
+        border-radius: 12px;
+        display: block;
+        background: #ffffff;
+        border: 2px solid var(--line-green);
+        flex: 0 0 auto;
+      }
+
+      .bubble {
+        max-width: 80%;
+        border-radius: 18px;
+        padding: 12px 14px;
+        line-height: 1.65;
+        font-size: 14px;
+        box-shadow: 0 8px 24px rgba(31, 49, 74, 0.08);
+      }
+
+      .message-row.bot .bubble {
+        background: #ffffff;
+        color: var(--text);
+        border-bottom-left-radius: 8px;
+      }
+
+      .message-row.user .bubble {
+        background: var(--line-soft);
+        color: var(--text);
+        border-bottom-right-radius: 8px;
+      }
+
+      .message-time {
+        font-size: 11px;
+        color: rgba(15, 32, 50, 0.56);
+        margin: 0 2px 2px;
+      }
+
+      .typing {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 12px;
+        background: #fff;
+        border-radius: 16px;
+      }
+
+      .typing span {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #b5c0cb;
+        animation: pulse 1.1s infinite ease-in-out;
+      }
+
+      .typing span:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+
+      .typing span:nth-child(3) {
+        animation-delay: 0.3s;
+      }
+
+      .flex-card {
+        width: min(332px, 100%);
+        background: #fff;
+        border-radius: 24px;
+        overflow: hidden;
+        box-shadow: 0 14px 28px rgba(20, 42, 60, 0.12);
+      }
+
+      .flex-card .banner {
+        padding: 16px 18px 12px;
+        background: linear-gradient(180deg, #ffffff 0%, #f4f9ff 100%);
+        border-bottom: 1px solid rgba(21, 32, 43, 0.06);
+      }
+
+      .flex-step {
+        display: inline-flex;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+
+      .flex-title {
+        margin: 10px 0 6px;
+        font-size: 21px;
+        font-weight: 800;
+      }
+
+      .flex-subtitle {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .badge.primary {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .badge.success {
+        background: var(--success-soft);
+        color: var(--success);
+      }
+
+      .badge.warning {
+        background: var(--warning-soft);
+        color: #9c6600;
+      }
+
+      .badge.danger {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      .flex-body {
+        padding: 16px 18px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .kv {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        font-size: 14px;
+      }
+
+      .kv span:first-child {
+        color: var(--muted);
+      }
+
+      .note-box {
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: #f6f9fc;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .flex-footer {
+        padding: 12px 16px 16px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .flex-action {
+        width: 100%;
+        min-height: 44px;
+        border: 0;
+        border-radius: 14px;
+        font-size: 14px;
+        font-weight: 800;
+        cursor: pointer;
+        transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+      }
+
+      .flex-action.primary {
+        background: var(--line-green);
+        color: #fff;
+      }
+
+      .flex-action.secondary {
+        background: #eef2f7;
+        color: var(--text);
+      }
+
+      .flex-action.danger {
+        background: var(--danger);
+        color: #fff;
+      }
+
+      .flex-action.ghost {
+        background: transparent;
+        border: 1px solid rgba(21, 32, 43, 0.1);
+        color: var(--text);
+      }
+
+      .flex-action.disabled {
+        background: #f5f7fa;
+        color: #475467;
+        border: 0;
+        cursor: default;
+        box-shadow: none;
+        transform: none;
+      }
+
+      .quick-nav {
+        background: rgba(7, 15, 27, 0.96);
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 8px 8px 10px;
+      }
+
+      .rich-menu {
+        position: relative;
+        width: 100%;
+        border-radius: 18px;
+        overflow: hidden;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+        background: #0a1425;
+      }
+
+      .rich-menu img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .rich-hotspot {
+        position: absolute;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        border-radius: 10px;
+        transition: box-shadow 0.18s ease, background 0.18s ease, transform 0.18s ease;
+      }
+
+      .rich-hotspot:hover,
+      .rich-hotspot:focus-visible {
+        background: rgba(255, 255, 255, 0.06);
+        box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.26);
+        outline: none;
+      }
+
+      .rich-hotspot.active {
+        background: rgba(6, 199, 85, 0.12);
+        box-shadow: inset 0 0 0 3px rgba(6, 199, 85, 0.85);
+      }
+
+      .rich-hotspot[data-role^="tab-"] {
+        border-radius: 0;
+      }
+
+      .rich-menu-caption {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 8px;
+        padding: 0 4px;
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 11px;
+      }
+
+      .scenario-card {
+        display: grid;
+        gap: 18px;
+      }
+
+      .scenario-meta {
+        display: grid;
+        gap: 12px;
+      }
+
+      .meta-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: fit-content;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .hint-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .hint-item {
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid rgba(21, 32, 43, 0.06);
+      }
+
+      .hint-item strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 15px;
+      }
+
+      .hint-item span {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .callout {
+        padding: 16px;
+        border-radius: 20px;
+        background: linear-gradient(180deg, #ffffff 0%, #f3f8fc 100%);
+        border: 1px solid rgba(21, 32, 43, 0.08);
+      }
+
+      .callout strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 15px;
+      }
+
+      .callout span {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .footer {
+        margin-top: 28px;
+        padding: 24px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      @keyframes pulse {
+        0%, 80%, 100% { transform: scale(0.7); opacity: 0.55; }
+        40% { transform: scale(1); opacity: 1; }
+      }
+
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 1180px) {
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .guide-card,
+        .scenario-card {
+          position: static;
+        }
+      }
+
+      @media (max-width: 960px) {
+        .hero {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-metrics,
+        .scenario-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .page {
+          padding: 18px 12px 32px;
+        }
+
+        .hero-card,
+        .overview-card,
+        .guide-card,
+        .scenario-card {
+          border-radius: 22px;
+        }
+
+        .hero-card,
+        .overview-card,
+        .guide-card,
+        .scenario-card {
+          padding: 18px;
+        }
+
+        .phone {
+          padding: 10px;
+          border-radius: 34px;
+        }
+
+        .screen {
+          border-radius: 26px;
+          min-height: 760px;
+        }
+
+        .bubble {
+          max-width: 88%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <section class="hero">
+        <article class="hero-card">
+          <div class="eyebrow">Homework Demo 使用教學</div>
+          <h1>Homework Demo 登記與預約說明</h1>
+          <p>
+            第一次使用的同學，請先完成 Homework 資料登記；之後就可以在 LINE 上選助教、日期與時段。
+            如果你已經有預約，也可以用同樣的方式查詢、取消，或申請逾期取消。
+          </p>
+          <div class="hero-metrics">
+            <div class="metric">
+              <strong>先登記</strong>
+              <span>先輸入學號與姓名，建立 Homework 資料。</span>
+            </div>
+            <div class="metric">
+              <strong>再預約</strong>
+              <span>依序選助教、日期、時段，完成預約。</span>
+            </div>
+            <div class="metric">
+              <strong>可查詢 / 取消</strong>
+              <span>若臨時無法出席，也可以依規則取消或申請逾期取消。</span>
+            </div>
+          </div>
+        </article>
+
+        <aside class="overview-card">
+          <h2>開始前請先看</h2>
+          <div class="scenario-grid">
+            <div class="scenario-chip">
+              <small>必填資料</small>
+              <strong>請輸入學號與姓名</strong>
+              <span>格式為 `<學號> <姓名>`，例如 `114106123 王小明`。</span>
+            </div>
+            <div class="scenario-chip">
+              <small>預約流程</small>
+              <strong>共 3 個步驟</strong>
+              <span>選助教、選日期、選時段，按下後即完成預約。</span>
+            </div>
+            <div class="scenario-chip">
+              <small>取消規則</small>
+              <strong>時限內可直接取消</strong>
+              <span>若已超過時限，就要改走逾期取消申請。</span>
+            </div>
+            <div class="scenario-chip">
+              <small>結果通知</small>
+              <strong>逾期取消要等審核</strong>
+              <span>送出申請不代表已取消，請等助教審核結果通知。</span>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="workspace">
+        <aside class="guide-card">
+          <h2>情境導覽</h2>
+          <p>點左側清單或手機下方的快捷按鈕，都可以直接跳到指定教學情境。</p>
+
+          <div class="progress">
+            <div class="progress-head">
+              <span id="progressLabel">情境 1 / 13</span>
+              <span id="progressTitle">進入 Homework 功能</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+          </div>
+
+          <div class="toolbox">
+            <button type="button" class="primary" id="prevScenario">上一個</button>
+            <button type="button" class="secondary" id="nextScenario">下一個</button>
+            <button type="button" class="ghost" id="autoPlay">自動播放</button>
+          </div>
+
+          <div class="scenario-list" id="scenarioList"></div>
+
+          <div class="notes">
+            <div class="note info">
+              <strong>怎麼看這份教學</strong>
+              <span>左側可以切換情境，手機畫面會顯示對應的 LINE 操作流程。</span>
+            </div>
+            <div class="note ok">
+              <strong>第一次使用建議</strong>
+              <span>先看「首次建立 Homework 登記資料」，再往下看預約與取消流程。</span>
+            </div>
+            <div class="note warn">
+              <strong>提醒</strong>
+              <span>若超過取消時限，就不能直接取消，必須送出逾期取消申請並等待審核。</span>
+            </div>
+          </div>
+        </aside>
+
+        <main class="phone-stage">
+          <div class="trigger-hint" id="triggerHint">
+            <strong>進入方式</strong>
+            <span id="triggerHintText">這個情境會從下方選單的「登記」進入。</span>
+            <div class="trigger-command" id="triggerHintCommand">下方選單：登記</div>
+          </div>
+          <div class="phone">
+            <div class="screen">
+              <div class="line-status">
+                <span>9:41</span>
+                <span>5G · 100%</span>
+              </div>
+
+              <div class="line-header">
+                <div class="line-avatar">HW</div>
+                <div>
+                  <h3>Homework Demo 助手</h3>
+                  <span id="headerSubtitle">官方帳號</span>
+                </div>
+              </div>
+
+              <div class="chat">
+                <div class="message-list" id="messageList"></div>
+              </div>
+
+              <div class="quick-nav">
+                <div class="rich-menu" id="quickNav">
+                  <img src="./user_panel2.png" alt="Homework rich menu" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+
+        <aside class="scenario-card">
+          <div class="scenario-meta">
+            <div class="meta-badge" id="scenarioBadge">教學情境</div>
+            <h2 id="scenarioHeading">進入 Homework 功能</h2>
+            <p id="scenarioSummary"></p>
+          </div>
+
+          <div class="hint-list" id="hintList"></div>
+
+          <div class="callout">
+            <strong>目前重點</strong>
+            <span id="scenarioCallout"></span>
+          </div>
+        </aside>
+      </section>
+
+      <div class="footer">
+        若操作途中沒有可選項目，通常代表名額已滿、條件不符合，或目前沒有可取消的預約；請依畫面提示重新操作。
+      </div>
+    </div>
+
+    <script>
+      const scenarios = [
+        {
+          id: "entry",
+          short: "進入功能",
+          label: "情境 1",
+          title: "第一次打開 Homework 功能",
+          summary: "使用者從 LINE Rich Menu 或文字指令進入 Homework 功能，先看到功能入口與可用操作。",
+          callout: "先讓使用者知道這個功能是做什麼、有哪些操作，能降低第一次使用的迷惘感。",
+          hints: [
+            { title: "可從哪裡進入", text: "可以從 LINE 選單進入，或依老師與助教公告的操作方式開啟功能。" },
+            { title: "會看到什麼", text: "通常先出現功能說明文字，提醒可登記資料、預約、查詢或取消。" },
+            { title: "第一次使用", text: "如果你還沒有建立 Homework 資料，系統會先引導你完成資料登記。" }
+          ],
+          messages: [
+            { role: "user", text: "/homework", time: "09:41" },
+            { role: "bot", text: "你尚未完成 Homework 登記資料登記，請輸入 `<學號> <姓名>`，例如：`114106123 王小明`。", time: "09:41" }
+          ]
+        },
+        {
+          id: "profile",
+          short: "登記資料",
+          label: "情境 2",
+          title: "用 /homework/register 設定 Homework 資料",
+          summary: "從 rich menu 的「設定資訊」進入時，正式流程只會更新 Homework 資料，不會直接進入預約。",
+          callout: "`/homework/register` 是資料設定流程；真正要開始預約，是按 `/homework`。",
+          hints: [
+            { title: "正確格式", text: "請輸入 `<學號> <姓名>`，例如 `114106123 王小明`。" },
+            { title: "常見錯誤", text: "少空格、學號位數不足、只有姓名，都會被判定為格式錯誤。" },
+            { title: "更新完成", text: "資料更新成功後，系統只會回覆更新結果，不會直接帶你去選助教。" }
+          ],
+          messages: [
+            { role: "user", text: "/homework/register", time: "09:42" },
+            { role: "bot", text: "請輸入 `<學號> <姓名>` 來完成 Homework 登記，例如：`114106123 王小明`。", time: "09:42" },
+            { role: "user", text: "11410 王小明", time: "09:43" },
+            { role: "bot", text: "格式錯誤，請輸入 `<學號> <姓名>`，例如：`114106123 王小明`。", time: "09:43" },
+            { role: "user", text: "114106123 王小明", time: "09:43" },
+            { role: "bot", text: "已更新 Homework 登記：114106123 王小明", time: "09:43" }
+          ]
+        },
+        {
+          id: "register",
+          short: "預約流程",
+          label: "情境 3",
+          title: "首次預約時，登記完成後直接進入選助教",
+          summary: "如果是從 `/homework` 進來且尚未登記，輸入正確資料後，正式流程會直接接續預約，先出現助教選擇卡片。",
+          callout: "這才是第一次預約的真實流程：`/homework` -> 輸入資料 -> `已完成 Homework 登記...` -> 助教卡片。",
+          hints: [
+            { title: "步驟順序", text: "先選助教，再選日期，最後選可預約時段。" },
+            { title: "卡片資訊", text: "每張 Flex 卡片都會顯示狀態、剩餘名額或目前是否可選。" },
+            { title: "限制提示", text: "若某個 TA 已額滿、被限制或不可選，卡片上會直接標示原因。" }
+          ],
+          messages: [
+            { role: "user", text: "/homework", time: "09:44" },
+            { role: "bot", text: "你尚未完成 Homework 登記資料登記，請輸入 `<學號> <姓名>`，例如：`114106123 王小明`。", time: "09:44" },
+            { role: "user", text: "114106123 王小明", time: "09:44" },
+            { role: "bot", text: "已完成 Homework 登記：114106123 王小明", time: "09:44" },
+            {
+              role: "bot",
+              card: {
+                kind: "option",
+                step: "步驟 1/3",
+                title: "Amy",
+                badge: { tone: "primary", text: "可選" },
+                facts: [
+                  ["已登記人數", "1/2"],
+                  ["狀態", "可預約"]
+                ],
+                note: "選擇助教後即可查看可預約日期。",
+                action: { label: "選擇助教", target: "register-date", variant: "primary" }
+              },
+              time: "09:44"
+            }
+          ]
+        },
+        {
+          id: "register-date",
+          short: "選日期",
+          label: "情境 4",
+          title: "查看該助教可預約日期",
+          summary: "選定助教後，系統列出可以選的日期與剩餘時段數。",
+          callout: "這個階段應讓使用者理解，不是每一天都一定可選，卡片上的可預約時段數很重要。",
+          hints: [
+            { title: "日期卡片", text: "會顯示日期、助教名稱，以及該日尚可預約的時段數。" },
+            { title: "不可選日期", text: "若當天沒有空位或不符合規則，卡片通常會標示不可選。" },
+            { title: "看到不可選時", text: "若日期不能按，通常表示當天已滿、條件不符，或不在可預約範圍內。" }
+          ],
+          messages: [
+            { role: "user", text: "選擇助教", time: "09:44" },
+            {
+              role: "bot",
+              card: {
+                kind: "option",
+                step: "步驟 2/3",
+                title: "05/05",
+                badge: { tone: "primary", text: "可選" },
+                facts: [
+                  ["助教", "Amy"],
+                  ["可選時段", "2"]
+                ],
+                note: "本日共有 2 個可預約時段。",
+                action: { label: "選擇日期", target: "register-slot", variant: "primary" }
+              },
+              time: "09:44"
+            }
+          ]
+        },
+        {
+          id: "register-slot",
+          short: "選時段",
+          label: "情境 5",
+          title: "選擇時段並完成預約",
+          summary: "選定日期後，系統會列出可用時段；點下去就直接完成該次預約。",
+          callout: "真正的預約送出點在這一步。教學時要提醒使用者，按下按鈕後就會建立預約。",
+          hints: [
+            { title: "最後一步", text: "時段按下去通常就直接送出，不需要再打一串確認文字。" },
+            { title: "成功畫面", text: "系統會回覆預約成功的摘要，包含助教、日期與時段。" },
+            { title: "可搭配說明", text: "可以提醒使用者預約成功後，可再用查詢功能確認內容。" }
+          ],
+          messages: [
+            { role: "user", text: "選擇日期", time: "09:45" },
+            {
+              role: "bot",
+              card: {
+                kind: "option",
+                step: "步驟 3/3",
+                title: "11:30-12:00",
+                badge: { tone: "primary", text: "可預約" },
+                facts: [
+                  ["助教", "Amy"],
+                  ["日期", "2026-05-05"]
+                ],
+                note: "點擊後會直接送出本次預約。",
+                action: { label: "預約此時段", target: "register-success", variant: "primary" }
+              },
+              time: "09:45"
+            }
+          ]
+        },
+        {
+          id: "register-success",
+          short: "預約成功",
+          label: "情境 6",
+          title: "預約成功與查詢目前預約",
+          summary: "系統顯示預約成功，並可進一步查看目前已登記的預約列表。",
+          callout: "這裡很適合教學時強調：做完預約之後，可以立刻用查詢功能再次確認。",
+          hints: [
+            { title: "成功摘要", text: "會列出學生、助教、日期與時段，讓使用者確定自己真的預約到了。" },
+            { title: "查詢用途", text: "如果忘記約了哪一天，可以隨時用查詢功能把清單叫出來。" },
+            { title: "延伸操作", text: "若之後不能去，則回到取消或逾期取消申請流程。" }
+          ],
+          messages: [
+            { role: "user", text: "預約此時段", time: "09:45" },
+            {
+              role: "bot",
+              card: {
+                kind: "success",
+                statusTone: "success",
+                statusText: "預約完成",
+                title: "Amy｜2026-05-05",
+                subtitle: "11:30-12:00",
+                facts: [
+                  ["助教", "Amy"],
+                  ["日期", "2026-05-05"],
+                  ["時段", "11:30-12:00"],
+                  ["學生", "114106123 王小明"]
+                ]
+              },
+              time: "09:45"
+            }
+          ]
+        },
+        {
+          id: "list",
+          short: "查詢預約",
+          label: "情境 7",
+          title: "查詢目前已預約的 Homework 時段",
+          summary: "使用者可看到自己目前的預約列表，了解助教、日期與時間安排。",
+          callout: "這是最常被重複使用的功能之一，尤其在預約成功後或臨近 Demo 前最常查看。",
+          hints: [
+            { title: "使用時機", text: "預約成功後確認一次，之後若忘記日期也能回來查。" },
+            { title: "列表內容", text: "通常會列出每筆預約，並讓使用者接著進入取消流程。" },
+            { title: "教學技巧", text: "查詢完馬上接取消流程，使用者會比較容易理解前後關係。" }
+          ],
+          messages: [
+            { role: "user", text: "/homework/list", time: "09:46" },
+            {
+              role: "bot",
+              card: {
+                kind: "booking",
+                header: "目前預約",
+                badge: { tone: "success", text: "已登記" },
+                date: "2026-05-05",
+                timeSlot: "11:30-12:00",
+                accentTone: "success",
+                facts: [
+                  ["助教", "Amy"],
+                  ["學生", "114106123 王小明"]
+                ],
+                note: "這是你目前已存在的 Homework 預約。",
+                action: { label: "已登記", target: "list", variant: "disabled" }
+              },
+              time: "09:46"
+            }
+          ]
+        },
+        {
+          id: "cancel",
+          short: "一般取消",
+          label: "情境 8",
+          title: "在時限內直接取消預約",
+          summary: "若尚未超過取消時限，使用者可以直接點選預約項目完成取消。",
+          callout: "這個流程比逾期取消簡單很多，教學時應先強調：能在時限內取消就不要拖到逾期。",
+          hints: [
+            { title: "取消方式", text: "系統先列出你的預約，再讓你選要取消哪一筆。" },
+            { title: "成功訊息", text: "取消完成後，通常會回覆一則已取消的確認訊息。" },
+            { title: "必要提醒", text: "如果沒看到可取消項目，可能代表目前沒有預約，或已超過取消時限。" }
+          ],
+          messages: [
+            { role: "user", text: "/homework/cancel", time: "09:47" },
+            {
+              role: "bot",
+              card: {
+                kind: "booking",
+                header: "取消流程",
+                badge: { tone: "danger", text: "可取消" },
+                date: "2026-05-05",
+                timeSlot: "11:30-12:00",
+                accentTone: "danger",
+                facts: [
+                  ["助教", "Amy"],
+                  ["學生", "114106123 王小明"]
+                ],
+                note: "點擊後系統會再次檢查是否仍符合取消期限。",
+                action: { label: "取消預約", target: "cancel-success", variant: "danger" }
+              },
+              time: "09:47"
+            }
+          ]
+        },
+        {
+          id: "cancel-success",
+          short: "取消完成",
+          label: "延伸",
+          title: "一般取消成功",
+          summary: "使用者在時限內取消後，會收到成功回覆，並可重新安排其他時段。",
+          callout: "這個畫面適合補充：取消完成後，若還要 Demo，可以重新回到預約流程。",
+          hints: [
+            { title: "狀態更新", text: "取消後，該時段會釋出給其他人，自己的查詢清單也會更新。" },
+            { title: "下一步", text: "若仍要登記 Demo，可以再次選擇助教與時段重新預約。" },
+            { title: "取消後", text: "若之後還需要 Demo，可以直接重新回到預約流程挑選新的時段。" }
+          ],
+          messages: [
+            { role: "user", text: "取消預約", time: "09:47" },
+            {
+              role: "bot",
+              card: {
+                kind: "success",
+                statusTone: "danger",
+                statusText: "取消成功",
+                title: "Amy｜2026-05-05",
+                subtitle: "11:30-12:00",
+                facts: [
+                  ["助教", "Amy"],
+                  ["日期", "2026-05-05"],
+                  ["時段", "11:30-12:00"],
+                  ["學生", "114106123 王小明"]
+                ]
+              },
+              time: "09:47"
+            }
+          ]
+        },
+        {
+          id: "late-cancel",
+          short: "逾期取消",
+          label: "補充情境",
+          title: "超過時限後申請逾期取消",
+          summary: "如果已經超過一般取消時限，使用者不能直接取消，而是要送出逾期取消申請，由助教審核。",
+          callout: "逾期取消不是直接成功，送出後還要等助教審核，因此請盡量在時限內完成取消。",
+          hints: [
+            { title: "和一般取消不同", text: "逾期取消不是按下去就取消成功，而是先提交理由等待審核。" },
+            { title: "需要填理由", text: "系統通常會要求輸入簡短原因，例如臨時衝堂、身體不適等。" },
+            { title: "後續通知", text: "審核結果會再由 bot 主動通知，可能是核准，也可能被拒絕。" }
+          ],
+          messages: [
+            { role: "user", text: "/homework/cancel/apply", time: "09:48" },
+            {
+              role: "bot",
+              card: {
+                kind: "booking",
+                header: "逾期取消申請",
+                badge: { tone: "primary", text: "可申請" },
+                date: "2026-05-05",
+                timeSlot: "11:30-12:00",
+                accentTone: "primary",
+                facts: [
+                  ["助教", "Amy"],
+                  ["學生", "114106123 王小明"]
+                ],
+                note: "點擊後需要輸入逾期取消理由。",
+                action: { label: "申請取消", target: "late-cancel-reason", variant: "primary" }
+              },
+              time: "09:48"
+            }
+          ]
+        },
+        {
+          id: "late-cancel-reason",
+          short: "填寫理由",
+          label: "補充情境",
+          title: "填寫逾期取消理由並等待審核",
+          summary: "使用者送出逾期取消理由後，系統會提示申請已建立，接著等待助教審核。",
+          callout: "這裡要明確讓使用者知道自己目前只是『送出申請』，不是已完成取消。",
+          hints: [
+            { title: "理由內容", text: "內容簡短清楚即可，重點是讓助教知道為什麼無法出席。" },
+            { title: "等待狀態", text: "送出後不會立刻取消，會先標示待審核。" },
+            { title: "送出後", text: "送出理由後請耐心等候，不需要重複提交同一筆申請。" }
+          ],
+          messages: [
+            { role: "user", text: "申請取消", time: "09:48" },
+            { role: "bot", text: "請輸入逾期取消理由：Amy 2026-05-05 11:30-12:00", time: "09:48" },
+            { role: "user", text: "臨時和必修課期中報告撞期，無法到場。", time: "09:49" },
+            { role: "bot", text: "逾期取消申請已送出，請等待助教審核。", time: "09:49" }
+          ]
+        },
+        {
+          id: "review-approved",
+          short: "核准通知",
+          label: "結果通知",
+          title: "助教核准逾期取消申請",
+          summary: "助教審核通過後，系統主動通知使用者取消申請已核准。",
+          callout: "這是使用者真正完成逾期取消的最終畫面，教學時最好明確區分和『申請已送出』的差異。",
+          hints: [
+            { title: "通知性質", text: "這類訊息通常是 bot 主動推送，不一定是使用者當下再點一次才看到。" },
+            { title: "結果意義", text: "核准後，代表該預約正式被取消。" },
+            { title: "之後要再預約", text: "如果還需要安排 Demo，可以重新回到一般預約流程。" }
+          ],
+          messages: [
+            {
+              role: "bot",
+              card: {
+                kind: "result",
+                statusTone: "success",
+                statusText: "取消申請已核准",
+                title: "Amy｜2026-05-05",
+                facts: [
+                  ["時段", "11:30-12:00"],
+                  ["理由", "臨時和必修課期中報告撞期，無法到場。"] 
+                ],
+                note: "助教已協助取消你的預約。"
+              },
+              time: "10:15"
+            }
+          ]
+        },
+        {
+          id: "review-rejected",
+          short: "未通過通知",
+          label: "結果通知",
+          title: "助教未核准逾期取消申請",
+          summary: "若申請未通過，系統也會主動通知使用者，並保留預約。",
+          callout: "逾期取消不一定會通過；若未核准，原本的預約仍然有效，請依規定處理後續出席。",
+          hints: [
+            { title: "預約仍存在", text: "被拒絕後，代表該預約仍然保留，需要自行處理後續出席安排。" },
+            { title: "通知文字", text: "通常會附上助教給的原因，讓使用者知道未通過的理由。" },
+            { title: "收到未通過通知時", text: "請留意訊息中的原因說明，必要時主動聯繫助教或課程窗口。" }
+          ],
+          messages: [
+            {
+              role: "bot",
+              card: {
+                kind: "result",
+                statusTone: "danger",
+                statusText: "取消申請未通過",
+                title: "Amy｜2026-05-05",
+                facts: [
+                  ["時段", "11:30-12:00"],
+                  ["理由", "已接近時段開始，無法釋出名額"]
+                ],
+                note: "已接近時段開始，無法釋出名額"
+              },
+              time: "10:18"
+            }
+          ]
+        },
+        {
+          id: "edge-cases",
+          short: "限制情境",
+          label: "常見問題",
+          title: "常見限制與不可選情境",
+          summary: "除了正常流程外，你也可能看到不可選、額滿或流程失效等提示。",
+          callout: "如果你打算把這頁給新生或助教，這一段很重要，因為它能先處理掉大多數重複提問。",
+          hints: [
+            { title: "常見不可選原因", text: "助教額滿、最少間隔天數不符、同一助教限制、黑名單、時段已被搶先登記。" },
+            { title: "流程失效", text: "如果放太久沒操作，可能會出現流程失效，這時只要重新輸入指令即可。" },
+            { title: "空資料", text: "查詢或取消時若沒有任何預約，系統會明確提示目前查無資料。" }
+          ],
+          messages: [
+            { role: "user", text: "/homework", time: "10:20" },
+            {
+              role: "bot",
+              card: {
+                kind: "option",
+                step: "步驟 1/3",
+                title: "Amy",
+                badge: { tone: "danger", text: "不可選" },
+                facts: [
+                  ["已登記人數", "2/2"],
+                  ["狀態", "已額滿"]
+                ],
+                note: "已額滿",
+                action: { label: "目前不可選", target: "edge-cases", variant: "disabled" }
+              },
+              time: "10:20"
+            }
+          ]
+        }
+      ];
+
+      const richMenuHotspots = [
+        { label: "一般功能", role: "tab-page1", left: 0, top: 0, width: 50, height: 11.86, scenarioId: "entry" },
+        { label: "作業登記", role: "tab-page2", left: 50, top: 0, width: 50, height: 11.86, scenarioId: "entry" },
+        { label: "/homework", command: "/homework", left: 0, top: 11.86, width: 33.32, height: 44.07, scenarioId: "register" },
+        { label: "/homework/cancel", command: "/homework/cancel", left: 33.32, top: 11.86, width: 33.36, height: 44.07, scenarioId: "cancel" },
+        { label: "/homework/list", command: "/homework/list", left: 66.68, top: 11.86, width: 33.32, height: 44.07, scenarioId: "list" },
+        { label: "/homework/register", command: "/homework/register", left: 0, top: 55.93, width: 33.32, height: 44.07, scenarioId: "profile" },
+        { label: "/homework/cancel/apply", command: "/homework/cancel/apply", left: 33.32, top: 55.93, width: 33.36, height: 44.07, scenarioId: "late-cancel" },
+        { label: "/status", command: "/status", left: 66.68, top: 55.93, width: 33.32, height: 44.07, scenarioId: "noop" }
+      ];
+
+      const scenarioShortcutGroups = [
+        {
+          id: "entry",
+          label: "入口",
+          title: "第一次進入 Homework",
+          summary: "從 `/homework` 進入，尚未登記時會先要求輸入學號與姓名。",
+          scenarioIds: ["entry"]
+        },
+        {
+          id: "profile",
+          label: "設定資料",
+          title: "設定 / 更新 Homework 資料",
+          summary: "對應 `/homework/register`，只會更新資料，不會直接開始預約。",
+          scenarioIds: ["profile"]
+        },
+        {
+          id: "register",
+          label: "預約流程",
+          title: "登記後完成預約",
+          summary: "包含選助教、選日期、選時段與預約完成。",
+          scenarioIds: ["register", "register-date", "register-slot", "register-success"]
+        },
+        {
+          id: "list",
+          label: "查詢",
+          title: "查詢目前預約",
+          summary: "查看已登記的 Homework Demo 時段。",
+          scenarioIds: ["list"]
+        },
+        {
+          id: "cancel",
+          label: "一般取消",
+          title: "時限內取消預約",
+          summary: "包含取消清單與取消成功結果。",
+          scenarioIds: ["cancel", "cancel-success"]
+        },
+        {
+          id: "late-cancel",
+          label: "逾期取消",
+          title: "逾期取消申請",
+          summary: "包含選擇申請項目、填寫理由與送出申請。",
+          scenarioIds: ["late-cancel", "late-cancel-reason"]
+        },
+        {
+          id: "review-approved",
+          label: "審核結果",
+          title: "逾期取消審核結果",
+          summary: "查看助教核准或未通過的最終通知畫面。",
+          scenarioIds: ["review-approved", "review-rejected"]
+        },
+        {
+          id: "edge-cases",
+          label: "限制",
+          title: "不可選與限制情境",
+          summary: "例如額滿、條件不符或流程失效等狀況。",
+          scenarioIds: ["edge-cases"]
+        }
+      ];
+
+      const scenarioTriggerGroups = [
+        {
+          text: "這個情境會從下方選單的「登記」進入；如果你還沒建立 Homework 資料，系統會先要求輸入學號與姓名。",
+          command: "下方選單：登記",
+          scenarioIds: ["entry", "register", "register-date", "register-slot", "register-success", "edge-cases"]
+        },
+        {
+          text: "這個情境會從下方選單的「設定資訊」進入，用來建立或更新 Homework 登記資料。",
+          command: "下方選單：設定資訊",
+          scenarioIds: ["profile"]
+        },
+        {
+          text: "這個情境會從下方選單的「預約清單」進入，用來查看目前已登記的時段。",
+          command: "下方選單：預約清單",
+          scenarioIds: ["list"]
+        },
+        {
+          text: "這個情境會從下方選單的「取消登記」進入，用於時限內直接取消預約。",
+          command: "下方選單：取消登記",
+          scenarioIds: ["cancel", "cancel-success"]
+        },
+        {
+          text: "這個情境會從下方選單的「逾期取消申請」進入，之後還需要輸入理由並等待助教審核。",
+          command: "下方選單：逾期取消申請",
+          scenarioIds: ["late-cancel", "late-cancel-reason"]
+        },
+        {
+          text: "這個情境不是從下方選單直接進入，而是助教審核完成後，系統主動通知你的結果畫面。",
+          command: "系統通知：審核結果",
+          scenarioIds: ["review-approved", "review-rejected"]
+        }
+      ];
+
+      let currentIndex = 0;
+      let autoPlayTimer = null;
+
+      const scenarioList = document.getElementById("scenarioList");
+      const messageList = document.getElementById("messageList");
+      const quickNav = document.getElementById("quickNav");
+      const progressLabel = document.getElementById("progressLabel");
+      const progressTitle = document.getElementById("progressTitle");
+      const progressFill = document.getElementById("progressFill");
+      const scenarioBadge = document.getElementById("scenarioBadge");
+      const scenarioHeading = document.getElementById("scenarioHeading");
+      const scenarioSummary = document.getElementById("scenarioSummary");
+      const scenarioCallout = document.getElementById("scenarioCallout");
+      const hintList = document.getElementById("hintList");
+      const triggerHintText = document.getElementById("triggerHintText");
+      const triggerHintCommand = document.getElementById("triggerHintCommand");
+      const prevScenario = document.getElementById("prevScenario");
+      const nextScenario = document.getElementById("nextScenario");
+      const autoPlay = document.getElementById("autoPlay");
+
+      function createScenarioButton(group) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "scenario-button";
+        button.innerHTML = `
+          <small>${group.label}</small>
+          <strong>${group.title}</strong>
+          <span>${group.summary}</span>
+        `;
+        button.dataset.groupId = group.id;
+        button.addEventListener("click", () => {
+          const index = scenarios.findIndex((scenario) => scenario.id === group.scenarioIds[0]);
+          if (index >= 0) goToScenario(index);
+        });
+        return button;
+      }
+
+      function renderScenarioButtons() {
+        scenarioList.innerHTML = "";
+        scenarioShortcutGroups.forEach((group) => {
+          scenarioList.appendChild(createScenarioButton(group));
+        });
+      }
+
+      function renderQuickNav() {
+        quickNav.querySelectorAll(".rich-hotspot").forEach((node) => node.remove());
+        richMenuHotspots.forEach((hotspot) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "rich-hotspot";
+          button.dataset.target = hotspot.scenarioId;
+          button.dataset.role = hotspot.role || "item";
+          button.title = hotspot.command || hotspot.label;
+          button.setAttribute("aria-label", hotspot.command || hotspot.label);
+          button.style.left = `${hotspot.left}%`;
+          button.style.top = `${hotspot.top}%`;
+          button.style.width = `${hotspot.width}%`;
+          button.style.height = `${hotspot.height}%`;
+          button.addEventListener("click", () => {
+            const index = scenarios.findIndex((scenario) => scenario.id === hotspot.scenarioId);
+            if (index >= 0) goToScenario(index);
+          });
+          quickNav.appendChild(button);
+        });
+      }
+
+      function badgeHTML(badge) {
+        if (!badge) return "";
+        return `<span class="badge ${badge.tone}">${badge.text}</span>`;
+      }
+
+      function factHTML([key, value]) {
+        return `<div class="kv"><span>${key}</span><strong>${value}</strong></div>`;
+      }
+
+      function actionHTML(action) {
+        if (!action) return "";
+        const disabled = action.variant === "disabled";
+        const targetAttr = disabled ? "" : ` data-target="${action.target}"`;
+        return `<button type="button" class="flex-action ${action.variant || "primary"}"${targetAttr}${disabled ? " disabled" : ""}>${action.label}</button>`;
+      }
+
+      function renderOptionCard(card) {
+        return `
+          <div class="banner">
+            <div class="flex-step">${card.step}</div>
+            <div class="badge-row">${badgeHTML(card.badge)}</div>
+          </div>
+          <div class="flex-body">
+            <div class="flex-title" style="margin-top:0;">${card.title}</div>
+            ${card.facts.map(factHTML).join("")}
+            <div class="note-box">${card.note}</div>
+          </div>
+          ${card.action ? `<div class="flex-footer">${actionHTML(card.action)}</div>` : ""}
+        `;
+      }
+
+      function renderBookingCard(card) {
+        return `
+          <div class="banner">
+            <div class="flex-step">${card.header}</div>
+            <div class="badge-row">${badgeHTML(card.badge)}</div>
+          </div>
+          <div class="flex-body">
+            <div class="note-box" style="background:${card.accentTone === "danger" ? "var(--danger-soft)" : card.accentTone === "primary" ? "var(--accent-soft)" : "var(--success-soft)"}; color:${card.accentTone === "danger" ? "var(--danger)" : card.accentTone === "primary" ? "var(--accent)" : "var(--success)"};">
+              <div style="font-size:12px;font-weight:700;margin-bottom:6px;">${card.date}</div>
+              <div style="font-size:24px;font-weight:800;line-height:1.15;">${card.timeSlot}</div>
+            </div>
+            ${card.facts.map(factHTML).join("")}
+            <div class="note-box">${card.note}</div>
+          </div>
+          ${card.action ? `<div class="flex-footer">${actionHTML(card.action)}</div>` : ""}
+        `;
+      }
+
+      function renderSuccessCard(card) {
+        return `
+          <div class="flex-body">
+            <div class="note-box" style="background:${card.statusTone === "success" ? "var(--success-soft)" : "var(--danger-soft)"}; color:${card.statusTone === "success" ? "var(--success)" : "var(--danger)"};">
+              <div class="badge-row" style="margin-top:0;">${badgeHTML({ tone: card.statusTone, text: card.statusText })}</div>
+              <div class="flex-title" style="margin:12px 0 6px;">${card.title}</div>
+              <div class="flex-subtitle" style="color:inherit;">${card.subtitle}</div>
+            </div>
+            ${card.facts.map(factHTML).join("")}
+          </div>
+        `;
+      }
+
+      function renderResultCard(card) {
+        return `
+          <div class="flex-body">
+            <div class="badge-row" style="margin-top:0;">${badgeHTML({ tone: card.statusTone, text: card.statusText })}</div>
+            <div class="flex-title" style="margin-top:0;color:${card.statusTone === "success" ? "var(--success)" : "var(--danger)"};">${card.title}</div>
+            ${card.facts.map(factHTML).join("")}
+            <div class="note-box" style="background:${card.statusTone === "success" ? "var(--success-soft)" : "var(--danger-soft)"};">${card.note}</div>
+          </div>
+        `;
+      }
+
+      function cardInnerHTML(card) {
+        if (card.kind === "option") return renderOptionCard(card);
+        if (card.kind === "booking") return renderBookingCard(card);
+        if (card.kind === "success") return renderSuccessCard(card);
+        if (card.kind === "result") return renderResultCard(card);
+        return "";
+      }
+
+      function renderCard(card, time) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "message-row bot";
+        wrapper.innerHTML = `
+          <div class="bot-badge"></div>
+          <div class="flex-card">
+            ${cardInnerHTML(card)}
+          </div>
+          <div class="message-time">${time || ""}</div>
+        `;
+        wrapper.querySelectorAll("[data-target]").forEach((button) => {
+          button.addEventListener("click", () => {
+            const targetId = button.getAttribute("data-target");
+            const index = scenarios.findIndex((scenario) => scenario.id === targetId);
+            if (index >= 0) goToScenario(index);
+          });
+        });
+        return wrapper;
+      }
+
+      function renderBubble(message) {
+        if (message.role === "typing") {
+          const row = document.createElement("div");
+          row.className = "message-row bot";
+          row.innerHTML = `
+            <div class="bot-badge"></div>
+            <div class="typing"><span></span><span></span><span></span></div>
+          `;
+          return row;
+        }
+
+        if (message.card) {
+          return renderCard(message.card, message.time);
+        }
+
+        const row = document.createElement("div");
+        row.className = `message-row ${message.role}`;
+        row.innerHTML = `
+          ${message.role === "bot" ? '<div class="bot-badge"></div>' : ""}
+          <div class="bubble">${message.text.replace(/\n/g, "<br />")}</div>
+          <div class="message-time">${message.time || ""}</div>
+        `;
+        return row;
+      }
+
+      function renderHints(items) {
+        hintList.innerHTML = "";
+        items.forEach((item) => {
+          const div = document.createElement("div");
+          div.className = "hint-item";
+          div.innerHTML = `<strong>${item.title}</strong><span>${item.text}</span>`;
+          hintList.appendChild(div);
+        });
+      }
+
+      function updateButtons() {
+        const currentScenario = scenarios[currentIndex];
+        const activeGroup = scenarioShortcutGroups.find((group) => group.scenarioIds.includes(currentScenario.id));
+        document.querySelectorAll(".scenario-button").forEach((button) => {
+          button.classList.toggle("active", button.dataset.groupId === (activeGroup ? activeGroup.id : ""));
+        });
+      }
+
+      function updateTriggerHint(scenario) {
+        const triggerGroup = scenarioTriggerGroups.find((group) => group.scenarioIds.includes(scenario.id));
+        if (!triggerGroup) {
+          triggerHintText.textContent = "這個情境的觸發方式請依課程實際公告為準。";
+          triggerHintCommand.textContent = "操作入口依公告為準";
+          return;
+        }
+        triggerHintText.textContent = triggerGroup.text;
+        triggerHintCommand.textContent = triggerGroup.command;
+      }
+
+      function renderScenario(index) {
+        const scenario = scenarios[index];
+        const displayIndex = index + 1;
+        progressLabel.textContent = `情境 ${displayIndex} / ${scenarios.length}`;
+        progressTitle.textContent = scenario.title;
+        progressFill.style.width = `${((displayIndex - 1) / Math.max(scenarios.length - 1, 1)) * 100}%`;
+        scenarioBadge.textContent = scenario.label;
+        scenarioHeading.textContent = scenario.title;
+        scenarioSummary.textContent = scenario.summary;
+        scenarioCallout.textContent = scenario.callout;
+        updateTriggerHint(scenario);
+        renderHints(scenario.hints);
+        messageList.innerHTML = "";
+        scenario.messages.forEach((message) => {
+          messageList.appendChild(renderBubble(message));
+        });
+        updateButtons();
+      }
+
+      function goToScenario(index) {
+        currentIndex = (index + scenarios.length) % scenarios.length;
+        renderScenario(currentIndex);
+      }
+
+      function next() {
+        goToScenario(currentIndex + 1);
+      }
+
+      function prev() {
+        goToScenario(currentIndex - 1);
+      }
+
+      function toggleAutoPlay() {
+        if (autoPlayTimer) {
+          clearInterval(autoPlayTimer);
+          autoPlayTimer = null;
+          autoPlay.textContent = "自動播放";
+          return;
+        }
+        autoPlay.textContent = "停止播放";
+        autoPlayTimer = window.setInterval(() => {
+          next();
+        }, 3200);
+      }
+
+      prevScenario.addEventListener("click", prev);
+      nextScenario.addEventListener("click", next);
+      autoPlay.addEventListener("click", toggleAutoPlay);
+
+      renderScenarioButtons();
+      renderQuickNav();
+      renderScenario(currentIndex);
+    </script>
+  </body>
+</html>
