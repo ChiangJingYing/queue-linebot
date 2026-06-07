@@ -552,11 +552,7 @@ class HomeworkBookingService:
         booking = self._find_booking_key(snapshot, booking_key, include_empty=False)
         if booking is None or booking.student_id != student.student_id:
             return HomeworkActionResult(status="error", message="找不到你的預約資料。")
-        deadline = datetime.combine(
-            booking.booking_date - timedelta(days=1),
-            time(hour=self.config.cancel_deadline_hour, tzinfo=_resolve_timezone(self.config.booking_timezone)),
-        )
-        if self.now_provider() > deadline:
+        if self._is_booking_past_cancel_deadline(booking, now=self.now_provider()):
             return HomeworkActionResult(status="error", message="取消失敗：需在預約日期前一天晚上9點前取消。")
         self.gateway.update_cell(booking.sheet_name, booking.row_index, booking.col_index, "")
         logger.info(
@@ -656,6 +652,8 @@ class HomeworkBookingService:
                 reason = "此時段已被預約"
             elif not slot.background_bookable:
                 reason = "此時段不可預約"
+            elif reason == "當日已截止預約":
+                reason = "此時段無法預約"
             options.append(
                 HomeworkSlotOption(
                     booking_key=slot.booking_key,
@@ -721,12 +719,17 @@ class HomeworkBookingService:
         target_date = _parse_iso_date(iso_date)
         if target_date is None:
             return "日期格式錯誤"
+        if slots and self._is_booking_past_registration_deadline(slots[0], now=self.now_provider()):
+            return "當日已截止預約"
         if not any(not slot.value.strip() and slot.background_bookable for slot in slots):
             return "當日時段已滿"
         return ""
 
     def _is_booking_past_cancel_deadline(self, booking: HomeworkBooking, *, now: datetime) -> bool:
-        return now > self._cancel_deadline_for_booking(booking)
+        return now >= self._cancel_deadline_for_booking(booking)
+
+    def _is_booking_past_registration_deadline(self, booking: HomeworkBooking, *, now: datetime) -> bool:
+        return now >= self._cancel_deadline_for_booking(booking)
 
     def _is_booking_not_started(self, booking: HomeworkBooking, *, now: datetime) -> bool:
         start_at = self._booking_start_datetime(booking)

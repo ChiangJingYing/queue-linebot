@@ -51,6 +51,10 @@ def _collect_texts(node):
     return texts
 
 
+def _before_booking_deadline() -> datetime:
+    return datetime(2026, 5, 1, 12, 0, tzinfo=TAIPEI_TZ)
+
+
 def _config(**overrides) -> HomeworkDemoConfig:
     base = HomeworkDemoConfig(
         enabled=True,
@@ -208,6 +212,7 @@ def test_service_uses_all_sheet_names_when_not_configured():
                 "Bob": [["", "5/4", "5/5"], ["11:00-11:30", "", ""]],
             }
         ),
+        now_provider=_before_booking_deadline,
     )
 
     ta_names = [option.ta_name for option in service.list_ta_options(parse_student_identity("114106123 王小明"))]
@@ -232,6 +237,7 @@ def test_service_uses_default_ta_limit_when_specific_limit_missing():
                 "Bob": [["", "5/4", "5/5"], ["11:00-11:30", "", ""]],
             }
         ),
+        now_provider=_before_booking_deadline,
     )
 
     options = {option.ta_name: option for option in service.list_ta_options(parse_student_identity("114106123 王小明"))}
@@ -313,6 +319,7 @@ def test_line_handler_returns_multiple_slot_flex_messages_when_slots_exceed_twel
                 ]
             }
         ),
+        now_provider=_before_booking_deadline,
     )
     handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
 
@@ -393,6 +400,7 @@ def test_service_parses_google_range_relative_rows_for_b2_f20():
                 ]
             }
         ),
+        now_provider=_before_booking_deadline,
     )
 
     student = parse_student_identity("114106999 王小黑")
@@ -407,7 +415,11 @@ def test_service_parses_google_range_relative_rows_for_b2_f20():
 
 
 def test_homework_service_marks_blacklist_and_full_tas():
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=_gateway())
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=_gateway(),
+        now_provider=_before_booking_deadline,
+    )
 
     ta_options = service.list_ta_options(parse_student_identity("114106999 王小黑"))
 
@@ -420,7 +432,11 @@ def test_homework_service_marks_blacklist_and_full_tas():
 
 
 def test_homework_service_blocks_same_day_and_different_ta_rules():
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=_gateway())
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=_gateway(),
+        now_provider=_before_booking_deadline,
+    )
     student = parse_student_identity("114106111 王小明")
 
     date_options_for_amy = service.list_date_options(student=student, ta_name="Amy")
@@ -436,7 +452,11 @@ def test_homework_service_blocks_same_day_and_different_ta_rules():
 
 
 def test_homework_service_books_slot_and_lists_bookings():
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=_gateway())
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=_gateway(),
+        now_provider=_before_booking_deadline,
+    )
     student = parse_student_identity("114106123 王小明")
 
     slot_options = service.list_slot_options(student=student, ta_name="Amy", iso_date="2026-05-07")
@@ -470,6 +490,114 @@ def test_homework_service_respects_cancel_deadline():
 
     assert result.status == "error"
     assert "前一天晚上9點前" in result.message
+
+
+def test_homework_service_blocks_cancel_at_deadline_boundary():
+    service = HomeworkBookingService(
+        config=_config(),
+        gateway=InMemoryHomeworkSheetGateway(
+            {
+                "Amy": [
+                    ["", "5/4"],
+                    ["11:00-11:30", "114106123 王小明"],
+                ]
+            }
+        ),
+        now_provider=lambda: datetime(2026, 5, 3, 21, 0, tzinfo=TAIPEI_TZ),
+    )
+    student = parse_student_identity("114106123 王小明")
+    booking = service.list_bookings(student)[0]
+
+    result = service.cancel_booking(student=student, booking_key=booking.booking_key)
+
+    assert result.status == "error"
+    assert "前一天晚上9點前" in result.message
+
+
+def test_homework_service_marks_date_unselectable_after_booking_deadline():
+    service = HomeworkBookingService(
+        config=_config(),
+        gateway=InMemoryHomeworkSheetGateway(
+            {
+                "Amy": [
+                    ["", "5/4", "5/5"],
+                    ["11:00-11:30", "", ""],
+                    ["11:30-12:00", "", ""],
+                ]
+            }
+        ),
+        now_provider=lambda: datetime(2026, 5, 3, 21, 30, tzinfo=TAIPEI_TZ),
+    )
+
+    options = {
+        option.iso_date: option
+        for option in service.list_date_options(
+            student=parse_student_identity("114106123 王小明"),
+            ta_name="Amy",
+        )
+    }
+
+    assert options["2026-05-04"].selectable is False
+    assert options["2026-05-04"].reason == "當日已截止預約"
+    assert options["2026-05-05"].selectable is True
+
+
+def test_homework_service_marks_date_unselectable_at_booking_deadline_boundary():
+    service = HomeworkBookingService(
+        config=_config(),
+        gateway=InMemoryHomeworkSheetGateway(
+            {
+                "Amy": [
+                    ["", "5/4", "5/5"],
+                    ["11:00-11:30", "", ""],
+                    ["11:30-12:00", "", ""],
+                ]
+            }
+        ),
+        now_provider=lambda: datetime(2026, 5, 3, 21, 0, tzinfo=TAIPEI_TZ),
+    )
+
+    options = {
+        option.iso_date: option
+        for option in service.list_date_options(
+            student=parse_student_identity("114106123 王小明"),
+            ta_name="Amy",
+        )
+    }
+
+    assert options["2026-05-04"].selectable is False
+    assert options["2026-05-04"].reason == "當日已截止預約"
+    assert options["2026-05-05"].selectable is True
+
+
+def test_homework_service_marks_slot_unselectable_after_booking_deadline():
+    service = HomeworkBookingService(
+        config=_config(),
+        gateway=InMemoryHomeworkSheetGateway(
+            {
+                "Amy": [
+                    ["", "5/4"],
+                    ["11:00-11:30", ""],
+                    ["11:30-12:00", ""],
+                ]
+            }
+        ),
+        now_provider=lambda: datetime(2026, 5, 3, 21, 30, tzinfo=TAIPEI_TZ),
+    )
+
+    options = {
+        option.time_slot: option
+        for option in service.list_slot_options(
+            student=parse_student_identity("114106123 王小明"),
+            ta_name="Amy",
+            iso_date="2026-05-04",
+        )
+    }
+
+    assert options["11:00-11:30"].selectable is False
+    assert options["11:00-11:30"].reason == "此時段無法預約"
+    assert options["11:30-12:00"].selectable is False
+    assert options["11:30-12:00"].reason == "此時段無法預約"
 
 
 def test_homework_service_allows_only_white_or_unset_background_slots():
@@ -506,6 +634,7 @@ def test_homework_service_allows_only_white_or_unset_background_slots():
                 ]
             }
         ),
+        now_provider=_before_booking_deadline,
     )
 
     options = service.list_slot_options(
@@ -543,6 +672,7 @@ def test_homework_service_accepts_multiple_time_slot_separators():
                 ]
             }
         ),
+        now_provider=_before_booking_deadline,
     )
 
     options = service.list_slot_options(
@@ -593,7 +723,11 @@ def test_homework_date_available_slots_counts_only_white_or_unset_background():
 
 def test_list_date_options_reads_sheet_rows_once_per_call():
     gateway = CountingHomeworkSheetGateway(_gateway()._sheets)
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=gateway)
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=gateway,
+        now_provider=_before_booking_deadline,
+    )
 
     service.list_date_options(student=parse_student_identity("114106123 王小明"), ta_name="Amy")
 
@@ -602,7 +736,11 @@ def test_list_date_options_reads_sheet_rows_once_per_call():
 
 def test_list_slot_options_reads_sheet_rows_once_per_call():
     gateway = CountingHomeworkSheetGateway(_gateway()._sheets)
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=gateway)
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=gateway,
+        now_provider=_before_booking_deadline,
+    )
 
     service.list_slot_options(
         student=parse_student_identity("114106123 王小明"),
@@ -616,7 +754,11 @@ def test_list_slot_options_reads_sheet_rows_once_per_call():
 def test_gateway_cache_hits_within_five_seconds():
     now_state = {"value": 100.0}
     gateway = CountingHomeworkSheetGateway(_gateway()._sheets, now_provider=lambda: now_state["value"])
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=gateway)
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=gateway,
+        now_provider=_before_booking_deadline,
+    )
 
     service.list_date_options(student=parse_student_identity("114106123 王小明"), ta_name="Amy")
     service.list_date_options(student=parse_student_identity("114106123 王小明"), ta_name="Amy")
@@ -627,7 +769,11 @@ def test_gateway_cache_hits_within_five_seconds():
 def test_gateway_cache_expires_after_five_seconds():
     now_state = {"value": 100.0}
     gateway = CountingHomeworkSheetGateway(_gateway()._sheets, now_provider=lambda: now_state["value"])
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=gateway)
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=gateway,
+        now_provider=_before_booking_deadline,
+    )
 
     service.list_date_options(student=parse_student_identity("114106123 王小明"), ta_name="Amy")
     now_state["value"] = 106.0
@@ -638,7 +784,11 @@ def test_gateway_cache_expires_after_five_seconds():
 
 def test_book_slot_force_refreshes_before_commit():
     gateway = CountingHomeworkSheetGateway(_gateway()._sheets)
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=gateway)
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=gateway,
+        now_provider=_before_booking_deadline,
+    )
     student = parse_student_identity("114106123 王小明")
 
     slot_options = service.list_slot_options(student=student, ta_name="Amy", iso_date="2026-05-07")
@@ -693,7 +843,11 @@ def test_gateway_cache_key_distinguishes_sheet_name_sets():
 
 def test_line_handler_homework_register_flow_returns_flex_and_completes_booking(tmp_path):
     db = DatabaseManager(str(tmp_path / "homework-register.db"))
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=_gateway())
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=_gateway(),
+        now_provider=_before_booking_deadline,
+    )
     handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
 
     first = handler.handle_event(make_text_event("/homework", reply_token="r1"))
@@ -731,7 +885,11 @@ def test_line_handler_homework_register_flow_returns_flex_and_completes_booking(
 def test_line_handler_keeps_ta_selection_when_student_already_booked_other_ta(tmp_path):
     db = DatabaseManager(str(tmp_path / "homework-same-ta-choice.db"))
     db.upsert_homework_user_profile("alice", "114106123", "王小明")
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=_gateway())
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=_gateway(),
+        now_provider=_before_booking_deadline,
+    )
     student = parse_student_identity("114106123 王小明")
     slot_key = next(
         option.booking_key
@@ -759,7 +917,11 @@ def test_line_handler_keeps_ta_selection_when_student_already_booked_other_ta(tm
 
 def test_line_handler_date_flex_is_reusable_across_selections(tmp_path):
     db = DatabaseManager(str(tmp_path / "homework-date-reuse.db"))
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=_gateway())
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=_gateway(),
+        now_provider=_before_booking_deadline,
+    )
     handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
 
     handler.handle_event(make_text_event("/homework", reply_token="r1"))
@@ -797,7 +959,11 @@ def test_line_handler_date_flex_is_reusable_across_selections(tmp_path):
 
 def test_line_handler_old_slot_flex_still_books_after_switching_date(tmp_path):
     db = DatabaseManager(str(tmp_path / "homework-slot-reuse.db"))
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=_gateway())
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=_gateway(),
+        now_provider=_before_booking_deadline,
+    )
     handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
 
     handler.handle_event(make_text_event("/homework", reply_token="r1"))
@@ -824,7 +990,11 @@ def test_line_handler_old_slot_flex_still_books_after_switching_date(tmp_path):
 
 def test_line_handler_old_date_flex_still_works_after_booking_completed(tmp_path):
     db = DatabaseManager(str(tmp_path / "homework-date-after-complete.db"))
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=_gateway())
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=_gateway(),
+        now_provider=_before_booking_deadline,
+    )
     handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
 
     handler.handle_event(make_text_event("/homework", reply_token="r1"))
@@ -848,7 +1018,11 @@ def test_line_handler_old_date_flex_still_works_after_booking_completed(tmp_path
 
 def test_line_handler_old_slot_flex_still_works_after_booking_completed(tmp_path):
     db = DatabaseManager(str(tmp_path / "homework-slot-after-complete.db"))
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=_gateway())
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=_gateway(),
+        now_provider=_before_booking_deadline,
+    )
     handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
 
     handler.handle_event(make_text_event("/homework", reply_token="r1"))
@@ -901,6 +1075,7 @@ def test_line_handler_skips_ta_step_when_only_one_selectable_ta(tmp_path):
                 ]
             }
         ),
+        now_provider=_before_booking_deadline,
     )
     handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
 
@@ -1164,6 +1339,7 @@ def test_homework_list_requires_binding_and_then_uses_saved_profile(tmp_path):
                 ],
             }
         ),
+        now_provider=_before_booking_deadline,
     )
     handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
 
@@ -1182,7 +1358,11 @@ def test_homework_list_requires_binding_and_then_uses_saved_profile(tmp_path):
 def test_homework_register_command_overwrites_existing_binding(tmp_path):
     db = DatabaseManager(str(tmp_path / "homework-register-profile.db"))
     db.upsert_homework_user_profile("alice", "114106123", "王小明")
-    service = HomeworkBookingService(config=_config(ta_limits={"Amy": 3, "Bob": 1}), gateway=_gateway())
+    service = HomeworkBookingService(
+        config=_config(ta_limits={"Amy": 3, "Bob": 1}),
+        gateway=_gateway(),
+        now_provider=_before_booking_deadline,
+    )
     handler = LineBotHandler(queue_manager=QueueManager(db), homework_booking_service=service)
 
     first = handler.handle_event(make_text_event("/homework/register", reply_token="r1"))
